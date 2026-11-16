@@ -4,6 +4,45 @@ import { Deferred, Effect, Exit, Logger, Queue, Scope, Stream } from "effect";
 import { LarkError } from "../src/lark.ts";
 import { controlledCLI } from "./fixtures.ts";
 
+it.live("fetches history from the triggering thread, excluding unrelated channel messages", () =>
+  Effect.gen(function* () {
+    const root = {
+      message_id: "om_root",
+      thread_id: "omt_target",
+      body: { content: "Target thread root" },
+    };
+    const reply = {
+      message_id: "om_reply",
+      thread_id: "omt_target",
+      body: { content: "Target thread reply" },
+    };
+    const unrelated = {
+      message_id: "om_unrelated",
+      thread_id: "omt_other",
+      body: { content: "Unrelated channel discussion" },
+    };
+    const { lark } = yield* controlledCLI(`
+if [ "$3" = "/open-apis/im/v1/messages/om_root" ]; then
+  printf '%s\\n' '${JSON.stringify({ ok: true, data: { items: [root] } })}'
+elif printf '%s' "$5" | grep -q '"container_id_type":"thread"' &&
+     printf '%s' "$5" | grep -q '"container_id":"omt_target"'; then
+  printf '%s\\n' '${JSON.stringify({ ok: true, data: { items: [reply], has_more: true } })}'
+else
+  printf '%s\\n' '${JSON.stringify({ ok: true, data: { items: [unrelated], has_more: false } })}'
+fi`);
+    expect(yield* lark.history({ chatId: "oc_shared", rootId: "om_root" })).toEqual({
+      items: [
+        {
+          message_id: "om_reply",
+          thread_id: "omt_target",
+          content: "Target thread reply",
+        },
+      ],
+      hasMore: true,
+    });
+  }).pipe(Effect.scoped, Effect.provide(BunServices.layer)),
+);
+
 it.live(
   "owns the real CLI process, recognizes readiness, decodes NDJSON, and awaits process cleanup",
   () =>
