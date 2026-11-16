@@ -38,9 +38,11 @@ export default Plugin.define({
         name: "lark_watch",
         input: WatchInput,
         output: WatchStatus,
-        description: `Watch received Lark messages for the calling session using the operator's decision model. Call lark_transform_schema when writing or changing transform code.
+        description: `Watch bot-received Lark conversations, evaluate decisions, and queue transformed prompts in this session. Does not send Lark messages.
 
-Success replaces this session's configuration, cancels old pending work, and renews its timeout. Returns active configuration, listener state, and absolute expiresAt. Preparation failures return a tool error and preserve the current watch and deadline. Batch failures are logged and discarded while workers continue. expiresAt marks when listening stops. Already accepted model requests can still incur cost.`,
+Each batch combines input with events and five recent chat messages. Questions evaluate independently using the operator's model. Call lark_transform_schema before writing or changing transforms.
+
+Success replaces this session's watch and renews expiry; preparation failure preserves it. Failed batches are discarded. Source exit stops listening without reconnecting. Replacement and expiry leave queued prompts intact. Model calls may incur cost.`,
         execute: Effect.fn("lark_watch")(function* (configuration, context) {
           const output = yield* relay
             .watch({ sessionID: context.sessionID, configuration })
@@ -55,7 +57,7 @@ Success replaces this session's configuration, cancels old pending work, and ren
         input: Schema.Struct({}),
         output: WatchStatus,
         description:
-          "Stop monitoring received Lark messages for the calling session. Cancels its pending relay-owned work and returns stopped status, including on repeated calls.",
+          "Stop this session's watch and cancel pending relay work. Safe to repeat; already queued prompts remain.",
         execute: Effect.fn("lark_stop")(function* (_, context) {
           return { output: yield* relay.stop({ sessionID: context.sessionID }) };
         }),
@@ -65,7 +67,7 @@ Success replaces this session's configuration, cancels old pending work, and ren
         input: Schema.Struct({}),
         output: WatchStatus,
         description:
-          "Inspect the calling session's Lark subscription. Returns stopped status, or active status with configuration, listener state, and absolute expiry. The expiry stays unchanged.",
+          "Read this session's watch configuration, listener state, and expiry without renewing it.",
         execute: Effect.fn("lark_status")(function* (_, context) {
           return { output: yield* relay.status({ sessionID: context.sessionID }) };
         }),
@@ -75,7 +77,7 @@ Success replaces this session's configuration, cancels old pending work, and ren
         input: Schema.Struct({}),
         output: Schema.Json,
         description:
-          "Read the generated input and resolved-value output JSON Schemas when writing or changing transform code.",
+          "Read the transform input and resolved-output JSON Schemas before writing or changing transform code.",
         execute: Effect.fn("lark_transform_schema")(() =>
           Effect.succeed({ output: transformHelp }),
         ),
