@@ -35,7 +35,7 @@ export default Plugin.define({
         name: "lark_watch",
         input: WatchInput,
         output: WatchStatus,
-        description: `Watch bot-received Lark conversations, evaluate decisions, and queue transformed prompts in this session. Does not send Lark messages.
+        description: `Watch bot-received Lark conversations and decide when and how this agent should act. Questions classify each message batch. Your JavaScript transform receives the answers and message context, then returns the next prompt or null to ignore the batch. Use it to combine decisions, apply confidence thresholds, and include relevant messages in the agent's instructions. Does not send Lark messages.
 
 Each batch combines input with events and up to five recent messages from the triggering thread, or only the standalone message itself. Questions evaluate independently using the operator's model. Call lark_transform_schema before writing or changing transforms.
 
