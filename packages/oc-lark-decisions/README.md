@@ -15,6 +15,7 @@ Add the plugin to `opencode.json` and choose a decision model from your OpenCode
           "providerID": "your-provider",
           "id": "your-model",
         },
+        "maxEventAgeSeconds": 300,
       },
     },
   ],
@@ -42,6 +43,10 @@ The agent writes the transform and starts the watch. Describe which messages nee
 Each conversation waits for 30 seconds without a new message before evaluation. The watch expires after two hours. Ask for a different quiet period or duration to change these defaults. New messages reset the quiet period, not the expiry time.
 
 The default is 4 workers per active watch. To change this, set `options.workers` to a positive integer. The agent cannot change the configured model or worker count.
+
+Set `options.maxEventAgeSeconds` to a positive number to limit incoming event age across all watches. The default is 300 seconds. Age uses the message's `create_time` in milliseconds. Events exactly at the limit are accepted.
+
+Events with missing or invalid timestamps are skipped before batching and do not reset the quiet period. The limit does not filter thread history.
 
 Starting a new watch replaces this session's previous watch and renews its duration. If registration fails, the previous watch and its expiry time stay unchanged.
 

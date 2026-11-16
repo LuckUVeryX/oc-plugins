@@ -215,7 +215,7 @@ it.effect("a successful native watch delivers only to its caller using the opera
     yield* controlledCLI(`
 if [ "$1" = event ]; then
   trap 'exit 0' TERM
-  printf '%s\\n' '{"type":"im.message.receive_v1","chat_id":"chat","message_id":"message","content":"native event"}'
+  printf '%s\\n' '{"type":"im.message.receive_v1","chat_id":"chat","message_id":"message","content":"native event","create_time":"0"}'
   printf '[event] ready event_key=im.message.receive_v1\\n' >&2
   read waiting
 else
