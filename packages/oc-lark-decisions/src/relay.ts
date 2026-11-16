@@ -31,7 +31,7 @@ export const WatchInput = Schema.Struct({
   ),
   transform: Schema.String.annotate({
     description:
-      "JavaScript ES-module source, not a path, with a default-exported function. Match answers by name and type, including errors. Return a prompt string or null to skip, optionally via Promise. Include needed source context; strings queue as-is. Runs unsandboxed with local privileges.",
+      "Controls whether the agent runs and what prompt it receives. Receives { root, events, history, result }. Supply JavaScript ES-module source, not a path, with a default-exported function returning a prompt string or null to skip, optionally via Promise. Call lark_transform_schema for exact types before writing it. Match answers by name and type, including errors. Include relevant message context; strings queue as-is. Runs unsandboxed with local privileges.",
   }),
   timeoutSeconds: Schema.Finite.check(Schema.isGreaterThan(0)).pipe(
     Schema.withDecodingDefault(Effect.succeed(7200)),
