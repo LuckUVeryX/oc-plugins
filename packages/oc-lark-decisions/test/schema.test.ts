@@ -10,6 +10,18 @@ const input = {
   transform: "export default () => null",
 };
 
+it("exports parameter guidance in the tool's input JSON Schema", () => {
+  const document = Schema.toJsonSchemaDocument(WatchInput);
+  expect(document.schema).toMatchObject({
+    properties: {
+      input: { description: expect.stringContaining("session's conversation") },
+      transform: { description: expect.stringContaining("default-exported function") },
+      timeoutSeconds: { description: expect.stringContaining("Watch lifetime") },
+      debounceMilliseconds: { description: expect.stringContaining("Quiet period") },
+    },
+  });
+});
+
 it.effect("reuses native fields and decodes defaults", () =>
   Effect.gen(function* () {
     expect(WatchInput.fields.questions).toBe(Generate.DecisionRequest.fields.questions);
