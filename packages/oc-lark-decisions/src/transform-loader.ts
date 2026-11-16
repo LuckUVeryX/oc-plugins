@@ -35,7 +35,7 @@ export const makeTransformLoader = Effect.gen(function* () {
 
   return Effect.fn("loadTransform")(
     function* (input: { readonly source: string }) {
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oc-lark-relay-" });
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oc-lark-decisions-" });
       yield* fs.symlink(dependencies, join(directory, "node_modules"));
       yield* fs.writeFileString(join(directory, "package.json"), '{"type":"module"}');
       const entry = join(directory, "source.ts");

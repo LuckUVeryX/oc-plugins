@@ -34,7 +34,7 @@ export class OpenCode extends Context.Service<
     }) => Effect.Effect<void, OpenCodeError>;
     readonly deletedSessions: Stream.Stream<Session.ID, OpenCodeError>;
   }
->()("oc-lark-relay/OpenCode") {}
+>()("oc-lark-decisions/OpenCode") {}
 
 export const openCodeLayer = (ctx: Plugin.Context, options: Options) =>
   Layer.effect(
