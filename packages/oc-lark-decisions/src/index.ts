@@ -8,8 +8,8 @@ import { Relay, relayLayer, WatchInput, WatchStatus } from "./relay.ts";
 import { TransformInput } from "./transform.ts";
 
 export default Plugin.define({
-  id: "oc-lark-relay",
-  effect: Effect.fn("LarkRelay.setup")(function* (ctx) {
+  id: "oc-lark-decisions",
+  effect: Effect.fn("LarkDecisions.setup")(function* (ctx) {
     const options = yield* Schema.decodeUnknownEffect(Options)(ctx.options).pipe(Effect.orDie);
     const inputDocument = Schema.toJsonSchemaDocument(TransformInput);
     const outputDocument = Schema.toJsonSchemaDocument(Schema.NullOr(Schema.String));

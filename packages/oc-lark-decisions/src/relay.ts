@@ -74,7 +74,7 @@ export class Relay extends Context.Service<
     readonly stop: (input: { readonly sessionID: Session.ID }) => Effect.Effect<WatchStatus>;
     readonly status: (input: { readonly sessionID: Session.ID }) => Effect.Effect<WatchStatus>;
   }
->()("oc-lark-relay/Relay") {}
+>()("oc-lark-decisions/Relay") {}
 
 interface Source {
   readonly start: Effect.Effect<void>;

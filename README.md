@@ -34,7 +34,7 @@ Then add a package directory to your OpenCode config:
 ```
 
 For Lark transforms, replace `oc-lark-relay/transform` imports with `oc-lark-decisions/transform`.
-The runtime plugin ID is still `oc-lark-relay`.
+The runtime plugin ID is `oc-lark-decisions`, matching the package path.
 
 ## Develop
 
