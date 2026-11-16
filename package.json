@@ -1,0 +1,39 @@
+{
+  "name": "oc-plugins",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "sync:metadata": "bun scripts/metadata.mjs --write",
+    "check:metadata": "bun scripts/metadata.mjs",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint --deny-warnings .",
+    "typecheck": "bun run --filter './packages/*' typecheck",
+    "test": "bun run test:tooling && bun run --filter './packages/*' test",
+    "test:tooling": "bun test scripts/metadata.test.mjs",
+    "test:install": "bun scripts/test-install.mjs",
+    "check": "bun run check:metadata && bun run format:check && bun run lint && bun run typecheck && bun run test"
+  },
+  "devDependencies": {
+    "@effect/platform-bun": "4.1.0",
+    "@effect/vitest": "4.1.0",
+    "@opencode/plugin": "2.3.0",
+    "@opencode/schema": "2.3.0",
+    "@types/bun": "1.4.4",
+    "@types/node": "25.0.3",
+    "effect": "4.1.0",
+    "oxfmt": "0.78.0",
+    "oxlint": "1.93.0",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0",
+    "vitest-mock-extended": "5.1.1"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
+  },
+  "packageManager": "bun@1.4.4"
+}
