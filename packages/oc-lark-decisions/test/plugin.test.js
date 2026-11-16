@@ -219,7 +219,7 @@ if [ "$1" = event ]; then
   printf '[event] ready event_key=im.message.receive_v1\\n' >&2
   read waiting
 else
-  printf '%s\\n' '{"ok":true,"data":{"items":[],"has_more":false}}'
+  printf '%s\\n' '{"ok":true,"data":{"items":[{"message_id":"message","body":{"content":"native event"}}]}}'
 fi`);
     const tools = new Map();
     const decisions = yield* Queue.unbounded();
