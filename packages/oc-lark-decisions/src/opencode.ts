@@ -8,6 +8,9 @@ export const Options = Schema.Struct({
   workers: Schema.Int.check(Schema.isGreaterThan(0)).pipe(
     Schema.withDecodingDefault(Effect.succeed(4)),
   ),
+  maxEventAgeSeconds: Schema.Finite.check(Schema.isGreaterThan(0)).pipe(
+    Schema.withDecodingDefault(Effect.succeed(300)),
+  ),
 });
 export interface Options extends Schema.Schema.Type<typeof Options> {}
 
