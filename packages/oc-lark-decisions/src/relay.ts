@@ -1,6 +1,7 @@
 import { Generate } from "@opencode/schema/generate";
 import type { Session } from "@opencode/schema/session";
 import {
+  Array,
   Cause,
   Clock,
   Context,
@@ -16,6 +17,7 @@ import {
   Stream,
 } from "effect";
 import { Lark, LarkError } from "./lark.ts";
+import type { BatchRecord, Outcome } from "./history.ts";
 import { OpenCode, OpenCodeError, type Options } from "./opencode.ts";
 import type { ConversationContext, LarkEvent, Root } from "./transform.ts";
 import { type LoadedTransform, makeTransformLoader, TransformError } from "./transform-loader.ts";
@@ -91,6 +93,10 @@ interface Candidate {
 interface Subscription extends Candidate {
   readonly expiresAt: number;
 }
+interface Batch {
+  readonly root: Root;
+  readonly events: readonly [LarkEvent, ...LarkEvent[]];
+}
 type Command =
   | {
       readonly kind: "activate";
@@ -104,6 +110,7 @@ type Command =
       readonly reply?: Deferred.Deferred<WatchStatus>;
     }
   | { readonly kind: "sourceClosed"; readonly source: Source }
+  | { readonly kind: "delete"; readonly sessionID: Session.ID }
   | {
       readonly kind: "status";
       readonly sessionID: Session.ID;
@@ -178,37 +185,77 @@ export const relayLayer = (options: Pick<Options, "maxEventAgeSeconds">) =>
 
       const start = Effect.fn("Relay.subscription")(function* (subscription: Subscription) {
         const scope = subscription.scope;
-        const batches = yield* Queue.unbounded<{
-          readonly root: Root;
-          readonly events: readonly LarkEvent[];
-        }>();
-        const buffers = new Map<string, { events: LarkEvent[]; timer: Fiber.Fiber<void> }>();
-        const processBatch = Effect.fn("Relay.batch")(function* (batch: {
-          readonly root: Root;
-          readonly events: readonly LarkEvent[];
-        }) {
-          const history = yield* lark.history(batch.root);
-          const context: ConversationContext = { ...batch, history };
-          const result = yield* opencode.decide({
-            questions: subscription.configuration.questions,
-            input: [...subscription.configuration.input, { type: "json", value: context }],
-          });
-          const text = yield* subscription.transform
-            .run({
-              ...context,
-              result,
-            })
-            .pipe(
-              Effect.catchTag("TransformError", (error) =>
-                opencode
-                  .queue({
-                    sessionID: subscription.sessionID,
-                    text: `Transform ${error.operation} error: ${error.message}\nThis batch was discarded. The watch remains active. Fix the transform and call lark_watch again.`,
-                  })
-                  .pipe(Effect.as(null)),
-              ),
-            );
-          if (text !== null) yield* opencode.queue({ sessionID: subscription.sessionID, text });
+        const batches = yield* Queue.unbounded<Batch>();
+        const buffers = new Map<
+          string,
+          { events: [LarkEvent, ...LarkEvent[]]; timer: Fiber.Fiber<void> }
+        >();
+        const processBatch = Effect.fn("Relay.batch")(function* (batch: Batch) {
+          let stage: Extract<Outcome, { kind: "failed" }>["stage"] = "history";
+          let answers: BatchRecord["answers"];
+          yield* Effect.gen(function* (): Effect.gen.Return<Outcome, LarkError | OpenCodeError> {
+            const history = yield* lark.history(batch.root);
+            const context: ConversationContext = { ...batch, history };
+            stage = "decision";
+            const result = yield* opencode.decide({
+              questions: subscription.configuration.questions,
+              input: [...subscription.configuration.input, { type: "json", value: context }],
+            });
+            answers = result.answers;
+            stage = "transform";
+            const transformed = yield* subscription.transform
+              .run({
+                ...context,
+                result,
+              })
+              .pipe(Effect.result);
+            if (transformed._tag === "Failure") {
+              const error = transformed.failure;
+              const diagnostic = yield* opencode
+                .queue({
+                  sessionID: subscription.sessionID,
+                  text: `Transform ${error.operation} error: ${error.message}\nThis batch was discarded. The watch remains active. Fix the transform and call lark_watch again.`,
+                })
+                .pipe(Effect.result);
+              if (diagnostic._tag === "Failure") {
+                yield* Effect.logWarning("Lark batch discarded", diagnostic.failure);
+                return {
+                  kind: "failed",
+                  stage: "transform",
+                  message: `${error.message.slice(0, 240)}; diagnostic queue: ${diagnostic.failure.message.slice(0, 240)}`,
+                };
+              }
+              return { kind: "failed", stage: "transform", message: error.message };
+            }
+            const text = transformed.success;
+            if (text === null) return { kind: "skipped" };
+            stage = "queue";
+            yield* opencode.queue({ sessionID: subscription.sessionID, text });
+            return { kind: "queued" };
+          }).pipe(
+            Effect.onExit((exit) =>
+              Effect.gen(function* () {
+                if (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)) return;
+                const terminal: Outcome = Exit.isFailure(exit)
+                  ? { kind: "failed", stage, message: Cause.pretty(exit.cause) }
+                  : exit.value;
+                const first = batch.events[0];
+                const last = Array.lastNonEmpty(batch.events);
+                yield* opencode.recordBatch(subscription.sessionID, {
+                  completedAt: yield* Clock.currentTimeMillis,
+                  root: batch.root,
+                  eventCount: batch.events.length,
+                  firstMessageId: first.message_id,
+                  lastMessageId: last.message_id,
+                  ...(answers === undefined ? {} : { answers }),
+                  outcome:
+                    terminal.kind === "failed"
+                      ? { ...terminal, message: terminal.message.slice(0, 512) }
+                      : terminal,
+                });
+              }),
+            ),
+          );
         });
         yield* Queue.take(batches).pipe(
           Effect.flatMap((batch) =>
@@ -228,9 +275,11 @@ export const relayLayer = (options: Pick<Options, "maxEventAgeSeconds">) =>
               };
               const key = JSON.stringify(root);
               const previous = buffers.get(key);
-              const events = previous?.events ?? [];
-              events.push(event);
-              if (previous) yield* Fiber.interrupt(previous.timer);
+              const events: [LarkEvent, ...LarkEvent[]] = previous?.events ?? [event];
+              if (previous) {
+                events.push(event);
+                yield* Fiber.interrupt(previous.timer);
+              }
               const timer = yield* Effect.sleep(
                 subscription.configuration.debounceMilliseconds,
               ).pipe(
@@ -311,6 +360,12 @@ export const relayLayer = (options: Pick<Options, "maxEventAgeSeconds">) =>
                   if (subscription.source === command.source) yield* close(subscription);
                 }
                 return;
+              case "delete": {
+                const subscription = registry.get(command.sessionID);
+                if (subscription) yield* close(subscription);
+                yield* opencode.removeHistory(command.sessionID);
+                return;
+              }
               case "status": {
                 yield* Deferred.succeed(command.reply, toStatus(registry.get(command.sessionID)));
               }
@@ -321,7 +376,7 @@ export const relayLayer = (options: Pick<Options, "maxEventAgeSeconds">) =>
         Effect.forkScoped,
       );
       yield* opencode.deletedSessions.pipe(
-        Stream.runForEach((sessionID) => Queue.offer(commands, { kind: "stop", sessionID })),
+        Stream.runForEach((sessionID) => Queue.offer(commands, { kind: "delete", sessionID })),
         Effect.catch((error) => Effect.logWarning("Session deletion listener stopped", error)),
         Effect.forkScoped,
       );

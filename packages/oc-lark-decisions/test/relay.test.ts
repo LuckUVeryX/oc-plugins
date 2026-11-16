@@ -17,6 +17,7 @@ import {
   Stream,
 } from "effect";
 import { TestClock } from "effect/testing";
+import type { BatchRecord } from "../src/history.ts";
 import { Lark, LarkError } from "../src/lark.ts";
 import { type DecisionInput, OpenCode, OpenCodeError, Options } from "../src/opencode.ts";
 import { Relay, relayLayer, WatchInput } from "../src/relay.ts";
@@ -52,6 +53,9 @@ const makeFixture = Effect.fn("Test.relay")(function* (maxEventAgeSeconds = 300)
     readonly text: string;
   }>();
   const roots = yield* Queue.unbounded<Root>();
+  const records = yield* Queue.unbounded<{ sessionID: Session.ID; record: BatchRecord }>();
+  const histories = new Map<Session.ID, readonly BatchRecord[]>();
+  let recordEffect: Effect.Effect<void> = Effect.void;
   const cleanupStarted = yield* Queue.unbounded<void>();
   let cleanup: Effect.Effect<void> = Effect.void;
   let queueEffect: Effect.Effect<void, OpenCodeError> = Effect.void;
@@ -93,6 +97,17 @@ const makeFixture = Effect.fn("Test.relay")(function* (maxEventAgeSeconds = 300)
     Layer.succeed(
       OpenCode,
       OpenCode.of({
+        history: (sessionID) => Effect.sync(() => histories.get(sessionID) ?? []),
+        recordBatch: (sessionID, record) =>
+          Effect.gen(function* () {
+            yield* recordEffect;
+            histories.set(sessionID, [record, ...(histories.get(sessionID) ?? [])]);
+            yield* Queue.offer(records, { sessionID, record });
+          }),
+        removeHistory: (sessionID) =>
+          Effect.sync(() => {
+            histories.delete(sessionID);
+          }),
         decide: (input) =>
           Queue.offer(decisions, input).pipe(Effect.andThen(Effect.suspend(() => decisionEffect))),
         queue: (input) =>
@@ -118,6 +133,11 @@ const makeFixture = Effect.fn("Test.relay")(function* (maxEventAgeSeconds = 300)
     decisions,
     delivered,
     roots,
+    records,
+    histories,
+    setRecord: (effect: Effect.Effect<void>) => {
+      recordEffect = effect;
+    },
     cleanupStarted,
     close: Scope.close(scope, Exit.void),
     opened: () => opened,
@@ -149,6 +169,131 @@ const makeFixture = Effect.fn("Test.relay")(function* (maxEventAgeSeconds = 300)
 const fixture = Schema.decodeUnknownEffect(Options)({
   model: { providerID: "operator-provider", id: "operator-model" },
 }).pipe(Effect.flatMap(({ maxEventAgeSeconds }) => makeFixture(maxEventAgeSeconds)));
+
+for (const kind of [
+  "skipped",
+  "queued",
+  "history",
+  "decision",
+  "transform",
+  "queue",
+  "diagnostic",
+] as const) {
+  it.effect(`records exactly one terminal outcome for ${kind} and continues later batches`, () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const transform =
+        kind === "skipped"
+          ? "export default () => null"
+          : kind === "transform" || kind === "diagnostic"
+            ? 'export default () => { throw new Error("transform failed"); }'
+            : 'export default () => "prompt text"';
+      const pass = { ...configuration(), transform };
+      if (kind === "history") {
+        f.setHistory(Effect.fail(new LarkError({ operation: "history", cause: "history failed" })));
+      }
+      if (kind === "decision") {
+        f.setDecision(
+          Effect.fail(new OpenCodeError({ operation: "decide", cause: "decision failed" })),
+        );
+      }
+      if (kind === "queue" || kind === "diagnostic") {
+        f.setQueue(Effect.fail(new OpenCodeError({ operation: "queue", cause: "queue failed" })));
+      }
+      yield* f.relay.watch({ sessionID: sessionA, configuration: pass });
+      yield* Queue.offerAll(f.source, [event("first"), event("last")]);
+      yield* TestClock.adjust(0);
+      yield* TestClock.adjust("500 millis");
+      const { record, sessionID } = yield* Queue.take(f.records);
+      expect(sessionID).toBe(sessionA);
+      expect(record).toMatchObject({
+        completedAt: 500,
+        root: { chatId: "chat", rootId: "root" },
+        eventCount: 2,
+        firstMessageId: "first",
+        lastMessageId: "last",
+      });
+      if (kind === "skipped" || kind === "queued") {
+        expect(record.outcome).toEqual({ kind });
+      } else {
+        expect(record.outcome).toMatchObject({
+          kind: "failed",
+          stage: kind === "diagnostic" ? "transform" : kind,
+        });
+        if (record.outcome.kind === "failed") {
+          expect(record.outcome.message.length).toBeLessThanOrEqual(512);
+          if (kind === "diagnostic") {
+            expect(record.outcome.message).toContain("transform failed");
+            expect(record.outcome.message).toContain("queue failed");
+          }
+        }
+      }
+      expect(record.answers).toEqual(
+        kind === "history" || kind === "decision"
+          ? undefined
+          : [
+              { type: "predicate", name: "urgent", probability: 0.9 },
+              { type: "error", name: "failed", reason: "individual failure" },
+            ],
+      );
+      expect(record).not.toHaveProperty("events");
+      expect(record).not.toHaveProperty("history");
+      expect(record).not.toHaveProperty("text");
+      expect(yield* Queue.size(f.delivered)).toBe(
+        kind === "queued" || kind === "transform" ? 1 : 0,
+      );
+      if (kind === "transform") {
+        expect((yield* Queue.take(f.delivered)).text).toContain("This batch was discarded.");
+      }
+      expect((yield* f.relay.status({ sessionID: sessionA })).state).toBe("active");
+      yield* Queue.offer(f.source, event("next"));
+      yield* TestClock.adjust(0);
+      yield* TestClock.adjust("500 millis");
+      expect((yield* Queue.take(f.records)).record.firstMessageId).toBe("next");
+      expect(yield* Queue.size(f.records)).toBe(0);
+    }),
+  );
+}
+
+it.effect(
+  "stop and replacement retain history and active or stopped deletion waits for pending writes",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.relay.watch({ sessionID: sessionA, configuration: configuration() });
+      yield* Queue.offer(f.source, event());
+      yield* TestClock.adjust(0);
+      yield* TestClock.adjust("500 millis");
+      yield* Queue.take(f.records);
+      yield* f.relay.stop({ sessionID: sessionA });
+      expect(f.histories.get(sessionA)?.length).toBe(1);
+      yield* f.relay.watch({ sessionID: sessionA, configuration: configuration() });
+      yield* f.relay.watch({ sessionID: sessionA, configuration: configuration("replacement") });
+      expect(f.histories.get(sessionA)?.length).toBe(1);
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      f.setRecord(
+        Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release))),
+      );
+      yield* Queue.offer(f.source, event("pending"));
+      yield* TestClock.adjust(0);
+      yield* TestClock.adjust("500 millis");
+      yield* Deferred.await(started);
+      yield* Queue.offer(f.deleted, sessionA);
+      yield* TestClock.adjust(0);
+      const status = yield* f.relay.status({ sessionID: sessionA }).pipe(Effect.forkScoped);
+      yield* TestClock.adjust(0);
+      expect(f.histories.get(sessionA)?.length).toBe(1);
+      yield* Deferred.succeed(release, undefined);
+      expect(yield* Fiber.join(status)).toEqual({ state: "stopped" });
+      expect(f.histories.has(sessionA)).toBe(false);
+      f.histories.set(sessionB, f.histories.get(sessionA) ?? []);
+      yield* Queue.offer(f.deleted, sessionB);
+      yield* TestClock.adjust(0);
+      yield* f.relay.status({ sessionID: sessionB });
+      expect(f.histories.has(sessionB)).toBe(false);
+    }),
+);
 
 it.effect("defaults the event age limit to five minutes and validates overrides", () =>
   Effect.gen(function* () {
