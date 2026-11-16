@@ -39,7 +39,40 @@ messages and a suggested next step.
 
 The agent writes the transform and starts the watch. Describe which messages need attention and what you want the agent to do next. Matching messages queue prompts in this OpenCode session, not in Lark.
 
+## Example: personal attention triage
+
+The tools work directly with any decision policy, without a skill.
+As an example, the [lark-attention skill](../../.agents/skills/lark-attention/SKILL.md)
+helps an agent turn your responsibilities and current priorities into a watch
+configuration. It separates relevance, unresolved work, the next actor, and
+timing. Matching conversations return to one persistent session for investigation
+and draft replies. It does not authorize automatic sending.
+
+Copy the entire `lark-attention` directory into your session project's
+`.agents/skills/` directory or your global `~/.config/opencode/skills/` directory.
+Alternatively, add this checkout's absolute `.agents/skills` path to the
+`skills` array in your OpenCode configuration. Installing the plugin alone does
+not install the skill.
+
+Then ask:
+
+```text
+Use lark-attention to draft my attention profile and watch configuration.
+Show what would match and what would be ignored. Do not start the watch yet.
+```
+
+After reviewing the profile, ask the same session to start it for a chosen
+duration. The decision model sees the profile supplied in `input`, not the
+session's conversation. The skill includes reusable questions, a draft-only
+transform, and authored classification examples. Tests verify their schema and
+routing compatibility, not the model's classification accuracy.
+
+## Watch lifetime
+
 Each conversation waits for 30 seconds without a new message before evaluation. The watch expires after two hours. Ask for a different quiet period or duration to change these defaults. New messages reset the quiet period, not the expiry time.
+
+The session can persist after the watch stops. Watches are in memory and do not
+survive a plugin restart. Use `lark_status` to check listening state and expiry.
 
 The default is 4 workers per active watch. To change this, set `options.workers` to a positive integer. The agent cannot change the configured model or worker count.
 

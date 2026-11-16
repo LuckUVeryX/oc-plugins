@@ -36,6 +36,10 @@ Then add a package directory to your OpenCode config:
 For Lark transforms, replace `oc-lark-relay/transform` imports with `oc-lark-decisions/transform`.
 The runtime plugin ID is still `oc-lark-relay`.
 
+For an example workflow built on the Lark tools, see the
+[lark-attention skill](.agents/skills/lark-attention/SKILL.md).
+The tools also work directly without a skill.
+
 ## Develop
 
 Use Bun 1.4.4:
