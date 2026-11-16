@@ -23,16 +23,23 @@ export class Lark extends Context.Service<
   }
 >()("oc-lark-relay/Lark") {}
 
+const NativeMessage = Schema.Struct({
+  ...HistoryMessage.fields,
+  content: Schema.optionalKey(Schema.String),
+  body: Schema.Struct({ content: Schema.String }),
+});
+
+const RootResponse = Schema.Struct({
+  ok: Schema.Literal(true),
+  data: Schema.Struct({
+    items: Schema.Array(NativeMessage),
+  }),
+});
+
 const HistoryResponse = Schema.Struct({
   ok: Schema.Literal(true),
   data: Schema.Struct({
-    items: Schema.Array(
-      Schema.Struct({
-        ...HistoryMessage.fields,
-        content: Schema.optionalKey(Schema.String),
-        body: Schema.Struct({ content: Schema.String }),
-      }),
-    ),
+    items: Schema.Array(NativeMessage),
     has_more: Schema.Boolean,
   }),
 });
@@ -51,6 +58,22 @@ export const larkLayer = Layer.effect(
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const error = (operation: string) => (cause: unknown) => new LarkError({ operation, cause });
+    const request = Effect.fn("Lark.request")(function* (args: ReadonlyArray<string>) {
+      const process = yield* spawner.spawn(
+        ChildProcess.make("lark-cli", ["api", "GET", ...args, "--json"]),
+      );
+      const [stdout, stderr, code] = yield* Effect.all(
+        [
+          process.stdout.pipe(Stream.decodeText(), Stream.mkString),
+          process.stderr.pipe(Stream.decodeText(), Stream.mkString),
+          process.exitCode,
+        ],
+        { concurrency: "unbounded" },
+      );
+      if (code !== 0)
+        return yield* Effect.fail(new LarkError({ operation: "history", cause: stderr }));
+      return yield* decodeJson(stdout).pipe(Effect.mapError(error("history JSON")));
+    }, Effect.scoped);
     return Lark.of({
       open: Effect.fn("Lark.open")(function* () {
         const process = yield* spawner
@@ -108,46 +131,38 @@ export const larkLayer = Layer.effect(
         yield* Deferred.await(ready);
         return Stream.fromQueue(events);
       }),
-      history: Effect.fn("Lark.history")(function* (root: Root) {
-        return yield* Effect.scoped(
-          Effect.gen(function* () {
-            const process = yield* spawner.spawn(
-              ChildProcess.make("lark-cli", [
-                "api",
-                "GET",
+      history: Effect.fn("Lark.history")(
+        function* (root: Root) {
+          const resolved = yield* request([
+            `/open-apis/im/v1/messages/${encodeURIComponent(root.rootId)}`,
+          ]).pipe(Effect.flatMap(Schema.decodeUnknownEffect(RootResponse)));
+          const message = resolved.data.items.find((item) => item.message_id === root.rootId);
+          if (!message)
+            return yield* Effect.fail(
+              new LarkError({ operation: "history", cause: `Message ${root.rootId} not found` }),
+            );
+          const response = message.thread_id
+            ? yield* request([
                 "/open-apis/im/v1/messages",
                 "--params",
                 JSON.stringify({
-                  container_id_type: "chat",
-                  container_id: root.chatId,
+                  container_id_type: "thread",
+                  container_id: message.thread_id,
                   sort_type: "ByCreateTimeDesc",
                   page_size: 5,
                 }),
-                "--json",
-              ]),
-            );
-            const [stdout, stderr, code] = yield* Effect.all(
-              [
-                process.stdout.pipe(Stream.decodeText(), Stream.mkString),
-                process.stderr.pipe(Stream.decodeText(), Stream.mkString),
-                process.exitCode,
-              ],
-              { concurrency: "unbounded" },
-            );
-            if (code !== 0)
-              return yield* Effect.fail(new LarkError({ operation: "history", cause: stderr }));
-            const json = yield* decodeJson(stdout).pipe(Effect.mapError(error("history JSON")));
-            const response = yield* Schema.decodeUnknownEffect(HistoryResponse)(json);
-            return {
-              items: response.data.items.map(({ body, ...message }) => ({
-                ...message,
-                content: body.content,
-              })),
-              hasMore: response.data.has_more,
-            };
-          }),
-        ).pipe(Effect.mapError(error("history")));
-      }),
+              ]).pipe(Effect.flatMap(Schema.decodeUnknownEffect(HistoryResponse)))
+            : { data: { items: [message], has_more: false } };
+          return {
+            items: response.data.items.map(({ body, ...item }) => ({
+              ...item,
+              content: body.content,
+            })),
+            hasMore: response.data.has_more,
+          };
+        },
+        Effect.mapError(error("history")),
+      ),
     });
   }),
 );

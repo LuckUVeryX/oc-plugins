@@ -43,6 +43,22 @@ fi`);
   }).pipe(Effect.scoped, Effect.provide(BunServices.layer)),
 );
 
+it.live("uses only the standalone message when no thread exists", () =>
+  Effect.gen(function* () {
+    const message = { message_id: "om_single", body: { content: "Standalone message" } };
+    const { lark, directory, fs } = yield* controlledCLI(`
+printf '%s\\n' "$@" >> "$(dirname "$0")/history-args"
+printf '%s\\n' '${JSON.stringify({ ok: true, data: { items: [message] } })}'`);
+    expect(yield* lark.history({ chatId: "oc_shared", rootId: "om_single" })).toEqual({
+      items: [{ message_id: "om_single", content: "Standalone message" }],
+      hasMore: false,
+    });
+    expect(yield* fs.readFileString(`${directory}/history-args`)).toBe(
+      "api\nGET\n/open-apis/im/v1/messages/om_single\n--json\n",
+    );
+  }).pipe(Effect.scoped, Effect.provide(BunServices.layer)),
+);
+
 it.live(
   "owns the real CLI process, recognizes readiness, decodes NDJSON, and awaits process cleanup",
   () =>
@@ -57,7 +73,11 @@ if [ "$1" = event ]; then
   read waiting
 else
   printf '%s\\n' "$@" >> "$(dirname "$0")/history-args"
-  printf '%s\\n' '{"ok":true,"data":{"items":[{"message_id":"message","body":{"content":"{\\"text\\":\\"raw\\"}"}}],"has_more":true}}'
+  if [ "$3" = "/open-apis/im/v1/messages/root" ]; then
+    printf '%s\\n' '{"ok":true,"data":{"items":[{"message_id":"root","thread_id":"thread","body":{"content":"root"}}]}}'
+  else
+    printf '%s\\n' '{"ok":true,"data":{"items":[{"message_id":"message","body":{"content":"{\\"text\\":\\"raw\\"}"}}],"has_more":true}}'
+  fi
 fi`);
       const stream = yield* lark.open().pipe(Scope.provide(scope));
       expect(yield* fs.readFileString(`${directory}/event-args`)).toBe(
@@ -79,7 +99,7 @@ fi`);
         hasMore: true,
       });
       expect(yield* fs.readFileString(`${directory}/history-args`)).toBe(
-        'api\nGET\n/open-apis/im/v1/messages\n--params\n{"container_id_type":"chat","container_id":"chat","sort_type":"ByCreateTimeDesc","page_size":5}\n--json\n',
+        'api\nGET\n/open-apis/im/v1/messages/root\n--json\napi\nGET\n/open-apis/im/v1/messages\n--params\n{"container_id_type":"thread","container_id":"thread","sort_type":"ByCreateTimeDesc","page_size":5}\n--json\n',
       );
       yield* Scope.close(scope, Exit.void);
       expect(yield* fs.readFileString(`${directory}/cleaned`)).toBe("cleaned");
