@@ -42,7 +42,7 @@ The agent writes the transform and starts the watch. Describe which messages nee
 
 Each conversation waits for 30 seconds without a new message before evaluation. The watch expires after two hours. Ask for a different quiet period or duration to change these defaults. New messages reset the quiet period, not the expiry time.
 
-The default is 4 workers per active watch. To change this, set `options.workers` to a positive integer. The agent cannot change the configured model or worker count.
+Each watch processes batches one at a time in queue order. Watches run independently. The agent cannot change the configured model.
 
 Set `options.maxEventAgeSeconds` to a positive number to limit incoming event age across all watches. The default is 300 seconds. Age uses the message's `create_time` in milliseconds. Events exactly at the limit are accepted.
 

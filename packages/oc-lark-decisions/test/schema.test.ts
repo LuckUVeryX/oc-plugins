@@ -64,20 +64,13 @@ it.effect(
     }),
 );
 
-it.effect("defaults operator workers to four and accepts only positive integers", () =>
+it.effect("ignores removed worker configuration and keeps the model operator-controlled", () =>
   Effect.gen(function* () {
     const model = { providerID: "operator-provider", id: "operator-model" };
-    expect((yield* Schema.decodeUnknownEffect(Options)({ model })).workers).toBe(4);
-    for (const workers of [1, 2, 6]) {
-      expect((yield* Schema.decodeUnknownEffect(Options)({ model, workers })).workers).toBe(
-        workers,
-      );
-    }
-    for (const workers of [0, -1, 1.5, Infinity, -Infinity, NaN]) {
-      expect(
-        (yield* Schema.decodeUnknownEffect(Options)({ model, workers }).pipe(Effect.exit))._tag,
-      ).toBe("Failure");
-    }
+    expect(yield* Schema.decodeUnknownEffect(Options)({ model, workers: 100 })).toEqual({
+      model,
+      maxEventAgeSeconds: 300,
+    });
     const watch = yield* Schema.decodeUnknownEffect(WatchInput)({
       ...input,
       workers: 100,

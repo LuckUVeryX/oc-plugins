@@ -121,7 +121,7 @@ const toStatus = (subscription: Subscription | undefined): WatchStatus =>
       }
     : stopped;
 
-export const relayLayer = (options: Pick<Options, "workers" | "maxEventAgeSeconds">) =>
+export const relayLayer = (options: Pick<Options, "maxEventAgeSeconds">) =>
   Layer.effect(
     Relay,
     Effect.gen(function* () {
@@ -210,17 +210,15 @@ export const relayLayer = (options: Pick<Options, "workers" | "maxEventAgeSecond
             );
           if (text !== null) yield* opencode.queue({ sessionID: subscription.sessionID, text });
         });
-        for (let worker = 0; worker < options.workers; worker++) {
-          yield* Queue.take(batches).pipe(
-            Effect.flatMap((batch) =>
-              processBatch(batch).pipe(
-                Effect.catch((error) => Effect.logWarning("Lark batch discarded", error)),
-              ),
+        yield* Queue.take(batches).pipe(
+          Effect.flatMap((batch) =>
+            processBatch(batch).pipe(
+              Effect.catch((error) => Effect.logWarning("Lark batch discarded", error)),
             ),
-            Effect.forever,
-            Effect.forkIn(scope),
-          );
-        }
+          ),
+          Effect.forever,
+          Effect.forkIn(scope),
+        );
         yield* Stream.fromQueue(subscription.events).pipe(
           Stream.runForEach((event) =>
             Effect.gen(function* () {
