@@ -51,7 +51,7 @@ If a transform fails during a batch, the plugin sends feedback to the agent so i
 
 - The plugin watches received messages only and skips raw interactive-card messages.
 - The decision policy selects relevant conversations. There is no chat or thread filter option.
-- The plugin fetches one recent page of chat history, not the full conversation.
+- The plugin fetches the five most recent messages in the chat, not the full conversation.
 - The plugin does not reconnect automatically after the Lark event source exits.
 - Message content and recent chat history go to the decision model. Paid model requests can incur costs.
 - Transforms run with the local plugin's privileges and are not sandboxed.
