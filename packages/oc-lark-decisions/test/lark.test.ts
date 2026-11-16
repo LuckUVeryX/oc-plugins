@@ -17,6 +17,7 @@ if [ "$1" = event ]; then
   printf '%s\\n' '{"type":"im.message.receive_v1","chat_id":"chat","message_id":"message","root_id":"root","thread_id":"thread","content":"rendered"}'
   read waiting
 else
+  printf '%s\\n' "$@" >> "$(dirname "$0")/history-args"
   printf '%s\\n' '{"ok":true,"data":{"items":[{"message_id":"message","body":{"content":"{\\"text\\":\\"raw\\"}"}}],"has_more":true}}'
 fi`);
       const stream = yield* lark.open().pipe(Scope.provide(scope));
@@ -38,6 +39,9 @@ fi`);
         items: [{ message_id: "message", content: '{"text":"raw"}' }],
         hasMore: true,
       });
+      expect(yield* fs.readFileString(`${directory}/history-args`)).toBe(
+        'api\nGET\n/open-apis/im/v1/messages\n--params\n{"container_id_type":"chat","container_id":"chat","sort_type":"ByCreateTimeDesc","page_size":5}\n--json\n',
+      );
       yield* Scope.close(scope, Exit.void);
       expect(yield* fs.readFileString(`${directory}/cleaned`)).toBe("cleaned");
     }).pipe(Effect.scoped, Effect.provide(BunServices.layer)),
