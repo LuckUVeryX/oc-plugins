@@ -34,7 +34,7 @@ async function dependency(from, name, entry) {
 for (const manifest of expected.packages) {
   const module = await import(manifest.name);
   const plugin = module.default;
-  assert.equal(plugin.id, manifest.name === "oc-lark-decisions" ? "oc-lark-relay" : manifest.name);
+  assert.equal(plugin.id, manifest.name);
   assert.equal(typeof plugin.effect, "function");
   const entry = fileURLToPath(import.meta.resolve(manifest.name));
   await dependency(entry, "effect", "effect");

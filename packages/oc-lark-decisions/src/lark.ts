@@ -21,7 +21,7 @@ export class Lark extends Context.Service<
     >;
     readonly history: (root: Root) => Effect.Effect<History, LarkError>;
   }
->()("oc-lark-relay/Lark") {}
+>()("oc-lark-decisions/Lark") {}
 
 const NativeMessage = Schema.Struct({
   ...HistoryMessage.fields,

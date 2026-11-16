@@ -26,7 +26,7 @@ For a local checkout, use its `packages/oc-lark-decisions` directory instead.
 The tested baseline is OpenCode 2.3.0 and Effect 4.1.0.
 OpenCode needs access to `lark-cli` configured with bot access to received-message events and chat message history.
 
-The package name is `oc-lark-decisions`. Its existing runtime plugin ID remains `oc-lark-relay`.
+The package name and runtime plugin ID are both `oc-lark-decisions`.
 Use `oc-lark-decisions/transform` for transform type imports.
 
 Then ask OpenCode to watch for messages:
