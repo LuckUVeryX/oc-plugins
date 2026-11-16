@@ -42,10 +42,7 @@ const configuration = (text = "literal", timeoutSeconds = 10): WatchInput =>
     debounceMilliseconds: 500,
   });
 
-const fixtureWithWorkers = Effect.fn("Test.relay")(function* (
-  workers: number,
-  maxEventAgeSeconds = 300,
-) {
+const makeFixture = Effect.fn("Test.relay")(function* (maxEventAgeSeconds = 300) {
   const source = yield* Queue.unbounded<LarkEvent, LarkError>();
   let currentSource = source;
   const deleted = yield* Queue.unbounded<Session.ID>();
@@ -109,7 +106,7 @@ const fixtureWithWorkers = Effect.fn("Test.relay")(function* (
   );
   const scope = yield* Scope.fork(yield* Scope.Scope);
   const context = yield* Layer.build(
-    relayLayer({ workers, maxEventAgeSeconds }).pipe(
+    relayLayer({ maxEventAgeSeconds }).pipe(
       Layer.provide(services),
       Layer.provide(BunServices.layer),
     ),
@@ -151,11 +148,7 @@ const fixtureWithWorkers = Effect.fn("Test.relay")(function* (
 
 const fixture = Schema.decodeUnknownEffect(Options)({
   model: { providerID: "operator-provider", id: "operator-model" },
-}).pipe(
-  Effect.flatMap(({ workers, maxEventAgeSeconds }) =>
-    fixtureWithWorkers(workers, maxEventAgeSeconds),
-  ),
-);
+}).pipe(Effect.flatMap(({ maxEventAgeSeconds }) => makeFixture(maxEventAgeSeconds)));
 
 it.effect("defaults the event age limit to five minutes and validates overrides", () =>
   Effect.gen(function* () {
@@ -177,7 +170,7 @@ for (const maxEventAgeSeconds of [300, 60]) {
     Effect.gen(function* () {
       const now = 1_000_000;
       yield* TestClock.setTime(now);
-      const f = yield* fixtureWithWorkers(4, maxEventAgeSeconds);
+      const f = yield* makeFixture(maxEventAgeSeconds);
       yield* f.relay.watch({ sessionID: sessionA, configuration: configuration() });
       const cutoff = now - maxEventAgeSeconds * 1000;
       const boundary = { ...event("boundary"), create_time: String(cutoff) };
@@ -491,7 +484,7 @@ it.effect("events and reads do not renew expiry; deletion and unload cancel only
 
 it.effect("unload awaits worker interruption and final source cleanup without late delivery", () =>
   Effect.gen(function* () {
-    const f = yield* fixtureWithWorkers(1);
+    const f = yield* fixture;
     const working = yield* Deferred.make<void>();
     const interrupting = yield* Deferred.make<void>();
     const releaseWorker = yield* Deferred.make<void>();
@@ -659,7 +652,7 @@ it.effect(
   "semantically invalid TypeScript activates and invalid output discards only its batch",
   () =>
     Effect.gen(function* () {
-      const f = yield* fixtureWithWorkers(1);
+      const f = yield* fixture;
       const active = yield* f.relay.watch({
         sessionID: sessionA,
         configuration: {
@@ -771,7 +764,7 @@ for (const failure of [
     `reports ${failure.message} to the owning session and keeps its worker processing`,
     () =>
       Effect.gen(function* () {
-        const f = yield* fixtureWithWorkers(1);
+        const f = yield* fixture;
         const active = yield* f.relay.watch({
           sessionID: sessionB,
           configuration: {
@@ -842,7 +835,7 @@ it.effect("null skips delivery and whole-call failures discard only their batch"
   }),
 );
 
-it.effect("batches by root, bounds workers at four, and replacement interrupts accepted work", () =>
+it.effect("replacement interrupts the running batch and discards pending batches", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
     const started = yield* Queue.unbounded<void>();
@@ -861,14 +854,15 @@ it.effect("batches by root, bounds workers at four, and replacement interrupts a
     }
     yield* TestClock.adjust(0);
     yield* TestClock.adjust("500 millis");
-    expect(yield* Queue.size(started)).toBe(4);
-    expect(yield* Queue.size(f.roots)).toBe(4);
+    expect(yield* Queue.size(started)).toBe(1);
+    expect(yield* Queue.size(f.roots)).toBe(1);
     expect(yield* Queue.size(f.decisions)).toBe(0);
     yield* f.relay.watch({ sessionID: sessionA, configuration: configuration("replacement") });
-    expect(yield* Queue.size(interrupted)).toBe(4);
+    expect(yield* Queue.size(interrupted)).toBe(1);
     yield* Deferred.succeed(release, { items: [], hasMore: false });
     yield* TestClock.adjust(0);
     expect(yield* Queue.size(f.delivered)).toBe(0);
+    expect(yield* Queue.size(f.roots)).toBe(1);
     expect(f.opened()).toBe(1);
   }),
 );
@@ -886,30 +880,40 @@ it.effect("replacement expiry is not shortened by the previous deadline", () =>
   }),
 );
 
-for (const workers of [1, 2]) {
-  it.effect(`${workers} configured workers bounds each watch independently`, () =>
-    Effect.gen(function* () {
-      const f = yield* fixtureWithWorkers(workers);
-      const started = yield* Queue.unbounded<void>();
-      const release = yield* Deferred.make<History>();
-      f.setHistory(Queue.offer(started, undefined).pipe(Effect.andThen(Deferred.await(release))));
-      yield* f.relay.watch({ sessionID: sessionA, configuration: configuration("a") });
-      yield* f.relay.watch({ sessionID: sessionB, configuration: configuration("b") });
-      for (let root = 0; root < 3; root++) {
-        yield* Queue.offer(f.source, event(`message-${root}`, `root-${root}`));
-      }
+it.effect("each watch processes batches sequentially without blocking another watch", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const release = yield* Deferred.make<void>();
+    f.setQueue(Deferred.await(release));
+    yield* f.relay.watch({ sessionID: sessionA, configuration: configuration("a") });
+    yield* f.relay.watch({
+      sessionID: sessionB,
+      configuration: {
+        ...configuration("b"),
+        transform: "export default ({root}) => root.rootId",
+      },
+    });
+    for (let root = 0; root < 3; root++) {
+      yield* Queue.offer(f.source, event(`message-${root}`, `root-${root}`));
       yield* TestClock.adjust(0);
       yield* TestClock.adjust("500 millis");
-      expect(yield* Queue.size(started)).toBe(workers * 2);
-      expect(yield* Queue.size(f.decisions)).toBe(0);
-      yield* Deferred.succeed(release, { items: [], hasMore: false });
-      const deliveries = [];
-      for (let batch = 0; batch < 6; batch++) deliveries.push(yield* Queue.take(f.delivered));
-      expect(deliveries.filter(({ sessionID }) => sessionID === sessionA)).toHaveLength(3);
-      expect(deliveries.filter(({ sessionID }) => sessionID === sessionB)).toHaveLength(3);
-    }),
-  );
-}
+    }
+    expect(yield* Queue.size(f.roots)).toBe(2);
+    expect(yield* Queue.size(f.decisions)).toBe(2);
+    expect(yield* Queue.size(f.delivered)).toBe(0);
+    yield* f.relay.stop({ sessionID: sessionA });
+    yield* Deferred.succeed(release, undefined);
+    for (let root = 0; root < 3; root++) {
+      expect(yield* Queue.take(f.delivered)).toEqual({
+        sessionID: sessionB,
+        text: `root-${root}`,
+      });
+    }
+    yield* TestClock.adjust(0);
+    expect(yield* Queue.size(f.roots)).toBe(4);
+    expect(yield* Queue.size(f.delivered)).toBe(0);
+  }),
+);
 
 it.effect(
   "one worker logs failed batches, continues with valid batches, and retains no error state",
@@ -917,7 +921,7 @@ it.effect(
     Effect.gen(function* () {
       const warnings = yield* Queue.unbounded<unknown>();
       yield* Effect.gen(function* () {
-        const f = yield* fixtureWithWorkers(1);
+        const f = yield* fixture;
         const before = yield* f.relay.watch({
           sessionID: sessionA,
           configuration: configuration("good"),
@@ -968,7 +972,7 @@ it.effect("failed transform feedback is logged once and does not stop the worker
   Effect.gen(function* () {
     const warnings = yield* Queue.unbounded<unknown>();
     yield* Effect.gen(function* () {
-      const f = yield* fixtureWithWorkers(1);
+      const f = yield* fixture;
       const active = yield* f.relay.watch({
         sessionID: sessionA,
         configuration: {
