@@ -4,6 +4,61 @@ import { Deferred, Effect, Exit, Logger, Queue, Scope, Stream } from "effect";
 import { LarkError } from "../src/lark.ts";
 import { controlledCLI } from "./fixtures.ts";
 
+it.live("fetches history from the triggering thread, excluding unrelated channel messages", () =>
+  Effect.gen(function* () {
+    const root = {
+      message_id: "om_root",
+      thread_id: "omt_target",
+      body: { content: "Target thread root" },
+    };
+    const reply = {
+      message_id: "om_reply",
+      thread_id: "omt_target",
+      body: { content: "Target thread reply" },
+    };
+    const unrelated = {
+      message_id: "om_unrelated",
+      thread_id: "omt_other",
+      body: { content: "Unrelated channel discussion" },
+    };
+    const { lark } = yield* controlledCLI(`
+if [ "$3" = "/open-apis/im/v1/messages/om_root" ]; then
+  printf '%s\\n' '${JSON.stringify({ ok: true, data: { items: [root] } })}'
+elif printf '%s' "$5" | grep -q '"container_id_type":"thread"' &&
+     printf '%s' "$5" | grep -q '"container_id":"omt_target"'; then
+  printf '%s\\n' '${JSON.stringify({ ok: true, data: { items: [reply], has_more: true } })}'
+else
+  printf '%s\\n' '${JSON.stringify({ ok: true, data: { items: [unrelated], has_more: false } })}'
+fi`);
+    expect(yield* lark.history({ chatId: "oc_shared", rootId: "om_root" })).toEqual({
+      items: [
+        {
+          message_id: "om_reply",
+          thread_id: "omt_target",
+          content: "Target thread reply",
+        },
+      ],
+      hasMore: true,
+    });
+  }).pipe(Effect.scoped, Effect.provide(BunServices.layer)),
+);
+
+it.live("uses only the standalone message when no thread exists", () =>
+  Effect.gen(function* () {
+    const message = { message_id: "om_single", body: { content: "Standalone message" } };
+    const { lark, directory, fs } = yield* controlledCLI(`
+printf '%s\\n' "$@" >> "$(dirname "$0")/history-args"
+printf '%s\\n' '${JSON.stringify({ ok: true, data: { items: [message] } })}'`);
+    expect(yield* lark.history({ chatId: "oc_shared", rootId: "om_single" })).toEqual({
+      items: [{ message_id: "om_single", content: "Standalone message" }],
+      hasMore: false,
+    });
+    expect(yield* fs.readFileString(`${directory}/history-args`)).toBe(
+      "api\nGET\n/open-apis/im/v1/messages/om_single\n--json\n",
+    );
+  }).pipe(Effect.scoped, Effect.provide(BunServices.layer)),
+);
+
 it.live(
   "owns the real CLI process, recognizes readiness, decodes NDJSON, and awaits process cleanup",
   () =>
@@ -18,7 +73,11 @@ if [ "$1" = event ]; then
   read waiting
 else
   printf '%s\\n' "$@" >> "$(dirname "$0")/history-args"
-  printf '%s\\n' '{"ok":true,"data":{"items":[{"message_id":"message","body":{"content":"{\\"text\\":\\"raw\\"}"}}],"has_more":true}}'
+  if [ "$3" = "/open-apis/im/v1/messages/root" ]; then
+    printf '%s\\n' '{"ok":true,"data":{"items":[{"message_id":"root","thread_id":"thread","body":{"content":"root"}}]}}'
+  else
+    printf '%s\\n' '{"ok":true,"data":{"items":[{"message_id":"message","body":{"content":"{\\"text\\":\\"raw\\"}"}}],"has_more":true}}'
+  fi
 fi`);
       const stream = yield* lark.open().pipe(Scope.provide(scope));
       expect(yield* fs.readFileString(`${directory}/event-args`)).toBe(
@@ -40,7 +99,7 @@ fi`);
         hasMore: true,
       });
       expect(yield* fs.readFileString(`${directory}/history-args`)).toBe(
-        'api\nGET\n/open-apis/im/v1/messages\n--params\n{"container_id_type":"chat","container_id":"chat","sort_type":"ByCreateTimeDesc","page_size":5}\n--json\n',
+        'api\nGET\n/open-apis/im/v1/messages/root\n--json\napi\nGET\n/open-apis/im/v1/messages\n--params\n{"container_id_type":"thread","container_id":"thread","sort_type":"ByCreateTimeDesc","page_size":5}\n--json\n',
       );
       yield* Scope.close(scope, Exit.void);
       expect(yield* fs.readFileString(`${directory}/cleaned`)).toBe("cleaned");

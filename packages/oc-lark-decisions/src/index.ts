@@ -40,7 +40,7 @@ export default Plugin.define({
         output: WatchStatus,
         description: `Watch bot-received Lark conversations, evaluate decisions, and queue transformed prompts in this session. Does not send Lark messages.
 
-Each batch combines input with events and five recent chat messages. Questions evaluate independently using the operator's model. Call lark_transform_schema before writing or changing transforms.
+Each batch combines input with events and up to five recent messages from the triggering thread, or only the standalone message itself. Questions evaluate independently using the operator's model. Call lark_transform_schema before writing or changing transforms.
 
 Success replaces this session's watch and renews expiry; preparation failure preserves it. Failed batches are discarded. Source exit stops listening without reconnecting. Replacement and expiry leave queued prompts intact. Model calls may incur cost.`,
         execute: Effect.fn("lark_watch")(function* (configuration, context) {
