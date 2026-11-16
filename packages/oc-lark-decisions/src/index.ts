@@ -27,10 +27,7 @@ export default Plugin.define({
     }).pipe(Effect.orDie);
     const services = Layer.merge(larkLayer, openCodeLayer(ctx, options));
     const runtime = yield* Layer.build(
-      relayLayer({ workers: options.workers }).pipe(
-        Layer.provide(services),
-        Layer.provide(BunServices.layer),
-      ),
+      relayLayer(options).pipe(Layer.provide(services), Layer.provide(BunServices.layer)),
     ).pipe(Effect.orDie);
     const relay = Context.get(runtime, Relay);
     yield* ctx.tool.transform((tools) => {

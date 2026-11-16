@@ -121,7 +121,7 @@ const toStatus = (subscription: Subscription | undefined): WatchStatus =>
       }
     : stopped;
 
-export const relayLayer = (options: Pick<Options, "workers">) =>
+export const relayLayer = (options: Pick<Options, "workers" | "maxEventAgeSeconds">) =>
   Layer.effect(
     Relay,
     Effect.gen(function* () {
@@ -143,6 +143,15 @@ export const relayLayer = (options: Pick<Options, "workers">) =>
           const stream = yield* lark.open();
           const scope = yield* Scope.Scope;
           const start = yield* stream.pipe(
+            Stream.filterEffect((event) =>
+              Effect.gen(function* () {
+                if (!/^\d+$/.test(event.create_time ?? "")) return false;
+                const createdAt = Number(event.create_time);
+                if (!Number.isSafeInteger(createdAt)) return false;
+                const age = (yield* Clock.currentTimeMillis) - createdAt;
+                return age <= options.maxEventAgeSeconds * 1000;
+              }),
+            ),
             Stream.runForEach((event) =>
               Effect.sync(() => {
                 for (const subscription of registry.values()) {
