@@ -31,6 +31,7 @@ const event = (message = "message", root = "root"): LarkEvent => ({
   root_id: root,
   thread_id: "distinct-thread",
   content: `rendered:${message}`,
+  create_time: "0",
 });
 const configuration = (text = "literal", timeoutSeconds = 10): WatchInput =>
   Schema.decodeUnknownSync(WatchInput)({
@@ -41,7 +42,10 @@ const configuration = (text = "literal", timeoutSeconds = 10): WatchInput =>
     debounceMilliseconds: 500,
   });
 
-const fixtureWithWorkers = Effect.fn("Test.relay")(function* (workers: number) {
+const fixtureWithWorkers = Effect.fn("Test.relay")(function* (
+  workers: number,
+  maxEventAgeSeconds = 300,
+) {
   const source = yield* Queue.unbounded<LarkEvent, LarkError>();
   let currentSource = source;
   const deleted = yield* Queue.unbounded<Session.ID>();
@@ -105,7 +109,10 @@ const fixtureWithWorkers = Effect.fn("Test.relay")(function* (workers: number) {
   );
   const scope = yield* Scope.fork(yield* Scope.Scope);
   const context = yield* Layer.build(
-    relayLayer({ workers }).pipe(Layer.provide(services), Layer.provide(BunServices.layer)),
+    relayLayer({ workers, maxEventAgeSeconds }).pipe(
+      Layer.provide(services),
+      Layer.provide(BunServices.layer),
+    ),
   ).pipe(Scope.provide(scope));
   return {
     relay: Context.get(context, Relay),
@@ -144,7 +151,58 @@ const fixtureWithWorkers = Effect.fn("Test.relay")(function* (workers: number) {
 
 const fixture = Schema.decodeUnknownEffect(Options)({
   model: { providerID: "operator-provider", id: "operator-model" },
-}).pipe(Effect.flatMap(({ workers }) => fixtureWithWorkers(workers)));
+}).pipe(
+  Effect.flatMap(({ workers, maxEventAgeSeconds }) =>
+    fixtureWithWorkers(workers, maxEventAgeSeconds),
+  ),
+);
+
+it.effect("defaults the event age limit to five minutes and validates overrides", () =>
+  Effect.gen(function* () {
+    const decode = (maxEventAgeSeconds?: unknown) =>
+      Schema.decodeUnknownEffect(Options)({
+        model: { providerID: "operator-provider", id: "operator-model" },
+        ...(maxEventAgeSeconds === undefined ? {} : { maxEventAgeSeconds }),
+      });
+    expect((yield* decode()).maxEventAgeSeconds).toBe(300);
+    expect((yield* decode(60)).maxEventAgeSeconds).toBe(60);
+    for (const invalid of [0, -1, Infinity]) {
+      expect((yield* decode(invalid).pipe(Effect.result))._tag).toBe("Failure");
+    }
+  }),
+);
+
+for (const maxEventAgeSeconds of [300, 60]) {
+  it.effect(`filters events at ${maxEventAgeSeconds} seconds without resetting quiet time`, () =>
+    Effect.gen(function* () {
+      const now = 1_000_000;
+      yield* TestClock.setTime(now);
+      const f = yield* fixtureWithWorkers(4, maxEventAgeSeconds);
+      yield* f.relay.watch({ sessionID: sessionA, configuration: configuration() });
+      const cutoff = now - maxEventAgeSeconds * 1000;
+      const boundary = { ...event("boundary"), create_time: String(cutoff) };
+      const recent = { ...event("recent"), create_time: String(now) };
+      const { create_time: _, ...missingTimestamp } = event("missing");
+      yield* Queue.offerAll(f.source, [boundary, recent]);
+      yield* TestClock.adjust(0);
+      yield* TestClock.adjust("250 millis");
+      yield* Queue.offerAll(f.source, [
+        { ...event("stale"), create_time: String(cutoff - 1) },
+        missingTimestamp,
+        { ...event("invalid"), create_time: "invalid" },
+      ]);
+      yield* TestClock.adjust(0);
+      yield* TestClock.adjust("250 millis");
+      expect(yield* Queue.size(f.roots)).toBe(1);
+      expect(yield* Queue.size(f.decisions)).toBe(1);
+      expect((yield* Queue.take(f.decisions)).input.at(-1)).toMatchObject({
+        type: "json",
+        value: { events: [boundary, recent] },
+      });
+      expect(yield* Queue.size(f.delivered)).toBe(1);
+    }),
+  );
+}
 
 it.effect(
   "fans out independently and preserves context, the full native result, and literal delivery",
@@ -219,6 +277,7 @@ it.effect(
         message_id: "independent",
         thread_id: "not-the-root",
         content: "independent",
+        create_time: "0",
       };
       yield* Queue.offerAll(f.source, [first, second, independent]);
       yield* TestClock.adjust(0);
