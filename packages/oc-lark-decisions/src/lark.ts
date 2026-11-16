@@ -121,7 +121,7 @@ export const larkLayer = Layer.effect(
                   container_id_type: "chat",
                   container_id: root.chatId,
                   sort_type: "ByCreateTimeDesc",
-                  page_size: 50,
+                  page_size: 5,
                 }),
                 "--json",
               ]),
