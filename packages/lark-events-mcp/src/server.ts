@@ -1,10 +1,11 @@
 import {
+  fromJsonSchema,
   INVALID_PARAMS,
   ProtocolError,
   SUBSCRIPTION_ID_META_KEY,
   McpServer,
 } from "@modelcontextprotocol/server";
-import { Effect, Fiber, PubSub, Schedule, Schema, Stream } from "effect";
+import { Clock, Deferred, Effect, PubSub, Schedule, Schema, Stream } from "effect";
 import type { EventDefinition, LarkCatalog } from "./catalog.ts";
 import { decodeArguments, inputSchemaDocument, matchesFilter } from "./contract.ts";
 import type { EventProducers } from "./producers.ts";
@@ -29,12 +30,71 @@ const streamParams = Schema.toStandardSchemaV1(
 
 const invalidParams = (message: string) => new ProtocolError(INVALID_PARAMS, message);
 
-const describe = (definition: EventDefinition): string => definition.description || definition.name;
+const describe = (definition: EventDefinition): string =>
+  `Lark MCP push subscription. Use watch_mcp_event on lark-events. ${definition.description || definition.name}`;
+
+interface Watch {
+  readonly ended: Deferred.Deferred<string>;
+  readonly finished: Deferred.Deferred<void>;
+  readonly eventName: string;
+  readonly startedAt: string;
+  readonly expiresAt: string;
+}
+
+const watches = new Map<string, Watch>();
 
 export const makeServer = (options: ServerOptions): McpServer => {
   const server = new McpServer(
     { name: "lark-events-mcp", version: "0.0.0" },
     { capabilities: { extensions: { [EVENTS_EXTENSION]: {} } } },
+  );
+
+  server.registerTool("watch_list", { description: "List active Lark MCP watches." }, () => ({
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({
+          watches: [...watches].map(([watchId, { eventName, startedAt, expiresAt }]) => ({
+            watchId,
+            eventName,
+            startedAt,
+            expiresAt,
+          })),
+        }),
+      },
+    ],
+  }));
+  server.registerTool(
+    "watch_stop",
+    {
+      description: "Stop an active Lark MCP watch and wait for cleanup.",
+      inputSchema: fromJsonSchema<{ watchId: string }>({
+        type: "object",
+        properties: {
+          watchId: { type: "string", minLength: 1, description: "ID of the active watch." },
+        },
+        required: ["watchId"],
+        additionalProperties: false,
+      }),
+    },
+    ({ watchId }) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const watch = watches.get(watchId);
+          if (watch) {
+            yield* Deferred.succeed(watch.ended, "Stopped");
+            yield* Deferred.await(watch.finished);
+          }
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ watchId, stopped: watch !== undefined }),
+              },
+            ],
+          };
+        }),
+      ),
   );
 
   server.server.setRequestHandler(
@@ -82,67 +142,104 @@ export const makeServer = (options: ServerOptions): McpServer => {
         const definition = yield* options.catalog
           .schema(params.name)
           .pipe(Effect.mapError((error) => invalidParams(error.message)));
-        const decoded = decodeArguments(definition.payloadSchema, params.arguments ?? {});
+        const decoded = yield* decodeArguments(definition.payloadSchema, params.arguments ?? {});
         if (decoded._tag === "error") return yield* Effect.fail(invalidParams(decoded.message));
-        const filter = decoded.value;
+        const { filter, watchId, durationSeconds } = decoded.value;
+        const ended = yield* Deferred.make<string>();
+        const finished = yield* Deferred.make<void>();
+        const startedAt = yield* Clock.currentTimeMillis;
+        const watch: Watch = {
+          ended,
+          finished,
+          eventName: params.name,
+          startedAt: new Date(startedAt).toISOString(),
+          expiresAt: new Date(startedAt + durationSeconds * 1000).toISOString(),
+        };
+        yield* Effect.addFinalizer(() =>
+          Effect.gen(function* () {
+            if (watches.get(watchId) === watch) watches.delete(watchId);
+            yield* Deferred.succeed(finished, undefined);
+          }),
+        );
+        const registered = yield* Effect.sync(() => {
+          if (watches.has(watchId)) return false;
+          watches.set(watchId, watch);
+          return true;
+        });
+        if (!registered) return yield* Effect.fail(invalidParams("watchId is already active"));
+        yield* Effect.sleep(durationSeconds * 1000).pipe(
+          Effect.andThen(Deferred.succeed(ended, "Expired")),
+          Effect.forkScoped,
+        );
         const producer = yield* options.producers
           .acquire(params.name)
           .pipe(Effect.mapError((error) => new ProtocolError(-32603, error.message)));
         const subscription = yield* PubSub.subscribe(producer.messages);
-        yield* producer.ready.pipe(
-          Effect.mapError((error) => new ProtocolError(-32603, error.message)),
+        const ready = yield* Effect.raceFirst(
+          producer.ready.pipe(
+            Effect.as(true),
+            Effect.mapError((error) => new ProtocolError(-32603, error.message)),
+          ),
+          Deferred.await(ended).pipe(Effect.as(false)),
         );
-        yield* notify("active");
-        const terminatedWith = (message: string) =>
-          notify("terminated", { error: { code: -32000, message } });
-        const recorded = yield* producer.terminal;
-        if (recorded !== undefined) {
-          yield* terminatedWith(recorded);
+        if (!ready) {
+          yield* notify("terminated", {
+            error: { code: -32000, message: yield* Deferred.await(ended) },
+          });
           return {};
         }
-        const heartbeat = yield* Stream.fromSchedule(Schedule.spaced(HEARTBEAT_INTERVAL)).pipe(
-          Stream.runForEach(() => notify("heartbeat")),
-          Effect.forkScoped,
+        const worker = Effect.gen(function* () {
+          yield* notify("active");
+          const recorded = yield* producer.terminal;
+          if (recorded !== undefined) return recorded;
+          let terminationReason: string | undefined;
+          let connected = true;
+          yield* Stream.fromSubscription(subscription).pipe(
+            Stream.takeUntil((message) => message.kind === "terminated"),
+            Stream.runForEach((message) => {
+              switch (message.kind) {
+                case "event":
+                  return matchesFilter(filter, message.payload)
+                    ? notify(
+                        "event",
+                        {
+                          eventId: message.eventId,
+                          name: params.name,
+                          timestamp: message.timestamp,
+                          data: message.payload,
+                        },
+                        { "lark-events-mcp/timestampOrigin": message.timestampOrigin },
+                      )
+                    : Effect.void;
+                case "reconnecting":
+                  connected = false;
+                  return notify("error", {
+                    error: {
+                      code: -32000,
+                      message: "Lark connection reconnecting; events may be missed",
+                    },
+                  });
+                case "reconnected":
+                  if (connected) return Effect.void;
+                  connected = true;
+                  return notify("active");
+                case "terminated":
+                  terminationReason = message.message;
+                  return Effect.void;
+              }
+            }),
+          );
+          return terminationReason ?? "event source closed";
+        });
+        const heartbeat = notify("heartbeat").pipe(
+          Effect.repeat(Schedule.spaced(HEARTBEAT_INTERVAL)),
+          Effect.delay(HEARTBEAT_INTERVAL),
         );
-        let terminationReason: string | undefined;
-        let connected = true;
-        yield* Stream.fromSubscription(subscription).pipe(
-          Stream.takeUntil((message) => message.kind === "terminated"),
-          Stream.runForEach((message) => {
-            switch (message.kind) {
-              case "event":
-                return matchesFilter(filter, message.payload)
-                  ? notify(
-                      "event",
-                      {
-                        eventId: message.eventId,
-                        name: params.name,
-                        timestamp: message.timestamp,
-                        data: message.payload,
-                      },
-                      { "lark-events-mcp/timestampOrigin": message.timestampOrigin },
-                    )
-                  : Effect.void;
-              case "reconnecting":
-                connected = false;
-                return notify("error", {
-                  error: {
-                    code: -32000,
-                    message: "Lark connection reconnecting; events may be missed",
-                  },
-                });
-              case "reconnected":
-                if (connected) return Effect.void;
-                connected = true;
-                return notify("active");
-              case "terminated":
-                terminationReason = message.message;
-                return Effect.void;
-            }
-          }),
+        const reason = yield* Effect.raceFirst(
+          Deferred.await(ended),
+          Effect.raceFirst(worker, heartbeat),
         );
-        yield* Fiber.interrupt(heartbeat);
-        yield* terminatedWith(terminationReason ?? "event source closed");
+        yield* notify("terminated", { error: { code: -32000, message: reason } });
         return {};
       }).pipe(Effect.scoped),
       { signal: ctx.mcpReq.signal },

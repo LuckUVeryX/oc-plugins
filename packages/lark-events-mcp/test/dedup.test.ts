@@ -60,7 +60,7 @@ test("duplicate IDs produce one notification while distinct old events are deliv
                   method: "events/stream",
                   params: {
                     name: "im.message.receive_v1",
-                    arguments: {},
+                    arguments: { watchId: "dedup" },
                   },
                 },
                 Schema.toStandardSchemaV1(Schema.Unknown),
