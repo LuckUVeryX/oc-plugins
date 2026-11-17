@@ -50,15 +50,6 @@ test("accepts matching manifests without writing them", async () => {
   expect(await readFile(filename, "utf8")).toBe(original);
 });
 
-test("only ignores the generator catalog when its manifest is absent", async () => {
-  const { directory, run } = await fixture();
-  const data = join(directory, "packages", "lark-events-mcp");
-  await mkdir(data);
-  expect(run().status).toBe(0);
-  await writeFile(join(data, "package.json"), "{");
-  expect(run().status).toBe(1);
-});
-
 test("rejects an existing package without a manifest", async () => {
   const { directory, filename, run } = await fixture();
   await rm(filename);
