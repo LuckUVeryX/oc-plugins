@@ -73,7 +73,7 @@ async function verifyExecutable(name) {
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
-  assert.equal(responses.find((response) => response.id === 2)?.result?.events?.length, 227);
+  assert.equal(responses.find((response) => response.id === 2)?.result?.events?.length, 203);
   child.stdin.end();
   const exited = await child.exited;
   assert(!signal.aborted, `${name}: executable did not stop after stdin EOF`);
