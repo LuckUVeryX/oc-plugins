@@ -32,8 +32,40 @@ function property(schema: JsonSchema.JsonSchema, ...path: string[]): JsonSchema.
 
 describe("generated SDK event catalog", () => {
   it("generates strict subscription inputs for every event", () => {
+    const scalar = Schema.Struct({
+      type: Schema.Literals(["string", "number", "integer", "boolean"]),
+      enum: Schema.optionalKey(
+        Schema.Array(Schema.Union([Schema.String, Schema.Number, Schema.Boolean])),
+      ),
+    });
+    const inputShape = Schema.Struct({
+      type: Schema.Literal("object"),
+      additionalProperties: Schema.Literal(false),
+      properties: Schema.Struct({
+        filter: Schema.Struct({
+          type: Schema.Literal("object"),
+          additionalProperties: Schema.Literal(false),
+          properties: Schema.Record(
+            Schema.String,
+            Schema.Struct({
+              anyOf: Schema.Tuple([
+                scalar,
+                Schema.Struct({
+                  type: Schema.Literal("array"),
+                  items: scalar,
+                  minItems: Schema.Literal(1),
+                }),
+              ]),
+            }),
+          ),
+        }),
+      }),
+    });
     for (const event of catalog.events) {
       expect(event.inputSchema).toEqual(inputSchemaDocument(event.payloadSchema));
+      const shape = Schema.decodeUnknownSync(inputShape)(event.inputSchema);
+      for (const property of Object.values(shape.properties.filter.properties))
+        expect(property.anyOf[1].items).toEqual(property.anyOf[0]);
       const schema = Schema.make<Schema.Codec<unknown, unknown>>(
         SchemaRepresentation.fromJsonSchemaDocument(
           JsonSchema.fromSchemaDraft2020_12(event.inputSchema),
