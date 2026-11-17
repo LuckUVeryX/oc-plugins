@@ -33,9 +33,16 @@ function run(command, args, cwd, stage) {
 }
 
 function exportTargets(exports) {
+  if (exports === undefined) return [];
   if (typeof exports === "string") return [exports];
   assert(exports && typeof exports === "object", "Missing or unsupported exports");
   return Object.values(exports).flatMap(exportTargets);
+}
+
+function binTargets(bin) {
+  if (typeof bin === "string") return [bin];
+  assert(bin && typeof bin === "object", "Unsupported bin");
+  return Object.values(bin);
 }
 
 try {
@@ -46,7 +53,6 @@ try {
   )) {
     if (!entry.isDirectory()) continue;
     const directory = join(root, "packages", entry.name);
-    if (entry.name === "lark-events-mcp" && !existsSync(join(directory, "package.json"))) continue;
     const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
     assert.equal(manifest.name, entry.name);
     assert.equal(manifest.version, policy.version);
@@ -81,6 +87,10 @@ try {
       assert(target.startsWith("./src/"), `${manifest.name}: export outside src`);
       assert(entries.includes(`package/${target.slice(2)}`), `${manifest.name}: missing ${target}`);
     }
+    for (const target of manifest.bin ? binTargets(manifest.bin) : []) {
+      assert(target.startsWith("./src/"), `${manifest.name}: bin outside src`);
+      assert(entries.includes(`package/${target.slice(2)}`), `${manifest.name}: missing ${target}`);
+    }
     packages.push({ manifest, artifact });
   }
   assert(packages.length > 0, "No packages discovered");
@@ -101,6 +111,10 @@ try {
     await copyFile(
       new URL("./fixtures/install-consumer.mjs", import.meta.url),
       join(consumer, "verify.mjs"),
+    );
+    await copyFile(
+      new URL("./fixtures/lark-sdk-preload.mjs", import.meta.url),
+      join(consumer, "lark-sdk-preload.mjs"),
     );
     await writeFile(
       join(consumer, "expected.json"),
