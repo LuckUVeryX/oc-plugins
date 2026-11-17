@@ -1,6 +1,7 @@
 import { Domain, EventDispatcher, WSClient } from "@larksuiteoapi/node-sdk";
 import {
   Cache,
+  Clock,
   Config,
   Context,
   Deferred,
@@ -50,10 +51,15 @@ const logger = {
   trace: (...message: unknown[]) => console.error(...message),
 };
 
+const STALE_EVENT_CUTOFF_MS = 60 * 60 * 1000;
+
 const metadata = (payload: unknown) => {
   const object = typeof payload === "object" && payload !== null ? payload : {};
   const id = "event_id" in object ? object.event_id : undefined;
-  const time = "create_time" in object ? object.create_time : undefined;
+  const time =
+    "schema" in object && object.schema === "2.0" && "create_time" in object
+      ? object.create_time
+      : undefined;
   const date = typeof time === "string" && /^\d+$/.test(time) ? new Date(Number(time)) : undefined;
   const upstreamTime = date && !Number.isNaN(date.getTime()) ? date.toISOString() : undefined;
   return {
@@ -131,6 +137,12 @@ export const producersLayer = Layer.effect(
             const { upstreamId, ...details } = metadata(payload);
             Effect.runFork(
               Effect.gen(function* () {
+                if (
+                  details.timestampOrigin === "upstream" &&
+                  Date.parse(details.timestamp) <
+                    (yield* Clock.currentTimeMillis) - STALE_EVENT_CUTOFF_MS
+                )
+                  return;
                 if (upstreamId) {
                   const admitted = yield* Cache.get(seen, JSON.stringify([event, upstreamId]));
                   if (yield* Ref.getAndSet(admitted, true)) return;

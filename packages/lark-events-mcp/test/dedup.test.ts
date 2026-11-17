@@ -24,7 +24,7 @@ vi.mock("@larksuiteoapi/node-sdk", async (importOriginal) => {
   };
 });
 
-test("duplicate IDs produce one notification while distinct old events are delivered", async () => {
+test("delivers fresh events once and drops stale events", async () => {
   vi.stubEnv("LARK_APP_ID", "cli_0123456789abcdef");
   vi.stubEnv("LARK_APP_SECRET", "offline");
   try {
@@ -37,65 +37,110 @@ test("duplicate IDs produce one notification while distinct old events are deliv
             const server = makeServer({ catalog, producers });
             const client = new Client({ name: "dedup-test", version: "1" });
             const active = Promise.withResolvers<void>();
+            let activeCount = 0;
             const received: unknown[] = [];
             client.setNotificationHandler(
               "notifications/events/active",
               { params: Schema.toStandardSchemaV1(Schema.Unknown) },
-              () => active.resolve(),
+              () => {
+                if (++activeCount === 2) active.resolve();
+              },
             );
             client.setNotificationHandler(
               "notifications/events/event",
-              { params: Schema.toStandardSchemaV1(Schema.Struct({ data: Schema.Unknown })) },
+              {
+                params: Schema.toStandardSchemaV1(
+                  Schema.Struct({
+                    data: Schema.Unknown,
+                    _meta: Schema.Record(Schema.String, Schema.Unknown),
+                  }),
+                ),
+              },
               (value) => {
-                received.push(value.data);
+                received.push(value);
               },
             );
             const [a, b] = InMemoryTransport.createLinkedPair();
             const controller = new AbortController();
             await server.connect(b);
             await client.connect(a);
-            const request = client
-              .request(
-                {
-                  method: "events/stream",
-                  params: {
-                    name: "im.message.receive_v1",
-                    arguments: { watchId: "dedup" },
+            const watch = (name: string, watchId: string) =>
+              client
+                .request(
+                  {
+                    method: "events/stream",
+                    params: {
+                      name,
+                      arguments: { watchId },
+                    },
                   },
-                },
-                Schema.toStandardSchemaV1(Schema.Unknown),
-                { signal: controller.signal },
-              )
-              .catch(() => {});
+                  Schema.toStandardSchemaV1(Schema.Unknown),
+                  { signal: controller.signal },
+                )
+                .catch(() => {});
+            const requests = [
+              watch("im.message.receive_v1", "dedup"),
+              watch("order_paid", "legacy"),
+            ];
             try {
               await active.promise;
               const dispatcher = sdk.dispatcher;
               if (!dispatcher) throw new Error("SDK dispatcher was not started");
-              const dispatch = (id: string) =>
+              const dispatch = (id: string, time: string) =>
                 dispatcher.invoke(
                   {
                     schema: "2.0",
                     header: {
                       event_id: id,
                       event_type: "im.message.receive_v1",
-                      create_time: "946684800000",
+                      create_time: time,
                     },
                     event: { message: { chat_id: "oc_test", message_id: id } },
                   },
                   { needCheck: false },
                 );
-              await dispatch("same");
-              await dispatch("same");
-              await dispatch("distinct-old");
-              await vi.waitFor(() => expect(JSON.stringify(received)).toContain("distinct-old"));
-              expect(received).toMatchObject([
-                { message: { chat_id: "oc_test", message_id: "same" } },
-                { message: { chat_id: "oc_test", message_id: "distinct-old" } },
-              ]);
-              expect(received).toHaveLength(2);
+              const recent = String(Date.now());
+              await dispatch("same", recent);
+              await dispatch("same", recent);
+              await dispatch("distinct-old", "946684800000");
+              await dispatcher.invoke(
+                {
+                  ts: recent,
+                  uuid: "legacy",
+                  event: { type: "order_paid", create_time: "946684800000" },
+                },
+                { needCheck: false },
+              );
+              await dispatch("fresh-sentinel", recent);
+              await vi.waitFor(() => {
+                expect(JSON.stringify(received)).toContain("fresh-sentinel");
+                expect(JSON.stringify(received)).toContain("order_paid");
+              });
+              expect(received).toEqual(
+                expect.arrayContaining([
+                  expect.objectContaining({
+                    data: expect.objectContaining({
+                      message: { chat_id: "oc_test", message_id: "same" },
+                    }),
+                  }),
+                  expect.objectContaining({
+                    data: expect.objectContaining({
+                      type: "order_paid",
+                      create_time: "946684800000",
+                    }),
+                    _meta: expect.objectContaining({ "lark-events-mcp/timestampOrigin": "local" }),
+                  }),
+                  expect.objectContaining({
+                    data: expect.objectContaining({
+                      message: { chat_id: "oc_test", message_id: "fresh-sentinel" },
+                    }),
+                  }),
+                ]),
+              );
+              expect(received).toHaveLength(3);
             } finally {
               controller.abort();
-              await request;
+              await Promise.all(requests);
               await client.close();
               await server.close();
             }
