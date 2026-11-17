@@ -84,7 +84,7 @@ test("delivers fresh events once and drops stale events", async () => {
                     method: "events/stream",
                     params: {
                       name,
-                      arguments: { watchId },
+                      arguments: { watchId, debounce: { waitSeconds: 0 } },
                     },
                   },
                   Schema.toStandardSchemaV1(Schema.Unknown),
@@ -121,12 +121,26 @@ test("delivers fresh events once and drops stale events", async () => {
                 expect.arrayContaining([
                   expect.objectContaining({
                     data: expect.objectContaining({
-                      message: { chat_id: "oc_test", message_id: "same" },
+                      events: [
+                        expect.objectContaining({
+                          eventId: "same",
+                          data: expect.objectContaining({
+                            message: { chat_id: "oc_test", message_id: "same" },
+                          }),
+                        }),
+                      ],
                     }),
                   }),
                   expect.objectContaining({
                     data: expect.objectContaining({
-                      message: { chat_id: "oc_test", message_id: "fresh-sentinel" },
+                      events: [
+                        expect.objectContaining({
+                          eventId: "fresh-sentinel",
+                          data: expect.objectContaining({
+                            message: { chat_id: "oc_test", message_id: "fresh-sentinel" },
+                          }),
+                        }),
+                      ],
                     }),
                   }),
                 ]),
