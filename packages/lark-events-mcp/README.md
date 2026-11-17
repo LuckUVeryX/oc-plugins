@@ -79,8 +79,10 @@ Delivery is live-only. Cursors are null and resume requests are rejected. Notifi
 
 The SDK reconnects automatically, but events during a disconnect can be missed. A terminal SDK error ends existing subscriptions. Initial connection failures, including an invalid secret, can retry until the watch expires. Cancel or stop the subscription to stop waiting. SDK cancellation is best effort.
 
-Each event uses the SDK callback's `event_id` and millisecond `create_time` when available. Otherwise, the server assigns a `local-` UUID and local receipt time. Local IDs do not provide deduplication across restarts.
+Each event keeps a valid upstream `event_id` or receives a `local-` UUID. Its timestamp uses a valid v2 millisecond `create_time` or falls back to local receipt time. Local IDs do not provide deduplication across restarts.
 The event notification's `_meta["lark-events-mcp/timestampOrigin"]` is `upstream` or `local`.
+
+The server drops events with a v2 event-header timestamp more than one hour old before deduplication and delivery. Callbacks without a reliable event time, including legacy callbacks, use local receipt time and are not age-filtered.
 
 The server suppresses repeated upstream event IDs for the same event name. It keeps up to 10,000 IDs for one hour in memory. Events without an upstream ID are not deduplicated. Restarting the server clears the IDs.
 
