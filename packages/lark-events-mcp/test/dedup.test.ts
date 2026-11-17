@@ -37,13 +37,12 @@ test("delivers fresh events once and drops stale events", async () => {
             const server = makeServer({ catalog, producers });
             const client = new Client({ name: "dedup-test", version: "1" });
             const active = Promise.withResolvers<void>();
-            let activeCount = 0;
             const received: unknown[] = [];
             client.setNotificationHandler(
               "notifications/events/active",
               { params: Schema.toStandardSchemaV1(Schema.Unknown) },
               () => {
-                if (++activeCount === 2) active.resolve();
+                active.resolve();
               },
             );
             client.setNotificationHandler(
@@ -64,6 +63,20 @@ test("delivers fresh events once and drops stale events", async () => {
             const controller = new AbortController();
             await server.connect(b);
             await client.connect(a);
+            const listing = await client.request(
+              { method: "events/list", params: {} },
+              Schema.toStandardSchemaV1(
+                Schema.Struct({ events: Schema.Array(Schema.Struct({ name: Schema.String })) }),
+              ),
+            );
+            expect(listing.events.map((event) => event.name)).toContain("im.message.receive_v1");
+            expect(listing.events.map((event) => event.name)).not.toContain("order_paid");
+            await expect(
+              client.request(
+                { method: "events/stream", params: { name: "order_paid" } },
+                Schema.toStandardSchemaV1(Schema.Unknown),
+              ),
+            ).rejects.toMatchObject({ code: -32602 });
             const watch = (name: string, watchId: string) =>
               client
                 .request(
@@ -78,10 +91,7 @@ test("delivers fresh events once and drops stale events", async () => {
                   { signal: controller.signal },
                 )
                 .catch(() => {});
-            const requests = [
-              watch("im.message.receive_v1", "dedup"),
-              watch("order_paid", "legacy"),
-            ];
+            const requests = [watch("im.message.receive_v1", "dedup")];
             try {
               await active.promise;
               const dispatcher = sdk.dispatcher;
@@ -103,18 +113,9 @@ test("delivers fresh events once and drops stale events", async () => {
               await dispatch("same", recent);
               await dispatch("same", recent);
               await dispatch("distinct-old", "946684800000");
-              await dispatcher.invoke(
-                {
-                  ts: recent,
-                  uuid: "legacy",
-                  event: { type: "order_paid", create_time: "946684800000" },
-                },
-                { needCheck: false },
-              );
               await dispatch("fresh-sentinel", recent);
               await vi.waitFor(() => {
                 expect(JSON.stringify(received)).toContain("fresh-sentinel");
-                expect(JSON.stringify(received)).toContain("order_paid");
               });
               expect(received).toEqual(
                 expect.arrayContaining([
@@ -125,19 +126,12 @@ test("delivers fresh events once and drops stale events", async () => {
                   }),
                   expect.objectContaining({
                     data: expect.objectContaining({
-                      type: "order_paid",
-                      create_time: "946684800000",
-                    }),
-                    _meta: expect.objectContaining({ "lark-events-mcp/timestampOrigin": "local" }),
-                  }),
-                  expect.objectContaining({
-                    data: expect.objectContaining({
                       message: { chat_id: "oc_test", message_id: "fresh-sentinel" },
                     }),
                   }),
                 ]),
               );
-              expect(received).toHaveLength(3);
+              expect(received).toHaveLength(2);
             } finally {
               controller.abort();
               await Promise.all(requests);

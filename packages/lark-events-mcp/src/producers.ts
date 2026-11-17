@@ -55,11 +55,9 @@ const STALE_EVENT_CUTOFF_MS = 60 * 60 * 1000;
 
 const metadata = (payload: unknown) => {
   const object = typeof payload === "object" && payload !== null ? payload : {};
+  if (!("schema" in object) || object.schema !== "2.0") return undefined;
   const id = "event_id" in object ? object.event_id : undefined;
-  const time =
-    "schema" in object && object.schema === "2.0" && "create_time" in object
-      ? object.create_time
-      : undefined;
+  const time = "create_time" in object ? object.create_time : undefined;
   const date = typeof time === "string" && /^\d+$/.test(time) ? new Date(Number(time)) : undefined;
   const upstreamTime = date && !Number.isNaN(date.getTime()) ? date.toISOString() : undefined;
   return {
@@ -134,7 +132,9 @@ export const producersLayer = Layer.effect(
         const channel = messages;
         dispatcher.register({
           [event]: (payload: unknown) => {
-            const { upstreamId, ...details } = metadata(payload);
+            const result = metadata(payload);
+            if (!result) return;
+            const { upstreamId, ...details } = result;
             Effect.runFork(
               Effect.gen(function* () {
                 if (
