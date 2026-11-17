@@ -85,7 +85,6 @@ Keep explicit dependency versions in the package manifests so each package can i
 All packages share one version.
 Change `version` in the root `package.json`, run the dependency-update commands above, then create one Git tag.
 
-## Licenses
+## License
 
-`oc-fallback` is [MIT-licensed](packages/oc-fallback/LICENSE).
-`oc-idle` and `oc-lark-decisions` have no declared license.
+This project is [MIT-licensed](LICENSE).
