@@ -82,7 +82,9 @@ The SDK reconnects automatically, but events during a disconnect can be missed. 
 Each event keeps a valid upstream `event_id` or receives a `local-` UUID. Its timestamp uses a valid v2 millisecond `create_time` or falls back to local receipt time. Local IDs do not provide deduplication across restarts.
 The event notification's `_meta["lark-events-mcp/timestampOrigin"]` is `upstream` or `local`.
 
-The server drops events with a v2 event-header timestamp more than one hour old before deduplication and delivery. Callbacks without a reliable event time, including legacy callbacks, use local receipt time and are not age-filtered.
+Only v2 event envelopes are supported. Names such as `im.message.receive_v1` still use v2 envelopes.
+
+The server drops events with a v2 event-header timestamp more than one hour old before deduplication and delivery. Events without a valid header timestamp use local receipt time and are not age-filtered.
 
 The server suppresses repeated upstream event IDs for the same event name. It keeps up to 10,000 IDs for one hour in memory. Events without an upstream ID are not deduplicated. Restarting the server clears the IDs.
 

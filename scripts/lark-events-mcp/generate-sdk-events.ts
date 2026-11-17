@@ -38,9 +38,12 @@ if (diagnostics.length) {
 const declaration = program.getSourceFile(input)?.statements.find(ts.isTypeAliasDeclaration);
 assert(declaration, "Missing SDK EventHandles alias");
 const checker = program.getTypeChecker();
-const members = checker
-  .getTypeAtLocation(declaration)
+const eventType = checker.getTypeAtLocation(declaration);
+const owners = eventType.getSymbol()?.getDeclarations();
+assert(owners?.length, "Missing EventHandles interface declaration");
+const members = eventType
   .getProperties()
+  .filter((member) => member.getDeclarations()?.some((node) => owners.includes(node.parent)))
   .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 const fields = members.map((member) => {
   const handler = checker.getNonNullableType(
@@ -123,7 +126,7 @@ try {
     {
       sdk: "@larksuiteoapi/node-sdk",
       sdkVersion: sdkPackage.version,
-      source: "EventHandles callback first argument",
+      source: "EventHandles direct callback first argument",
       schemaDialect: "https://json-schema.org/draft/2020-12/schema",
       events,
     },
