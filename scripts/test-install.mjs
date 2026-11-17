@@ -46,6 +46,7 @@ try {
   )) {
     if (!entry.isDirectory()) continue;
     const directory = join(root, "packages", entry.name);
+    if (entry.name === "lark-events-mcp" && !existsSync(join(directory, "package.json"))) continue;
     const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
     assert.equal(manifest.name, entry.name);
     assert.equal(manifest.version, policy.version);

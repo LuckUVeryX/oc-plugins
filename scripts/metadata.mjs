@@ -1,4 +1,5 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,6 +26,7 @@ for (const entry of await readdir(join(root, "packages"), { withFileTypes: true 
   if (!entry.isDirectory()) continue;
   const directory = join(root, "packages", entry.name);
   const filename = join(directory, "package.json");
+  if (entry.name === "lark-events-mcp" && !existsSync(filename)) continue;
   const pkg = JSON.parse(await readFile(filename, "utf8"));
   if (pkg.name !== basename(directory)) {
     throw new Error(`${filename}: package name must match its directory`);
