@@ -55,12 +55,14 @@ The server supports stock OpenCode 2.3.0 with `experimental.mcp_events` and prot
 
 Use protocol `2026-07-28` and the `io.modelcontextprotocol/events` extension. `events/list` advertises SDK-known handler names and generated callback schemas. A catalog entry does not mean that the app has permission to receive it or that Lark delivers it over WebSocket.
 
-Select an event in each `events/stream` request:
+Use OpenCode's `watch_mcp_event` with the `lark-events` server for native MCP subscriptions. The Lark CLI event consumer is a separate tool. Select an event in each `events/stream` request:
 
 ```json
 {
   "name": "im.message.receive_v1",
   "arguments": {
+    "watchId": "my-watch",
+    "durationSeconds": 3600,
     "filter": {
       "message.chat_id": "oc_example"
     }
@@ -69,11 +71,13 @@ Select an event in each `events/stream` request:
 }
 ```
 
+Each active watch needs a nonempty ID unique within the server process. The lifetime defaults to 3600 seconds and starts when the watch is accepted, including connection readiness. Use `watch_list` to see active IDs and their start and expiry times. Use `watch_stop` with a `watchId` to stop a watch and wait for cleanup. Expired and stopped watches send a terminal notification. Watches are not persisted across server restarts.
+
 Filter keys are exact scalar dot paths in the SDK's flattened callback payload. Fields combine with AND. A nonempty array of expected values combines with OR. Values use strict equality. Missing fields do not match. Unknown paths and values outside the generated type, enum, or const constraints are rejected. The server does not traverse arrays or interpret expressions. Omit `filter` to match all payloads.
 
 Delivery is live-only. Cursors are null and resume requests are rejected. Notifications carry the opening request ID in `_meta["io.modelcontextprotocol/subscriptionId"]`. The server sends `active`, `event`, `heartbeat`, `error`, and `terminated` notifications as applicable. Heartbeats run every 20 seconds.
 
-The SDK reconnects automatically, but events during a disconnect can be missed. A terminal SDK error ends existing subscriptions. Initial connection failures, including an invalid secret, can retry indefinitely without an error notification. Cancel the subscription to stop waiting. SDK cancellation is best effort.
+The SDK reconnects automatically, but events during a disconnect can be missed. A terminal SDK error ends existing subscriptions. Initial connection failures, including an invalid secret, can retry until the watch expires. Cancel or stop the subscription to stop waiting. SDK cancellation is best effort.
 
 Each event uses the SDK callback's `event_id` and millisecond `create_time` when available. Otherwise, the server assigns a `local-` UUID and local receipt time. Local IDs do not provide deduplication across restarts.
 The event notification's `_meta["lark-events-mcp/timestampOrigin"]` is `upstream` or `local`.
