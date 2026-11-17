@@ -18,6 +18,10 @@ async function fixture() {
     new URL("./metadata.mjs", import.meta.url),
     join(directory, "scripts", "metadata.mjs"),
   );
+  await copyFile(
+    new URL("./test-install.mjs", import.meta.url),
+    join(directory, "scripts", "test-install.mjs"),
+  );
   const root = { name: "root", version: "1.2.3", devDependencies: { effect: "4.1.0" } };
   const pkg = {
     name: "example",
@@ -44,6 +48,29 @@ test("accepts matching manifests without writing them", async () => {
   const original = await readFile(filename, "utf8");
   expect(run().status).toBe(0);
   expect(await readFile(filename, "utf8")).toBe(original);
+});
+
+test("only ignores the generator catalog when its manifest is absent", async () => {
+  const { directory, run } = await fixture();
+  const data = join(directory, "packages", "lark-events-mcp");
+  await mkdir(data);
+  expect(run().status).toBe(0);
+  await writeFile(join(data, "package.json"), "{");
+  expect(run().status).toBe(1);
+});
+
+test("rejects an existing package without a manifest", async () => {
+  const { directory, filename, run } = await fixture();
+  await rm(filename);
+  const metadata = run();
+  expect(metadata.status).toBe(1);
+  expect(metadata.stderr).toContain("ENOENT");
+  const install = spawnSync(process.execPath, ["scripts/test-install.mjs"], {
+    cwd: directory,
+    encoding: "utf8",
+  });
+  expect(install.status).toBe(1);
+  expect(install.stderr).toContain("ENOENT");
 });
 
 test("reports drift without writing, then synchronizes idempotently", async () => {
