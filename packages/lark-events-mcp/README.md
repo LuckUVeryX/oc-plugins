@@ -1,43 +1,38 @@
 # lark-events-mcp
 
-This standalone stdio server exposes Lark SDK events through the experimental MCP Events extension. It uses `@larksuiteoapi/node-sdk` 1.76.0, Effect 4.1.0, and the official MCP server SDK 2.4.0.
+This standalone stdio server exposes Lark SDK events through the experimental MCP Events extension. It is private and is not published to npm.
 
 The Lark app, its permissions, and its upstream event subscriptions must already be configured. The server does not manage them, send replies, or make decisions.
 
-## Run
+## Install for OpenCode
 
-Use Bun 1.4.4. Set `LARK_APP_ID` and `LARK_APP_SECRET` in the launching environment, then run:
+You need Git, Bun 1.4.4, OpenCode, and a configured Lark app. Make sure Bun is on the OpenCode service's `PATH`.
 
-```sh
-bun install --frozen-lockfile
-bun packages/lark-events-mcp/src/main.ts
-```
+1. Clone the repository into a dedicated directory, check out the pinned commit, and install dependencies at the repository root:
 
-The server uses the Lark domain and app credentials. It reads no OpenCode configuration. SDK and Effect logs go to stderr. Stdout is reserved for MCP.
+   ```sh
+   git clone https://github.com/LuckUVeryX/oc-plugins.git "$HOME/.local/share/lark-events-mcp"
+   git -C "$HOME/.local/share/lark-events-mcp" checkout 7ba2b2c946dc50ac4d3851971e16e03682f57799
+   cd "$HOME/.local/share/lark-events-mcp"
+   bun install --frozen-lockfile
+   ```
 
-To install a local tarball:
+2. Set `LARK_APP_ID` and `LARK_APP_SECRET` in the OpenCode service's environment. OpenCode substitutes these values from its environment, not necessarily from your current shell.
 
-```sh
-cd packages/lark-events-mcp
-bun pm pack --ignore-scripts --filename /tmp/opencode/lark-events-mcp-0.0.0.tgz
-```
-
-Install the tarball in a separate Bun project with `bun add /tmp/opencode/lark-events-mcp-0.0.0.tgz`. The executable is `lark-events-mcp`. The package is not a library API.
-
-## OpenCode compatibility
-
-A live test with stock OpenCode 2.3.0 verified that a filtered Lark message event wakes a session with `experimental.mcp_events` enabled and protocol `2026-07-28`. The binary's bundled client differs from the separately published `@modelcontextprotocol/client` 2.4.0.
-
-Enable the experimental flag and select the modern protocol. Replace the checkout path:
+3. Add the following settings to `~/.config/opencode/opencode.jsonc`, preserving any existing settings:
 
 ```jsonc
 {
+  "$schema": "https://opencode.ai/config.json",
   "experimental": { "mcp_events": true },
   "mcp": {
     "servers": {
       "lark-events": {
         "type": "local",
-        "command": ["bun", "/absolute/path/to/oc-plugins/packages/lark-events-mcp/src/main.ts"],
+        "command": [
+          "bun",
+          "{env:HOME}/.local/share/lark-events-mcp/packages/lark-events-mcp/src/main.ts",
+        ],
         "protocol": "2026-07-28",
         "environment": {
           "LARK_APP_ID": "{env:LARK_APP_ID}",
@@ -48,6 +43,14 @@ Enable the experimental flag and select the modern protocol. Replace the checkou
   },
 }
 ```
+
+4. Run `opencode mcp list`. The `lark-events` server should show `connected`. This confirms the MCP connection, not delivery of Lark events.
+
+OpenCode expands `{env:HOME}` in the command. A literal `$HOME` in JSON is not expanded. If you chose another checkout directory, use its absolute path. The server uses the Lark domain and reserves stdout for MCP.
+
+To update, check out a newer commit in the same directory and run `bun install --frozen-lockfile` at the repository root again.
+
+The server supports stock OpenCode 2.3.0 with `experimental.mcp_events` and protocol `2026-07-28`.
 
 ## MCP events
 
@@ -67,28 +70,13 @@ Select an event in each `events/stream` request:
 }
 ```
 
-The callback payload is the SDK's flattened value. Filter keys are scalar dot paths in that payload. Fields combine with AND. A nonempty array of expected values combines with OR. Comparisons use strict equality. Missing fields do not match. Unknown paths and values outside the generated type, enum, or const constraints are rejected. The server does not traverse arrays or interpret expressions. Omit `filter` to match all payloads.
+Filter keys are exact scalar dot paths in the SDK's flattened callback payload. Fields combine with AND. A nonempty array of expected values combines with OR. Values use strict equality. Missing fields do not match. Unknown paths and values outside the generated type, enum, or const constraints are rejected. The server does not traverse arrays or interpret expressions. Omit `filter` to match all payloads.
 
 Delivery is live-only. Cursors are null and resume requests are rejected. Notifications carry the opening request ID in `_meta["io.modelcontextprotocol/subscriptionId"]`. The server sends `active`, `event`, `heartbeat`, `error`, and `terminated` notifications as applicable. Heartbeats run every 20 seconds.
 
-The server keeps one SDK connection per process. Subscribers have independent filters and cancellation. The SDK reconnects automatically after a disconnect. Events during the disconnected interval can be missed. A terminal SDK error ends existing subscriptions. The SDK can retry initial connection failures indefinitely.
-
-SDK 1.76.0 treats an endpoint error response without a `data` field as retryable before it checks the error code. An invalid secret can produce this response and leave readiness pending without an error notification. Cancel the subscription to stop waiting. The server does not add a credential preflight or readiness deadline.
-
-The server force-closes the SDK client when its scope ends. SDK cancellation is best effort. An in-flight endpoint request can finish after close, and a stalled WebSocket handshake has no default deadline.
+The SDK reconnects automatically, but events during a disconnect can be missed. A terminal SDK error ends existing subscriptions. Initial connection failures, including an invalid secret, can retry indefinitely without an error notification. Cancel the subscription to stop waiting. SDK cancellation is best effort.
 
 Each event uses the SDK callback's `event_id` and millisecond `create_time` when available. Otherwise, the server assigns a `local-` UUID and local receipt time. Local IDs do not provide deduplication across restarts.
 The event notification's `_meta["lark-events-mcp/timestampOrigin"]` is `upstream` or `local`.
 
 Event buffers are in-memory and unbounded. Slow subscribers can increase memory use. There is no persistence or replay.
-
-## Verification
-
-```sh
-bun run --filter lark-events-mcp check
-bun run test:install
-```
-
-Regenerate the catalog with `bun run --filter lark-events-mcp generate`. `generate:check` verifies that the committed catalog matches the pinned SDK. The automated tests do not require Lark credentials.
-
-The live stock OpenCode session test is separate from the automated package tests. It used a private bot chat, a local deterministic model provider, and no client patch. The test observed the watch registration, the synthetic session event, and a follow-up model request containing the event.
