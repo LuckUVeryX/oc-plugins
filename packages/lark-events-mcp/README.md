@@ -8,11 +8,10 @@ The Lark app, its permissions, and its upstream event subscriptions must already
 
 You need Git, Bun 1.4.4, OpenCode, and a configured Lark app. Make sure Bun is on the OpenCode service's `PATH`.
 
-1. Clone the repository into a dedicated directory, check out the pinned commit, and install dependencies at the repository root:
+1. Clone the repository into a dedicated directory and install dependencies at the repository root:
 
    ```sh
    git clone https://github.com/LuckUVeryX/oc-plugins.git "$HOME/.local/share/lark-events-mcp"
-   git -C "$HOME/.local/share/lark-events-mcp" checkout 7ba2b2c946dc50ac4d3851971e16e03682f57799
    cd "$HOME/.local/share/lark-events-mcp"
    bun install --frozen-lockfile
    ```
@@ -48,7 +47,7 @@ You need Git, Bun 1.4.4, OpenCode, and a configured Lark app. Make sure Bun is o
 
 OpenCode expands `{env:HOME}` in the command. A literal `$HOME` in JSON is not expanded. If you chose another checkout directory, use its absolute path. The server uses the Lark domain and reserves stdout for MCP.
 
-To update, check out a newer commit in the same directory and run `bun install --frozen-lockfile` at the repository root again.
+To update, run `git pull --ff-only` and `bun install --frozen-lockfile` at the repository root.
 
 The server supports stock OpenCode 2.3.0 with `experimental.mcp_events` and protocol `2026-07-28`.
 
@@ -78,5 +77,7 @@ The SDK reconnects automatically, but events during a disconnect can be missed. 
 
 Each event uses the SDK callback's `event_id` and millisecond `create_time` when available. Otherwise, the server assigns a `local-` UUID and local receipt time. Local IDs do not provide deduplication across restarts.
 The event notification's `_meta["lark-events-mcp/timestampOrigin"]` is `upstream` or `local`.
+
+The server suppresses repeated upstream event IDs for the same event name. It keeps up to 10,000 IDs for one hour in memory. Events without an upstream ID are not deduplicated. Restarting the server clears the IDs.
 
 Event buffers are in-memory and unbounded. Slow subscribers can increase memory use. There is no persistence or replay.

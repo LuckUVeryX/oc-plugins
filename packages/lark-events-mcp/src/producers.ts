@@ -1,5 +1,16 @@
 import { Domain, EventDispatcher, WSClient } from "@larksuiteoapi/node-sdk";
-import { Config, Context, Deferred, Effect, Layer, PubSub, Redacted, Schema } from "effect";
+import {
+  Cache,
+  Config,
+  Context,
+  Deferred,
+  Effect,
+  Layer,
+  PubSub,
+  Redacted,
+  Ref,
+  Schema,
+} from "effect";
 
 export class SourceError extends Schema.TaggedError<SourceError>()("SourceError", {
   message: Schema.String,
@@ -46,6 +57,7 @@ const metadata = (payload: unknown) => {
   const date = typeof time === "string" && /^\d+$/.test(time) ? new Date(Number(time)) : undefined;
   const upstreamTime = date && !Number.isNaN(date.getTime()) ? date.toISOString() : undefined;
   return {
+    upstreamId: typeof id === "string" && id ? id : undefined,
     eventId: typeof id === "string" && id ? id : `local-${crypto.randomUUID()}`,
     timestamp: upstreamTime ?? new Date().toISOString(),
     timestampOrigin: upstreamTime ? ("upstream" as const) : ("local" as const),
@@ -64,6 +76,11 @@ export const producersLayer = Layer.effect(
       "LARK_APP_SECRET",
     );
     let ready = yield* Deferred.make<void, SourceError>();
+    const seen = yield* Cache.make({
+      capacity: 10_000,
+      timeToLive: "1 hour",
+      lookup: (_key: string) => Ref.make(false),
+    });
     const dispatcher = new EventDispatcher({ logger });
     const entries = new Map<string, PubSub.PubSub<SourceMessage>>();
     let terminal: string | undefined;
@@ -111,8 +128,15 @@ export const producersLayer = Layer.effect(
         const channel = messages;
         dispatcher.register({
           [event]: (payload: unknown) => {
+            const { upstreamId, ...details } = metadata(payload);
             Effect.runFork(
-              PubSub.publish(channel, { kind: "event", payload, ...metadata(payload) }),
+              Effect.gen(function* () {
+                if (upstreamId) {
+                  const admitted = yield* Cache.get(seen, JSON.stringify([event, upstreamId]));
+                  if (yield* Ref.getAndSet(admitted, true)) return;
+                }
+                yield* PubSub.publish(channel, { kind: "event", payload, ...details });
+              }),
             );
           },
         });
