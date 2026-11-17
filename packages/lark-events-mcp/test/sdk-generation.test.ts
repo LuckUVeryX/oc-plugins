@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { JsonSchema, Predicate, Schema, SchemaRepresentation } from "effect";
 import catalog from "../src/generated/events.json";
+import { inputSchemaDocument } from "../../../scripts/lark-events-mcp/filter-schema.ts";
 
 function payload(name: string): JsonSchema.JsonSchema {
   const event = catalog.events.find((candidate) => candidate.name === name);
@@ -30,6 +31,53 @@ function property(schema: JsonSchema.JsonSchema, ...path: string[]): JsonSchema.
 }
 
 describe("generated SDK event catalog", () => {
+  it("generates strict subscription inputs for every event", () => {
+    for (const event of catalog.events) {
+      expect(event.inputSchema).toEqual(inputSchemaDocument(event.payloadSchema));
+      const schema = Schema.make<Schema.Codec<unknown, unknown>>(
+        SchemaRepresentation.fromJsonSchemaDocument(
+          JsonSchema.fromSchemaDraft2020_12(event.inputSchema),
+        ).ast,
+      );
+      expect(Schema.decodeUnknownResult(schema, { onExcessProperty: "error" })({})._tag).toBe(
+        "Success",
+      );
+    }
+  });
+
+  it("keeps scalar paths and constraints without traversing arrays", () => {
+    const schema = inputSchemaDocument({
+      type: "object",
+      properties: {
+        kind: { type: "string", const: "one" },
+        state: { type: "string", enum: ["a", "b"] },
+        count: { type: "integer" },
+        items: { type: "array", items: { type: "object", properties: { id: { type: "string" } } } },
+      },
+    });
+    const decode = Schema.decodeUnknownResult(
+      Schema.make<Schema.Codec<unknown, unknown>>(
+        SchemaRepresentation.fromJsonSchemaDocument(JsonSchema.fromSchemaDraft2020_12(schema)).ast,
+      ),
+      { onExcessProperty: "error" },
+    );
+    for (const value of [
+      {},
+      { filter: {} },
+      { filter: { kind: "one", state: ["a", "b"], count: 1 } },
+    ])
+      expect(decode(value)._tag).toBe("Success");
+    for (const value of [
+      { filter: { kind: "two" } },
+      { filter: { state: "c" } },
+      { filter: { "items.id": "x" } },
+      { filter: { count: 1.5 } },
+      { filter: { state: [] } },
+      { extra: true },
+    ])
+      expect(decode(value)._tag).toBe("Failure");
+  });
+
   it("contains all SDK handlers, including inherited callbacks", () => {
     expect(catalog.sdkVersion).toBe("1.76.0");
     expect(catalog.events).toHaveLength(227);

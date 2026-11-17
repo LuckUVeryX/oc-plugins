@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript-sdk-schema";
 import { createGenerator } from "ts-json-schema-generator";
 import { JsonSchema, Schema, SchemaRepresentation } from "effect";
+import { inputSchemaDocument } from "./filter-schema.ts";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const input = fileURLToPath(new URL("./sdk-event-handles.ts", import.meta.url));
@@ -117,6 +118,7 @@ try {
       name: member.name,
       ...(description ? { description } : {}),
       payloadSchema: document.schema,
+      inputSchema: inputSchemaDocument(document.schema),
     };
   });
   const text = `${JSON.stringify(
