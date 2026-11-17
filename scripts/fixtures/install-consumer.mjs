@@ -157,7 +157,40 @@ export default ((input) => identity("review:" + input.root.rootId)) satisfies Tr
         assert.equal(yield* transform.run(input), "review:root");
       }).pipe(Effect.scoped, Effect.provide(BunServices.layer)),
     );
-    console.log("decisions public schema and real Effect-importing transform loader passed");
+    const stored = new Map();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const tools = new Map();
+        yield* plugin.effect({
+          options: { model: { providerID: "test", id: "test" } },
+          tool: {
+            transform: (register) =>
+              Effect.sync(() => {
+                register({ add: (tool) => tools.set(tool.name, tool) });
+                return { dispose: Effect.void };
+              }),
+          },
+          storage: {
+            get: (key) => Effect.sync(() => stored.get(key)),
+            set: (key, value) => Effect.sync(() => stored.set(key, value)),
+            remove: (key) => Effect.sync(() => stored.delete(key)),
+          },
+          event: { subscribe: () => Stream.never },
+          experimental: {
+            generate: { decisions: () => Effect.die("history must not evaluate messages") },
+          },
+          session: { prompt: () => Effect.die("history must not queue a prompt") },
+        });
+        const history = tools.get("lark_history");
+        assert(history, "packed plugin registers lark_history");
+        const { output } = yield* history.execute({}, { sessionID: "ses_history" });
+        assert.deepEqual(output, []);
+        assert.equal(stored.size, 0, "reading history does not write storage");
+      }).pipe(Effect.scoped, Effect.provide(BunServices.layer)),
+    );
+    console.log(
+      "decisions public schema, real transform loader, and read-only history tool passed",
+    );
   }
 }
 console.log("public exports, plugin IDs, and one compatible Effect/OpenCode family passed");
