@@ -37,79 +37,13 @@ Then add a package directory to your OpenCode config:
 For Lark transforms, replace `oc-lark-relay/transform` imports with `oc-lark-decisions/transform`.
 The runtime plugin ID is `oc-lark-decisions`, matching the package path.
 
-### Standalone Lark Events MCP server
-
-`lark-events-mcp` uses Effect and the official MCP server SDK. It has no OpenCode runtime dependency and does not evaluate models, route prompts, or send replies.
-The package is private at version `0.0.0`, not a published npm package.
-
-From a repository checkout:
-
-```sh
-bun install --frozen-lockfile
-bun packages/lark-events-mcp/src/main.ts
-```
-
-An MCP client starts that command and owns its stdin. Supply `LARK_APP_ID` and `LARK_APP_SECRET` in its environment.
-An offline test with stock OpenCode 2.3.0 verified event streaming and session wakeup with `experimental.mcp_events` enabled and protocol `2026-07-28`.
-See the [server reference](packages/lark-events-mcp/README.md) for the client requirements, local tarball installation, event schemas, and lifecycle limits.
+For the standalone server, see the [Lark Events MCP installation and reference](packages/lark-events-mcp/README.md).
 
 ## Develop
 
-Use Bun 1.4.4:
+Use Bun 1.4.4. Run `bun install --frozen-lockfile`, `bun run check`, and `bun run test:install` from the root. Use `bun run test`, not `bun test`, to run all tests.
 
-```sh
-bun install --frozen-lockfile
-bun run check
-bun run test:install
-```
-
-`check` runs version checks, Oxfmt, Oxlint, TypeScript, and tests.
-`test:install` tests packed plugins and the standalone server in fresh installations, separately and together.
-GitHub Actions runs both.
-
-Run the standalone server's verification independently:
-
-```sh
-bun run --filter lark-events-mcp check
-```
-
-The server tests use offline SDK and event-source fakes, not real Lark subscriptions or message sends.
-The stock OpenCode session test is a separate offline experiment, not a package test. It uses no MCP client patch.
-
-Use `bun run test`, not `bun test`, at the repository root.
-Fallback uses Bun's runner. The other packages use Vitest.
-
-To run one package's tests:
-
-```sh
-bun run --filter oc-idle test
-```
-
-To apply formatting:
-
-```sh
-bun run format
-```
-
-## Update dependencies
-
-Edit dependency versions in the root `package.json`, then update the package manifests and lockfile:
-
-```sh
-bun run sync:metadata
-bun install
-bun run format
-bun run check
-bun run test:install
-```
-
-Keep explicit dependency versions in the package manifests so each package can install without the workspace.
-`sync:metadata` copies versions from the root. CI checks that they match.
-
-## Release
-
-All packages share one version.
-Change `version` in the root `package.json`, run the dependency-update commands above, then create one Git tag.
+For dependency updates, edit the root `package.json`, run `bun run sync:metadata`, `bun install`, and `bun run format`, then run both checks above. Package manifests need explicit versions for standalone installs. All packages share one version. For a release, update the root version, run the same commands, and create one Git tag.
 
 ## License
 
