@@ -31,12 +31,78 @@ async function dependency(from, name, entry) {
   }
 }
 
+async function verifyExecutable(name) {
+  const signal = AbortSignal.timeout(10_000);
+  const child = Bun.spawn(
+    [process.execPath, "--preload", "./lark-sdk-preload.mjs", join("node_modules", ".bin", name)],
+    {
+      cwd: process.cwd(),
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+      signal,
+      env: { ...process.env, LARK_APP_ID: "cli_0000000000000001", LARK_APP_SECRET: "offline" },
+    },
+  );
+  const stderr = new Response(child.stderr).text();
+  child.stdin.write(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "events/list",
+      params: {
+        _meta: {
+          "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+          "io.modelcontextprotocol/clientInfo": { name: "install-test", version: "0.0.0" },
+          "io.modelcontextprotocol/clientCapabilities": {},
+        },
+      },
+    }) + "\n",
+  );
+  child.stdin.flush();
+  const reader = child.stdout.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  while (!text.includes('"id":2') || !text.endsWith("\n")) {
+    const chunk = await reader.read();
+    if (chunk.done)
+      throw new Error(`${name}: closed before catalog response\n${text}\n${await stderr}`);
+    text += decoder.decode(chunk.value, { stream: true });
+  }
+  const responses = text
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(responses.find((response) => response.id === 2)?.result?.events?.length, 227);
+  child.stdin.end();
+  const exited = await child.exited;
+  assert(!signal.aborted, `${name}: executable did not stop after stdin EOF`);
+  const diagnostics = await stderr;
+  assert.equal(exited, 0, `${name}: executable exited ${exited}\n${diagnostics}`);
+  assert(diagnostics.includes("offline SDK started"), `${name}: offline SDK was not used`);
+  assert(
+    responses.every((response) => response.jsonrpc === "2.0"),
+    `${name}: non-MCP stdout`,
+  );
+}
+
 for (const manifest of expected.packages) {
+  if (manifest.bin) {
+    const entry = fileURLToPath(import.meta.resolve(`${manifest.name}/package.json`));
+    for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+      for (const name of Object.keys(manifest[field] ?? {})) {
+        await dependency(entry, name, name);
+      }
+    }
+    for (const name of Object.keys(manifest.bin)) await verifyExecutable(name);
+    console.log(`${manifest.name}: installed executable exits cleanly on stdin EOF`);
+    continue;
+  }
   const module = await import(manifest.name);
   const plugin = module.default;
+  const entry = fileURLToPath(import.meta.resolve(manifest.name));
   assert.equal(plugin.id, manifest.name);
   assert.equal(typeof plugin.effect, "function");
-  const entry = fileURLToPath(import.meta.resolve(manifest.name));
   await dependency(entry, "effect", "effect");
   await dependency(entry, "@opencode/plugin", "@opencode/plugin/effect");
   if (manifest.peerDependencies["@opencode/schema"]) {
@@ -193,4 +259,4 @@ export default ((input) => identity("review:" + input.root.rootId)) satisfies Tr
     );
   }
 }
-console.log("public exports, plugin IDs, and one compatible Effect/OpenCode family passed");
+console.log("public exports, package contracts, and one compatible dependency family passed");
