@@ -45,7 +45,3 @@ bun run --filter oc-fallback test
 Run these commands from the repository root.
 Run `bun run check` for formatting, lint, type checks, and all package tests.
 Run `bun run test:install` to verify fresh package installations.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
