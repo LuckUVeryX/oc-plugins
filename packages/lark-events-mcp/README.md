@@ -32,6 +32,8 @@ You need Git, Bun 1.4.4, OpenCode, and a configured Lark app. Make sure Bun is o
           "bun",
           "{env:HOME}/.local/share/lark-events-mcp/packages/lark-events-mcp/src/main.ts",
         ],
+        "cwd": "{env:HOME}/.local/share/lark-events-mcp",
+        "pool": true,
         "protocol": "2026-07-28",
         "environment": {
           "LARK_APP_ID": "{env:LARK_APP_ID}",
@@ -45,7 +47,9 @@ You need Git, Bun 1.4.4, OpenCode, and a configured Lark app. Make sure Bun is o
 
 4. Run `opencode mcp list`. The `lark-events` server should show `connected`. This confirms the MCP connection, not delivery of Lark events.
 
-OpenCode expands `{env:HOME}` in the command. A literal `$HOME` in JSON is not expanded. If you chose another checkout directory, use its absolute path. The server uses the Lark domain and reserves stdout for MCP.
+OpenCode expands `{env:HOME}` in the command and `cwd`. A literal `$HOME` in JSON is not expanded. If you chose another checkout directory, use its absolute path in both fields. The server uses the Lark domain and reserves stdout for MCP.
+
+[Lark distributes each event to one WebSocket client](https://open.larksuite.com/document/ukTMukTMukTM/uYDNxYjL2QTM24iN0EjN/event-subscription-configure-/use-websocket) for an app, rather than broadcasting it. The [OpenCode connection pool](https://opencode.ai/docs/mcp-servers#shared-connections) shares one MCP connection across projects in one OpenCode service when their command, fixed `cwd`, environment, protocol, and timeout settings match. Use the global configuration above without project overrides for a single WebSocket connection. The pool does not span OpenCode services or machines, and closes when the last project releases the connection. Other CLI event consumers or SDK clients for the same app compete for events.
 
 To update, run `git pull --ff-only` and `bun install --frozen-lockfile` at the repository root.
 
@@ -73,14 +77,19 @@ Use OpenCode's `watch_mcp_event` with the `lark-events` server for native MCP su
 
 Each active watch needs a nonempty ID unique within the server process. The lifetime defaults to 3600 seconds and starts when the watch is accepted, including connection readiness. Use `watch_list` to see active IDs and their start and expiry times. Use `watch_stop` with a `watchId` to stop a watch and wait for cleanup. Expired and stopped watches send a terminal notification. Watches are not persisted across server restarts.
 
+If you want to stop a watch, call `watch_stop` before disconnecting or closing the UI. A watch can outlive a project's disconnection.
+
 Filter keys are exact scalar dot paths in the SDK's flattened callback payload. Fields combine with AND. A nonempty array of expected values combines with OR. Values use strict equality. Missing fields do not match. Unknown paths and values outside the generated type, enum, or const constraints are rejected. The server does not traverse arrays or interpret expressions. Omit `filter` to match all payloads.
 
 Delivery is live-only. Cursors are null and resume requests are rejected. Notifications carry the opening request ID in `_meta["io.modelcontextprotocol/subscriptionId"]`. The server sends `active`, `event`, `heartbeat`, `error`, and `terminated` notifications as applicable. Heartbeats run every 20 seconds.
 
 The SDK reconnects automatically, but events during a disconnect can be missed. A terminal SDK error ends existing subscriptions. Initial connection failures, including an invalid secret, can retry until the watch expires. Cancel or stop the subscription to stop waiting. SDK cancellation is best effort.
 
-Each event keeps a valid upstream `event_id` or receives a `local-` UUID. Its timestamp uses a valid v2 millisecond `create_time` or falls back to local receipt time. Local IDs do not provide deduplication across restarts.
-The event notification's `_meta["lark-events-mcp/timestampOrigin"]` is `upstream` or `local`.
+Event notifications now carry `data: { "events": [...] }` instead of a raw callback payload. Each item contains `eventId`, `timestamp`, `timestampOrigin`, and the raw callback `data`, in arrival order. Each event keeps a valid upstream `event_id` or receives a `local-` UUID. Its timestamp uses a valid v2 millisecond `create_time` or falls back to local receipt time. Local IDs do not provide deduplication across restarts. The outer notification has a separate local ID and flush timestamp.
+
+By default a batch flushes after 5 seconds without a matching event or 30 seconds after its first event, whichever comes first. Set `debounce.waitSeconds` and `debounce.maxWaitSeconds` to nonnegative integer seconds to change these limits. The maximum must be at least the quiet period. A zero quiet period delivers each event immediately. An OpenCode watch configured to run once receives its first batch, not necessarily one event.
+
+Batches flush before their JSON data exceeds 16,384 JavaScript string code units. An oversized individual event is sent alone and OpenCode may truncate it. Expiry flushes a pending batch before termination. Stopping or cancelling a watch discards its pending batch.
 
 Only v2 event envelopes are supported. Names such as `im.message.receive_v1` still use v2 envelopes.
 
