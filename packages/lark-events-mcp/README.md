@@ -110,7 +110,7 @@ Add these to the `environment` block if the user wants them.
 | ---------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `LARK_WATCH_MAX_SECONDS`     | `3600`  | How long each watch lasts. Positive integer.                                                                                                                                                                                                                                                    |
 | `LARK_DECISIONS_MODEL`       | unset   | Model that answers `decisions` questions, as JSON: `{"providerID":"your-provider","id":"your-model","variant":"optional"}`. Omit `variant` if it is not needed. Without this variable, the server rejects watches that use `decisions`. Each event that passes prepare sends one model request. |
-| `LARK_EVENT_TIMEOUT_SECONDS` | `30`    | Time limit for prepare, decisions and transform together. Positive integer.                                                                                                                                                                                                                     |
+| `LARK_EVENT_TIMEOUT_SECONDS` | `120`   | Time limit for prepare, decisions and transform together. Positive integer. A watch handles one event at a time, so a slow event delays the ones behind it.                                                                                                                                     |
 
 ## Writing a watch
 

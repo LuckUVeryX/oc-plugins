@@ -14,4 +14,4 @@ export const watchMaxSeconds = Config.schema(
 export const eventTimeoutSeconds = Config.schema(
   Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
   "LARK_EVENT_TIMEOUT_SECONDS",
-).pipe(Config.withDefault(30));
+).pipe(Config.withDefault(120));
