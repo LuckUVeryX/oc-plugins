@@ -5,12 +5,13 @@ import {
   SUBSCRIPTION_ID_META_KEY,
   McpServer,
 } from "@modelcontextprotocol/server";
-import { Clock, Deferred, Effect, Logger, PubSub, Schedule, Schema } from "effect";
+import { Cause, Clock, Deferred, Effect, Logger, PubSub, Schedule, Schema } from "effect";
 import type { EventDefinition, LarkCatalog } from "./catalog.ts";
 import { decodeArguments, inputSchemaDocument, matchesFilter } from "./contract.ts";
 import type { EventProducers, SourceMessage } from "./producers.ts";
 import { bytes, makeTransform } from "./transform.ts";
 import type { makeDecisions } from "./decisions.ts";
+import { getDescription, getLark, GetInput, makePrepare, type LarkRequester } from "./prepare.ts";
 
 export const EVENTS_EXTENSION = "io.modelcontextprotocol/events";
 
@@ -22,6 +23,8 @@ interface ServerOptions {
   readonly producers: Effect.Success<typeof EventProducers>;
   readonly maxSeconds: number;
   readonly decide?: ReturnType<typeof makeDecisions> | undefined;
+  readonly eventTimeoutSeconds: number;
+  readonly larkRequest: LarkRequester;
 }
 
 const streamParams = Schema.toStandardSchemaV1(
@@ -54,9 +57,39 @@ type EventMessage = Extract<SourceMessage, { kind: "event" }>;
 
 export const makeServer = (options: ServerOptions): McpServer => {
   const transformEvent = makeTransform();
+  const prepareEvent = makePrepare(options.larkRequest);
   const server = new McpServer(
     { name: "lark-events-mcp", version: "0.0.0" },
-    { capabilities: { extensions: { [EVENTS_EXTENSION]: {} } } },
+    {
+      capabilities: { extensions: { [EVENTS_EXTENSION]: {} } },
+      instructions:
+        'Lark events: arm a watch with watch_mcp_event. Before writing prepare, call get on each endpoint it reads to see the real response. When a watch stops with "<step> failed", fix that step and arm a new watch.',
+    },
+  );
+
+  server.registerTool(
+    "get",
+    {
+      description: getDescription,
+      inputSchema: fromJsonSchema<typeof GetInput.Type>({
+        ...Schema.toJsonSchemaDocument(GetInput).schema,
+        additionalProperties: false,
+      }),
+    },
+    (input) =>
+      run(
+        getLark(options.larkRequest, input).pipe(
+          Effect.map((data) => ({
+            content: [{ type: "text" as const, text: JSON.stringify(data) }],
+          })),
+          Effect.catch((error) =>
+            Effect.succeed({
+              content: [{ type: "text" as const, text: String(error) }],
+              isError: true,
+            }),
+          ),
+        ),
+      ),
   );
 
   server.registerTool(
@@ -156,7 +189,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
           return yield* Effect.fail(
             invalidParams(`Unknown event: ${params.name}; choose a listed event`),
           );
-        const { filter, watchId, transform, decisions } = yield* decodeArguments(
+        const { filter, watchId, prepare, transform, decisions } = yield* decodeArguments(
           definition.payloadSchema,
           params.arguments ?? {},
         ).pipe(Effect.mapError(invalidParams));
@@ -167,10 +200,15 @@ export const makeServer = (options: ServerOptions): McpServer => {
               "Decisions is unavailable because the operator has not configured a model; retry without decisions",
             ),
           );
-        if (transform !== undefined && bytes(transform) > 65536)
-          return yield* Effect.fail(
-            invalidParams("Transform source exceeds 65536 bytes; shorten it"),
-          );
+        for (const [name, source] of [
+          ["Transform", transform],
+          ["Prepare", prepare],
+        ] as const) {
+          if (bytes(source) > 65536)
+            return yield* Effect.fail(
+              invalidParams(`${name} source exceeds 65536 bytes; shorten it`),
+            );
+        }
         const ended = yield* Deferred.make<string>();
         const finished = yield* Deferred.make<void>();
         const startedAt = yield* Clock.currentTimeMillis;
@@ -218,30 +256,40 @@ export const makeServer = (options: ServerOptions): McpServer => {
           });
           return {};
         }
-        const suppress = (message: EventMessage, text: string) => (kind: string) =>
-          Effect.logWarning(text).pipe(
-            Effect.annotateLogs({ watchId, eventId: message.eventId, kind }),
-            Effect.as(null),
-          );
-        const deliverable = Effect.fnUntraced(function* (message: EventMessage) {
-          if (transform === undefined) return message.payload;
+        const deliverable = (message: EventMessage) => {
+          let step = "prepare";
           const event = {
             eventId: message.eventId,
             timestamp: message.timestamp,
             timestampOrigin: message.timestampOrigin,
             data: message.payload,
           };
-          const result =
-            decisions === undefined || decide === undefined
-              ? undefined
-              : yield* decide(decisions, event).pipe(
-                  Effect.catch(suppress(message, "Event decisions failed")),
-                );
-          if (result === null) return null;
-          return yield* transformEvent(transform, { event, result }).pipe(
-            Effect.catch(suppress(message, "Event transform failed")),
+          const pipeline = Effect.gen(function* () {
+            const prepared = yield* prepareEvent(prepare, event);
+            if (prepared === null) return null;
+            step = "decisions";
+            const result =
+              decisions === undefined || decide === undefined
+                ? undefined
+                : yield* decide(decisions, prepared);
+            step = "transform";
+            return yield* transformEvent(transform, { event, prepared, result });
+          });
+          return pipeline.pipe(
+            Effect.timeout(`${options.eventTimeoutSeconds} seconds`),
+            Effect.catchCause((cause) => {
+              if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause);
+              return Effect.logWarning("Event step failed").pipe(
+                Effect.annotateLogs({ watchId, eventId: message.eventId, step }),
+                Effect.andThen(
+                  Effect.fail(
+                    `${step} failed on ${message.eventId}: ${String(Cause.squash(cause))}`,
+                  ),
+                ),
+              );
+            }),
           );
-        });
+        };
         const worker = Effect.gen(function* () {
           yield* notify("active");
           const recorded = yield* producer.terminal;
@@ -252,7 +300,9 @@ export const makeServer = (options: ServerOptions): McpServer => {
             switch (message.kind) {
               case "event": {
                 if (!matchesFilter(filter, message.payload)) break;
-                const data = yield* deliverable(message);
+                const outcome = yield* deliverable(message).pipe(Effect.result);
+                if (outcome._tag === "Failure") return outcome.failure;
+                const data = outcome.success;
                 if (data === null) break;
                 yield* notify(
                   "event",

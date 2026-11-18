@@ -38,6 +38,8 @@ test("delivers fresh events once and drops stale events", async () => {
               catalog,
               producers,
               maxSeconds: 3600,
+              eventTimeoutSeconds: 30,
+              larkRequest: producers.larkRequest,
             });
             const client = new Client({ name: "dedup-test", version: "1" });
             const active = Promise.withResolvers<void>();
@@ -90,7 +92,11 @@ test("delivers fresh events once and drops stale events", async () => {
                     method: "events/stream",
                     params: {
                       name,
-                      arguments: { watchId },
+                      arguments: {
+                        watchId,
+                        prepare: "return input.event.data",
+                        transform: "return JSON.stringify(input.prepared)",
+                      },
                     },
                   },
                   Schema.toStandardSchemaV1(Schema.Unknown),
@@ -128,17 +134,13 @@ test("delivers fresh events once and drops stale events", async () => {
                   eventId: "same",
                   timestamp: new Date(Number(recent)).toISOString(),
                   _meta: expect.objectContaining({ "lark-events-mcp/timestampOrigin": "upstream" }),
-                  data: expect.objectContaining({
-                    message: { chat_id: "oc_test", message_id: "same" },
-                  }),
+                  data: expect.stringContaining('"message_id":"same"'),
                 }),
                 expect.objectContaining({
                   eventId: "fresh-sentinel",
                   timestamp: new Date(Number(recent)).toISOString(),
                   _meta: expect.objectContaining({ "lark-events-mcp/timestampOrigin": "upstream" }),
-                  data: expect.objectContaining({
-                    message: { chat_id: "oc_test", message_id: "fresh-sentinel" },
-                  }),
+                  data: expect.stringContaining('"message_id":"fresh-sentinel"'),
                 }),
               ]);
               expect(received).toHaveLength(2);

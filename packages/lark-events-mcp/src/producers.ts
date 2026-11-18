@@ -1,4 +1,5 @@
-import { Domain, EventDispatcher, WSClient } from "@larksuiteoapi/node-sdk";
+import { Client, Domain, EventDispatcher, WSClient } from "@larksuiteoapi/node-sdk";
+import type { LarkRequester } from "./prepare.ts";
 import {
   Cache,
   Clock,
@@ -32,6 +33,7 @@ export type SourceMessage =
 export class EventProducers extends Context.Service<
   EventProducers,
   {
+    readonly larkRequest: LarkRequester;
     readonly acquire: (event: string) => Effect.Effect<
       {
         readonly messages: PubSub.PubSub<SourceMessage>;
@@ -74,6 +76,19 @@ export const producersLayer = Layer.effect(
       Schema.RedactedFromValue(Schema.NonEmptyString),
       "LARK_APP_SECRET",
     );
+    const lark = new Client({
+      appId,
+      appSecret: Redacted.value(secret),
+      domain: Domain.Lark,
+      logger,
+    });
+    const larkRequest: LarkRequester = ({ path, query }, signal) =>
+      lark.request<unknown>({
+        method: "GET",
+        url: `https://open.larksuite.com/open-apis${path}`,
+        params: query,
+        signal,
+      });
     let ready = yield* Deferred.make<void, SourceError>();
     const seen = yield* Cache.make({
       capacity: 10_000,
@@ -154,6 +169,6 @@ export const producersLayer = Layer.effect(
         terminal: Effect.sync(() => terminal),
       };
     });
-    return EventProducers.of({ acquire });
+    return EventProducers.of({ acquire, larkRequest });
   }),
 );
