@@ -8,7 +8,7 @@ import {
 import { Clock, Deferred, Effect, Logger, PubSub, Schedule, Schema } from "effect";
 import type { EventDefinition, LarkCatalog } from "./catalog.ts";
 import { decodeArguments, inputSchemaDocument, matchesFilter } from "./contract.ts";
-import type { EventProducers } from "./producers.ts";
+import type { EventProducers, SourceMessage } from "./producers.ts";
 import { bytes, makeTransform } from "./transform.ts";
 import type { makeDecisions } from "./decisions.ts";
 
@@ -50,6 +50,8 @@ interface Watch {
 }
 
 const watches = new Map<string, Watch>();
+
+type EventMessage = Extract<SourceMessage, { kind: "event" }>;
 
 export const makeServer = (options: ServerOptions): McpServer => {
   const transformEvent = makeTransform();
@@ -118,21 +120,15 @@ export const makeServer = (options: ServerOptions): McpServer => {
   server.server.setRequestHandler(
     "events/list",
     { params: Schema.toStandardSchemaV1(Schema.Struct({})) },
-    () =>
-      run(
-        Effect.gen(function* () {
-          const definitions = yield* options.catalog.list();
-          return {
-            events: definitions.map((definition) => ({
-              name: definition.name,
-              description: describe(definition),
-              delivery: ["push"],
-              inputSchema: inputSchemaDocument(definition.payloadSchema),
-              payloadSchema: { anyOf: [definition.payloadSchema, { type: "string" }] },
-            })),
-          };
-        }),
-      ),
+    () => ({
+      events: options.catalog.events.map((definition) => ({
+        name: definition.name,
+        description: describe(definition),
+        delivery: ["push"],
+        inputSchema: inputSchemaDocument(definition.payloadSchema),
+        payloadSchema: { anyOf: [definition.payloadSchema, { type: "string" }] },
+      })),
+    }),
   );
 
   server.server.setRequestHandler("events/stream", { params: streamParams }, (params, ctx) => {
@@ -157,13 +153,14 @@ export const makeServer = (options: ServerOptions): McpServer => {
           return yield* Effect.fail(
             invalidParams("lark events are live-only; cursor must be null or omitted"),
           );
-        const definition = yield* options.catalog
-          .schema(params.name)
-          .pipe(Effect.mapError((error) => invalidParams(error.message)));
-        const decoded = yield* decodeArguments(definition.payloadSchema, params.arguments ?? {});
-        if (decoded._tag === "error") return yield* Effect.fail(invalidParams(decoded.message));
-        const { filter, watchId, transform, decisions } = decoded.value;
-        if (decisions !== undefined && options.decide === undefined)
+        const definition = options.catalog.get(params.name);
+        if (!definition) return yield* Effect.fail(invalidParams(`unknown event: ${params.name}`));
+        const { filter, watchId, transform, decisions } = yield* decodeArguments(
+          definition.payloadSchema,
+          params.arguments ?? {},
+        ).pipe(Effect.mapError(invalidParams));
+        const decide = options.decide;
+        if (decisions !== undefined && decide === undefined)
           return yield* Effect.fail(invalidParams("decisions model is not configured"));
         if (transform !== undefined && bytes(transform) > 65536)
           return yield* Effect.fail(invalidParams("transform source exceeds 65536 bytes"));
@@ -177,18 +174,19 @@ export const makeServer = (options: ServerOptions): McpServer => {
           startedAt: new Date(startedAt).toISOString(),
           expiresAt: new Date(startedAt + options.maxSeconds * 1000).toISOString(),
         };
-        yield* Effect.addFinalizer(() =>
-          Effect.gen(function* () {
-            if (watches.get(watchId) === watch) watches.delete(watchId);
-            yield* Deferred.succeed(finished, undefined);
+        yield* Effect.acquireRelease(
+          Effect.suspend(() => {
+            if (watches.has(watchId))
+              return Effect.fail(invalidParams("watchId is already active"));
+            watches.set(watchId, watch);
+            return Effect.void;
           }),
+          () =>
+            Effect.gen(function* () {
+              watches.delete(watchId);
+              yield* Deferred.succeed(finished, undefined);
+            }),
         );
-        const registered = yield* Effect.sync(() => {
-          if (watches.has(watchId)) return false;
-          watches.set(watchId, watch);
-          return true;
-        });
-        if (!registered) return yield* Effect.fail(invalidParams("watchId is already active"));
         const now = yield* Clock.currentTimeMillis;
         yield* Effect.sleep(Math.max(0, startedAt + options.maxSeconds * 1000 - now)).pipe(
           Effect.andThen(Deferred.succeed(ended, "Expired")),
@@ -211,6 +209,30 @@ export const makeServer = (options: ServerOptions): McpServer => {
           });
           return {};
         }
+        const suppress = (message: EventMessage, text: string) => (kind: string) =>
+          Effect.logWarning(text).pipe(
+            Effect.annotateLogs({ watchId, eventId: message.eventId, kind }),
+            Effect.as(null),
+          );
+        const deliverable = Effect.fnUntraced(function* (message: EventMessage) {
+          if (transform === undefined) return message.payload;
+          const event = {
+            eventId: message.eventId,
+            timestamp: message.timestamp,
+            timestampOrigin: message.timestampOrigin,
+            data: message.payload,
+          };
+          const result =
+            decisions === undefined || decide === undefined
+              ? undefined
+              : yield* decide(decisions, event).pipe(
+                  Effect.catch(suppress(message, "Event decisions failed")),
+                );
+          if (result === null) return null;
+          return yield* transformEvent(transform, { event, result }).pipe(
+            Effect.catch(suppress(message, "Event transform failed")),
+          );
+        });
         const worker = Effect.gen(function* () {
           yield* notify("active");
           const recorded = yield* producer.terminal;
@@ -221,40 +243,8 @@ export const makeServer = (options: ServerOptions): McpServer => {
             switch (message.kind) {
               case "event": {
                 if (!matchesFilter(filter, message.payload)) break;
-                let data: unknown = message.payload;
-                if (transform !== undefined) {
-                  const event = {
-                    eventId: message.eventId,
-                    timestamp: message.timestamp,
-                    timestampOrigin: message.timestampOrigin,
-                    data: message.payload,
-                  };
-                  let input: unknown = { event };
-                  if (decisions !== undefined && options.decide !== undefined) {
-                    const decision = yield* options
-                      .decide(decisions, event)
-                      .pipe(
-                        Effect.catch((kind) =>
-                          Effect.logWarning("Event decisions failed").pipe(
-                            Effect.annotateLogs({ watchId, eventId: message.eventId, kind }),
-                            Effect.as(null),
-                          ),
-                        ),
-                      );
-                    if (decision === null) break;
-                    input = { event, result: decision };
-                  }
-                  const result = yield* transformEvent(transform, input).pipe(
-                    Effect.catch((kind) =>
-                      Effect.logWarning("Event transform failed").pipe(
-                        Effect.annotateLogs({ watchId, eventId: message.eventId, kind }),
-                        Effect.as(null),
-                      ),
-                    ),
-                  );
-                  if (result === null) break;
-                  data = result;
-                }
+                const data = yield* deliverable(message);
+                if (data === null) break;
                 yield* notify(
                   "event",
                   {

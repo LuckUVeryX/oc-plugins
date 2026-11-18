@@ -14,13 +14,15 @@ export const makeTransform = () => {
   const runtime = CodeMode.make({
     limits: { timeoutMs: 1000, maxToolCalls: 0, maxOutputBytes: 16384 },
   });
-  return (source: string, inputValue: unknown): Effect.Effect<string | null, TransformFailure> =>
+  return (
+    source: string,
+    inputValue: { readonly event: unknown; readonly result?: unknown },
+  ): Effect.Effect<string | null, TransformFailure> =>
     Effect.gen(function* () {
       const encoded = yield* Effect.try(() => JSON.stringify(inputValue)).pipe(
         Effect.mapError((): TransformFailure => "InvalidInput"),
       );
-      if (encoded === undefined || bytes(encoded) > 1048576)
-        return yield* Effect.fail<TransformFailure>("InputTooLarge");
+      if (bytes(encoded) > 1048576) return yield* Effect.fail<TransformFailure>("InputTooLarge");
       const input = yield* Schema.decodeUnknownEffect(Schema.Json)(JSON.parse(encoded)).pipe(
         Effect.mapError((): TransformFailure => "InvalidInput"),
       );
@@ -31,8 +33,7 @@ export const makeTransform = () => {
       if (typeof result.value !== "string")
         return yield* Effect.fail<TransformFailure>("InvalidOutput");
       const serialized = JSON.stringify(result.value);
-      if (bytes(serialized) > 16384 || serialized.length > 16384)
-        return yield* Effect.fail<TransformFailure>("OutputTooLarge");
+      if (bytes(serialized) > 16384) return yield* Effect.fail<TransformFailure>("OutputTooLarge");
       return result.value;
     });
 };

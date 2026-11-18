@@ -43,13 +43,8 @@ export class EventProducers extends Context.Service<
   }
 >()("lark-events-mcp/EventProducers") {}
 
-const logger = {
-  error: (...message: unknown[]) => console.error(...message),
-  warn: (...message: unknown[]) => console.error(...message),
-  info: (...message: unknown[]) => console.error(...message),
-  debug: (...message: unknown[]) => console.error(...message),
-  trace: (...message: unknown[]) => console.error(...message),
-};
+const log = (...message: unknown[]) => console.error(...message);
+const logger = { error: log, warn: log, info: log, debug: log, trace: log };
 
 const STALE_EVENT_CUTOFF_MS = 60 * 60 * 1000;
 
