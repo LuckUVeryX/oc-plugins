@@ -17,6 +17,7 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
   );
   const server = makeServer({
     catalog,
+    maxSeconds: 3600,
     producers: {
       acquire: () =>
         Effect.succeed({
@@ -121,6 +122,7 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
     ]);
     const definition = listing.events.find((event) => event.name === FLAT_KEY);
     expect(definition?.inputSchema).not.toHaveProperty(["properties", "debounce"]);
+    expect(definition?.inputSchema).not.toHaveProperty(["properties", "durationSeconds"]);
     expect(definition?.payloadSchema).toEqual(
       (await Effect.runPromise(catalog.schema(FLAT_KEY))).payloadSchema,
     );
@@ -212,6 +214,7 @@ test("watch controls and deadlines include connection readiness", async () => {
   );
   const server = makeServer({
     catalog,
+    maxSeconds: 1,
     producers: {
       acquire: (name) =>
         Effect.succeed({
@@ -246,15 +249,13 @@ test("watch controls and deadlines include connection readiness", async () => {
   const result = Schema.toStandardSchemaV1(Schema.Unknown);
   const requests: Promise<unknown>[] = [];
   const controllers: AbortController[] = [];
-  const subscribe = (watchId: string, name = FLAT_KEY, durationSeconds = 60) => {
+  const subscribe = (watchId: string, name = FLAT_KEY) => {
     const controller = new AbortController();
     controllers.push(controller);
     const request = client
-      .request(
-        { method: "events/stream", params: { name, arguments: { watchId, durationSeconds } } },
-        result,
-        { signal: controller.signal },
-      )
+      .request({ method: "events/stream", params: { name, arguments: { watchId } } }, result, {
+        signal: controller.signal,
+      })
       .catch((error: unknown) => error);
     requests.push(request);
     return request;
@@ -279,7 +280,7 @@ test("watch controls and deadlines include connection readiness", async () => {
         watchId: "one",
         eventName: FLAT_KEY,
         startedAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        expiresAt: new Date(Date.now() + 1000).toISOString(),
       },
     ]);
     const duplicate = subscribe("one");
@@ -289,7 +290,7 @@ test("watch controls and deadlines include connection readiness", async () => {
       .request(
         {
           method: "events/stream",
-          params: { name: FLAT_KEY, arguments: { watchId: "invalid", durationSeconds: 1.5 } },
+          params: { name: FLAT_KEY, arguments: { watchId: "invalid", durationSeconds: 1 } },
         },
         result,
       )
@@ -312,8 +313,10 @@ test("watch controls and deadlines include connection readiness", async () => {
     );
     await vi.advanceTimersByTimeAsync(0);
     expect(received.filter((value) => value.method === "event")).toEqual([]);
-    subscribe("one", FLAT_KEY, 1);
+    subscribe("one", FLAT_KEY);
     await vi.advanceTimersByTimeAsync(0);
+    const expiry = (await tool("watch_list")).watches[0].expiresAt;
+    await vi.advanceTimersByTimeAsync(500);
     await Effect.runPromise(
       PubSub.publish(messages, {
         kind: "event",
@@ -324,7 +327,8 @@ test("watch controls and deadlines include connection readiness", async () => {
       }),
     );
     await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(1000);
+    expect((await tool("watch_list")).watches[0].expiresAt).toBe(expiry);
+    await vi.advanceTimersByTimeAsync(500);
     expect(received.slice(-2)).toEqual([
       {
         method: "event",
@@ -336,7 +340,7 @@ test("watch controls and deadlines include connection readiness", async () => {
     const waitingName = (await Effect.runPromise(catalog.list())).find(
       (entry) => entry.name !== FLAT_KEY,
     )!.name;
-    subscribe("waiting", waitingName, 1);
+    subscribe("waiting", waitingName);
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(1000);
     expect(received.filter((value) => value.reason === "Expired")).toHaveLength(2);

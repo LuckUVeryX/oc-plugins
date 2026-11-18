@@ -66,7 +66,6 @@ Use OpenCode's `watch_mcp_event` with the `lark-events` server for native MCP su
   "name": "im.message.receive_v1",
   "arguments": {
     "watchId": "my-watch",
-    "durationSeconds": 3600,
     "filter": {
       "message.chat_id": "oc_example"
     }
@@ -75,7 +74,7 @@ Use OpenCode's `watch_mcp_event` with the `lark-events` server for native MCP su
 }
 ```
 
-Each active watch needs a nonempty ID unique within the server process. The lifetime defaults to 3600 seconds and starts when the watch is accepted, including connection readiness. Use `watch_list` to see active IDs and their start and expiry times. Use `watch_stop` with a `watchId` to stop a watch and wait for cleanup. Expired and stopped watches send a terminal notification. Watches are not persisted across server restarts.
+Each active watch needs a nonempty ID unique within the server process. The operator can set `LARK_WATCH_MAX_SECONDS` in the server environment to a positive integer. It defaults to 3600 seconds. The lifetime starts when the watch is accepted, including connection readiness. Agents cannot override it. Use `watch_list` to see active IDs and their start and expiry times. Use `watch_stop` with a `watchId` to stop a watch and wait for cleanup. Expired and stopped watches send a terminal notification. Watches are not persisted across server restarts.
 
 If you want to stop a watch, call `watch_stop` before disconnecting or closing the UI. A watch can outlive a project's disconnection.
 
