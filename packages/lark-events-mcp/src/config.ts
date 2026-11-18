@@ -1,4 +1,10 @@
 import { Config, Schema } from "effect";
+import { Generate } from "@opencode/schema/generate";
+
+export const decisionModel = Config.schema(
+  Schema.fromJsonString(Generate.DecisionRequest.fields.model),
+  "LARK_DECISIONS_MODEL",
+).pipe(Config.option);
 
 export const watchMaxSeconds = Config.schema(
   Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),

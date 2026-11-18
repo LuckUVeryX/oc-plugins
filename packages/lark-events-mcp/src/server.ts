@@ -5,11 +5,12 @@ import {
   SUBSCRIPTION_ID_META_KEY,
   McpServer,
 } from "@modelcontextprotocol/server";
-import { Clock, Deferred, Effect, PubSub, Schedule, Schema } from "effect";
+import { Clock, Deferred, Effect, Logger, PubSub, Schedule, Schema } from "effect";
 import type { EventDefinition, LarkCatalog } from "./catalog.ts";
 import { decodeArguments, inputSchemaDocument, matchesFilter } from "./contract.ts";
 import type { EventProducers } from "./producers.ts";
 import { bytes, makeTransform } from "./transform.ts";
+import type { makeDecisions } from "./decisions.ts";
 
 export const EVENTS_EXTENSION = "io.modelcontextprotocol/events";
 
@@ -20,6 +21,7 @@ interface ServerOptions {
   readonly catalog: Effect.Success<typeof LarkCatalog>;
   readonly producers: Effect.Success<typeof EventProducers>;
   readonly maxSeconds: number;
+  readonly decide?: ReturnType<typeof makeDecisions> | undefined;
 }
 
 const streamParams = Schema.toStandardSchemaV1(
@@ -29,6 +31,10 @@ const streamParams = Schema.toStandardSchemaV1(
     cursor: Schema.optionalKey(Schema.Unknown),
   }),
 );
+
+// Stdout carries MCP messages, so handler logs must go to stderr.
+const run = <A, E>(effect: Effect.Effect<A, E>, options?: Effect.RunOptions) =>
+  Effect.runPromise(effect.pipe(Effect.provideService(Logger.LogToStderr, true)), options);
 
 const invalidParams = (message: string) => new ProtocolError(INVALID_PARAMS, message);
 
@@ -90,7 +96,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
       }),
     },
     ({ watchId }) =>
-      Effect.runPromise(
+      run(
         Effect.gen(function* () {
           const watch = watches.get(watchId);
           if (watch) {
@@ -113,7 +119,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
     "events/list",
     { params: Schema.toStandardSchemaV1(Schema.Struct({})) },
     () =>
-      Effect.runPromise(
+      run(
         Effect.gen(function* () {
           const definitions = yield* options.catalog.list();
           return {
@@ -145,7 +151,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
           },
         }),
       );
-    return Effect.runPromise(
+    return run(
       Effect.gen(function* () {
         if (params.cursor !== undefined && params.cursor !== null)
           return yield* Effect.fail(
@@ -156,7 +162,9 @@ export const makeServer = (options: ServerOptions): McpServer => {
           .pipe(Effect.mapError((error) => invalidParams(error.message)));
         const decoded = yield* decodeArguments(definition.payloadSchema, params.arguments ?? {});
         if (decoded._tag === "error") return yield* Effect.fail(invalidParams(decoded.message));
-        const { filter, watchId, transform } = decoded.value;
+        const { filter, watchId, transform, decisions } = decoded.value;
+        if (decisions !== undefined && options.decide === undefined)
+          return yield* Effect.fail(invalidParams("decisions model is not configured"));
         if (transform !== undefined && bytes(transform) > 65536)
           return yield* Effect.fail(invalidParams("transform source exceeds 65536 bytes"));
         const ended = yield* Deferred.make<string>();
@@ -215,12 +223,28 @@ export const makeServer = (options: ServerOptions): McpServer => {
                 if (!matchesFilter(filter, message.payload)) break;
                 let data: unknown = message.payload;
                 if (transform !== undefined) {
-                  const result = yield* transformEvent(transform, {
+                  const event = {
                     eventId: message.eventId,
                     timestamp: message.timestamp,
                     timestampOrigin: message.timestampOrigin,
                     data: message.payload,
-                  }).pipe(
+                  };
+                  let input: unknown = { event };
+                  if (decisions !== undefined && options.decide !== undefined) {
+                    const decision = yield* options
+                      .decide(decisions, event)
+                      .pipe(
+                        Effect.catch((kind) =>
+                          Effect.logWarning("Event decisions failed").pipe(
+                            Effect.annotateLogs({ watchId, eventId: message.eventId, kind }),
+                            Effect.as(null),
+                          ),
+                        ),
+                      );
+                    if (decision === null) break;
+                    input = { event, result: decision };
+                  }
+                  const result = yield* transformEvent(transform, input).pipe(
                     Effect.catch((kind) =>
                       Effect.logWarning("Event transform failed").pipe(
                         Effect.annotateLogs({ watchId, eventId: message.eventId, kind }),

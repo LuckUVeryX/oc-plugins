@@ -8,7 +8,7 @@ const event = {
   timestampOrigin: "local",
   data: { text: "hello" },
 };
-const run = (source: string) => Effect.runPromise(makeTransform()(source, event));
+const run = (source: string) => Effect.runPromise(makeTransform()(source, { event }));
 
 test("uses native results and JSON event input", async () => {
   expect(await run("input.event.data.text + input.event.eventId")).toBe("helloid");
@@ -35,9 +35,11 @@ test("rejects invalid results, errors, truncation and host capabilities", async 
 
 test("enforces input and serialized output limits", async () => {
   const transform = makeTransform();
-  expect(await Effect.runPromise(transform('return "ok"', "a".repeat(1048564)))).toBe("ok");
+  expect(await Effect.runPromise(transform('return "ok"', { event: "a".repeat(1048564) }))).toBe(
+    "ok",
+  );
   await expect(
-    Effect.runPromise(transform('return "ok"', "a".repeat(1048565))),
+    Effect.runPromise(transform('return "ok"', { event: "a".repeat(1048565) })),
   ).rejects.toBeDefined();
   await expect(
     Effect.runPromise(makeTransform()('return "\\n".repeat(8192)', event)),

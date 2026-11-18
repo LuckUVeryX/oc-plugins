@@ -2,7 +2,7 @@
 
 This standalone stdio server exposes Lark SDK events through the experimental MCP Events extension. It is private and is not published to npm.
 
-The Lark app, its permissions, and its upstream event subscriptions must already be configured. The server does not manage them, send replies, or make decisions.
+The Lark app, its permissions, and its upstream event subscriptions must already be configured. The server does not manage them or send replies.
 
 ## Install for OpenCode
 
@@ -87,6 +87,10 @@ The SDK reconnects automatically, but events during a disconnect can be missed. 
 By default, each matching event produces one notification. Its `data` is the raw SDK callback payload. The notification keeps the upstream `event_id` and v2 millisecond `create_time` when valid. Otherwise it uses a `local-` UUID or local receipt time. `_meta["lark-events-mcp/timestampOrigin"]` identifies the timestamp as `upstream` or `local`. Local IDs do not provide deduplication across restarts.
 
 An optional `transform` argument contains a Code Mode program. It receives `input.event` with `eventId`, `timestamp`, `timestampOrigin`, and raw `data`. A string result becomes notification data. Null, undefined, or a valueless program suppresses the notification. A final expression can return a value. Empty programs, errors, other result types, and truncated results are logged and suppressed. Filters run before the program.
+
+An optional `decisions` argument requires `transform`. Supply native `questions` and optional standing `input` parts. The server appends the current event as a JSON input part and makes one native Decisions request for each matching event. The transform receives the original `input.event` and the full native `input.result`, including per-question errors. API failures are logged and suppress delivery. The server does not decide whether to reply.
+
+The operator can set `LARK_DECISIONS_MODEL` to a native JSON model reference such as `{"providerID":"your-provider","id":"your-model","variant":"optional-variant"}`. Omit `variant` when it is not needed. The model is fixed for the process and cannot be supplied by a watch. Without this setting, raw and transform-only watches still work. Decisions uses the existing local OpenCode service and does not start it. Stopping or expiring a watch aborts its local request; provider cancellation and billing are not guaranteed.
 
 The interpreter exposes no host tools or extensions. Its confinement is not OS isolation or a hard memory limit. The interpreter timeout is 1000 ms. Transform source is limited to 65536 bytes, input to 1048576 bytes, and output to 16384 bytes. Serialized string delivery is also limited to 16384 JavaScript string units.
 
