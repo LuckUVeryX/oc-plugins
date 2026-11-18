@@ -7,7 +7,7 @@ type Scalar = typeof Scalar.Type;
 const isScalar = Schema.is(Scalar);
 const WatchArguments = Schema.Struct({
   watchId: Schema.NonEmptyString,
-  filter: Schema.optionalKey(Schema.Unknown),
+  filter: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
   transform: Schema.optionalKey(Schema.String),
   decisions: Schema.optionalKey(Decisions),
 });
@@ -76,20 +76,19 @@ export const inputSchemaDocument = (schema: unknown): Record<string, unknown> =>
       watchId: {
         type: "string",
         minLength: 1,
-        description:
-          "Choose an ID unique among active Lark event watches. Reuse it with stop_watch.",
+        description: "Choose an ID unique among active watches.",
       },
       filter: {
         type: "object",
         description:
-          "Match raw payload fields by dot path. All paths must match exactly. An array allows any listed value for that path.",
+          "Match raw payload dot paths. All paths must match; an array matches any listed value.",
         properties,
         additionalProperties: false,
       },
       transform: {
         type: "string",
         description:
-          "Format or suppress each matching event with a Code Mode program. Read input.event.data for the payload. Return a string to deliver that string, or null to suppress the event. Omit for raw delivery.",
+          "Run a Code Mode program per matching event. Read the raw payload at input.event.data; input.event also has eventId, timestamp, and timestampOrigin. Return a string to deliver it; return null, undefined, or nothing to suppress it. Other results, errors, and exceeded limits also suppress it. Limits: 65536-byte source, 1048576-byte input, 1000 ms, 16384 bytes for the returned string as JSON, quotes included. Omit for raw delivery.",
       },
       decisions: strictDocument(decisions.schema),
     },
@@ -115,28 +114,25 @@ const matchesLeaf = (value: Scalar, leaf: FilterLeaf): boolean => {
 
 export const decodeArguments = (schema: unknown, input: unknown) =>
   Effect.gen(function* () {
-    if (!isObject(input) || Array.isArray(input))
-      return yield* Effect.fail("stream arguments must be an object");
-    if (Object.keys(input).some((key) => !Object.hasOwn(WatchArguments.fields, key)))
-      return yield* Effect.fail("unknown stream argument");
     const decoded = yield* Schema.decodeUnknownEffect(WatchArguments)(input, {
       onExcessProperty: "error",
-    }).pipe(Effect.option);
-    if (decoded._tag === "None") return yield* Effect.fail("invalid watch arguments");
-    const { watchId, filter: raw = {}, transform, decisions } = decoded.value;
+    }).pipe(Effect.mapError((issue) => issue.message));
+    const { watchId, filter: raw = {}, transform, decisions } = decoded;
     if (decisions !== undefined && transform === undefined)
-      return yield* Effect.fail("decisions requires transform");
-    if (!isObject(raw) || Array.isArray(raw)) return yield* Effect.fail("filter must be an object");
+      return yield* Effect.fail("Decisions requires transform; add transform or omit decisions");
     const leaves = new Map(filterLeaves(schema).map((leaf) => [leaf.path, leaf]));
     const filter: Array<readonly [string, ReadonlyArray<Scalar>]> = [];
     for (const [path, value] of Object.entries(raw)) {
       const leaf = leaves.get(path);
-      if (!leaf) return yield* Effect.fail(`unknown filter path: ${path}`);
+      if (!leaf)
+        return yield* Effect.fail(`Unknown filter path: ${path}; choose a path from inputSchema`);
       const values = isScalar(value) ? [value] : Array.isArray(value) ? value : undefined;
       if (!values || values.length === 0 || !values.every(isScalar))
-        return yield* Effect.fail(`filter ${path} must be a scalar or non-empty array of scalars`);
+        return yield* Effect.fail(`Filter ${path} must be a scalar or non-empty array of scalars`);
       if (!values.every((scalar) => matchesLeaf(scalar, leaf)))
-        return yield* Effect.fail(`invalid value for filter ${path}`);
+        return yield* Effect.fail(
+          `Invalid value for filter ${path}; use a value allowed by inputSchema`,
+        );
       filter.push([path, values]);
     }
     return { filter, watchId, transform, decisions };

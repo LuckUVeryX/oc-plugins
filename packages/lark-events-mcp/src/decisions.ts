@@ -9,7 +9,7 @@ export const Decisions = Schema.Struct({
   input: Schema.optionalKey(Generate.DecisionRequest.fields.input),
 }).annotate({
   description:
-    "Classify each matching event before delivery. Requires transform. Ask questions about the event and any supplied input. Read the answers in the transform at input.result. The operator sets the model.",
+    "The operator's configured model answers questions about each matching event before transform runs. Read answers at input.result. Requires transform.",
 });
 export type Decisions = typeof Decisions.Type;
 export type DecisionModel = typeof Generate.DecisionRequest.fields.model.Type;

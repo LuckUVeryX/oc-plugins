@@ -1,14 +1,50 @@
 # lark-events-mcp
 
-This standalone stdio server exposes Lark SDK events through the experimental MCP Events extension. It is private and is not published to npm.
+lark-events-mcp is a local MCP server that sends Lark events to OpenCode. An agent opens a watch on one event, such as `im.message.receive_v1`, and gets one notification for each matching event until the watch stops or expires.
 
-The Lark app, its permissions, and its upstream event subscriptions must already be configured. The server does not manage them or send replies.
+```mermaid
+flowchart LR
+    Lark[Lark app] -- WebSocket --> Server[lark-events-mcp]
+    Server -- MCP event notifications --> OpenCode
+    OpenCode --> Agent
+```
 
-## Install for OpenCode
+## Why use it
 
-You need Git, Bun 1.4.4, OpenCode, and a configured Lark app. Make sure Bun is on the OpenCode service's `PATH`.
+Without this server, an agent learns about new Lark activity only when you paste it in or ask it to poll. With a watch, the session that opened it receives each event as it happens. Some uses:
 
-1. Clone the repository into a dedicated directory and install dependencies at the repository root:
+- **Follow a thread from your current session.** You are fixing a bug that a teammate reported in a Lark thread. Ask the agent to watch `im.message.receive_v1` filtered to that thread. New replies, such as a fresh stack trace or "still broken on staging", reach the session that already has the code open.
+- **Hear only about messages that need you.** Ask the agent to watch the chats you care about. The watch's `decisions` argument asks a model whether each message needs you, for example a direct question or a blocked release. The agent messages you about those and skips the rest. This needs `LARK_DECISIONS_MODEL`.
+- **Build a running report.** Ask the agent to watch a channel, such as incident updates or customer feedback, and write a summary when the watch ends. A watch expires after one hour by default, so a longer report needs a new watch each hour.
+
+The server only listens, so the agent replies or notifies with its own tools, such as `lark-cli`.
+
+## Before you start
+
+The server does not create the Lark app, its permissions, or its event subscriptions, so set those up in the Lark developer console first. It connects to Lark, not Feishu. The package is private and not published to npm.
+
+The server has these limits:
+
+- Delivery is live only. Events that arrive while no watch is open, or while the connection is reconnecting, are lost.
+- [Lark sends each event to one WebSocket client](https://open.larksuite.com/document/ukTMukTMukTM/uYDNxYjL2QTM24iN0EjN/event-subscription-configure-/use-websocket) of an app. Any other consumer of the same app, such as `lark-cli event consume` or this server on another machine, splits the events with it.
+- Each watch expires after one hour by default.
+
+To install, give your agent this README and ask it to follow the setup section.
+
+---
+
+## Setup for agents
+
+Follow these steps on the machine that runs the OpenCode service. Ask the user for anything you cannot find.
+
+### Requirements
+
+- Git, Bun 1.4.4, and OpenCode 2.3.0.
+- A Lark app with event subscriptions set to WebSocket mode. Ask the user for its app ID, which matches `cli_` followed by 16 hex characters, and its app secret.
+
+### Install
+
+1. Clone the repository and install dependencies at its root:
 
    ```sh
    git clone https://github.com/LuckUVeryX/oc-plugins.git "$HOME/.local/share/lark-events-mcp"
@@ -16,90 +52,69 @@ You need Git, Bun 1.4.4, OpenCode, and a configured Lark app. Make sure Bun is o
    bun install --frozen-lockfile
    ```
 
-2. Set `LARK_APP_ID` and `LARK_APP_SECRET` in the OpenCode service's environment. OpenCode substitutes these values from its environment, not necessarily from your current shell.
+2. Make `LARK_APP_ID`, `LARK_APP_SECRET`, and Bun's directory on `PATH` available to the OpenCode service. OpenCode reads its own environment, which may differ from the user's shell. Do not write the secret into the config file.
 
-3. Add the following settings to `~/.config/opencode/opencode.jsonc`, preserving any existing settings:
+3. Merge this into `~/.config/opencode/opencode.jsonc` and keep the existing settings:
 
-```jsonc
-{
-  "$schema": "https://opencode.ai/config.json",
-  "experimental": { "mcp_events": true },
-  "mcp": {
-    "servers": {
-      "lark-events": {
-        "type": "local",
-        "command": [
-          "bun",
-          "{env:HOME}/.local/share/lark-events-mcp/packages/lark-events-mcp/src/main.ts",
-        ],
-        "cwd": "{env:HOME}/.local/share/lark-events-mcp",
-        "pool": true,
-        "protocol": "2026-07-28",
-        "environment": {
-          "LARK_APP_ID": "{env:LARK_APP_ID}",
-          "LARK_APP_SECRET": "{env:LARK_APP_SECRET}",
-        },
-      },
-    },
-  },
-}
+   ```jsonc
+   {
+     "experimental": { "mcp_events": true },
+     "mcp": {
+       "servers": {
+         "lark-events": {
+           "type": "local",
+           "command": [
+             "bun",
+             "{env:HOME}/.local/share/lark-events-mcp/packages/lark-events-mcp/src/main.ts",
+           ],
+           "cwd": "{env:HOME}/.local/share/lark-events-mcp",
+           "pool": true,
+           "protocol": "2026-07-28",
+           "environment": {
+             "LARK_APP_ID": "{env:LARK_APP_ID}",
+             "LARK_APP_SECRET": "{env:LARK_APP_SECRET}",
+           },
+         },
+       },
+     },
+   }
+   ```
+
+   If you cloned somewhere else, put the absolute path in `command` and `cwd`. OpenCode expands `{env:HOME}` but not `$HOME`.
+
+   Put this block in the global config only. With `"pool": true`, projects in one OpenCode service share one Lark connection when the command, `cwd`, environment, protocol, and timeout match. A project-level override opens a second connection, and the two connections split the events.
+
+4. Restart the OpenCode service so it reads the new environment and config.
+
+### Optional settings
+
+Add these to the `environment` block if the user wants them.
+
+| Variable                 | Default | Effect                                                                                                                                                                                                                                                                                             |
+| ------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LARK_WATCH_MAX_SECONDS` | `3600`  | How long each watch lasts. Positive integer.                                                                                                                                                                                                                                                       |
+| `LARK_DECISIONS_MODEL`   | unset   | Model that answers `decisions` questions on each event, as JSON: `{"providerID":"your-provider","id":"your-model","variant":"optional"}`. Omit `variant` if it is not needed. Without this variable, the server rejects watches that use `decisions`. Each matching event sends one model request. |
+
+### Verify
+
+1. Run `opencode mcp list`. `lark-events` should show `connected`. This checks the MCP connection only.
+2. Ask the user which event the app subscribes to, open a watch on it with `watch_mcp_event`, and ask the user to trigger it. An `event` notification confirms delivery from Lark. Then call `stop_watch`.
+
+### Troubleshoot
+
+| Symptom                                   | Cause                                                                                                            |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Server fails to start                     | `LARK_APP_ID` is missing or malformed, or `LARK_APP_SECRET` is empty. Server logs go to stderr.                  |
+| Watch stays open but never becomes active | The Lark connection cannot start, often because of a wrong secret. The watch waits until it expires.             |
+| Some events arrive, others do not         | Another consumer of the same app is connected. Find it and stop it.                                              |
+| An event never arrives                    | The app lacks the permission or subscription, or Lark does not deliver that event over WebSocket.                |
+| Memory grows over time                    | Watches outlive the project that opened them and buffers are unbounded. Run `list_watches` and stop unused ones. |
+
+### Update
+
+Run this at the repository root, then restart the OpenCode service:
+
+```sh
+git pull --ff-only
+bun install --frozen-lockfile
 ```
-
-4. Run `opencode mcp list`. The `lark-events` server should show `connected`. This confirms the MCP connection, not delivery of Lark events.
-
-OpenCode expands `{env:HOME}` in the command and `cwd`. A literal `$HOME` in JSON is not expanded. If you chose another checkout directory, use its absolute path in both fields. The server uses the Lark domain and reserves stdout for MCP.
-
-[Lark distributes each event to one WebSocket client](https://open.larksuite.com/document/ukTMukTMukTM/uYDNxYjL2QTM24iN0EjN/event-subscription-configure-/use-websocket) for an app, rather than broadcasting it. The [OpenCode connection pool](https://opencode.ai/docs/mcp-servers#shared-connections) shares one MCP connection across projects in one OpenCode service when their command, fixed `cwd`, environment, protocol, and timeout settings match. Use the global configuration above without project overrides for a single WebSocket connection. The pool does not span OpenCode services or machines, and closes when the last project releases the connection. Other CLI event consumers or SDK clients for the same app compete for events.
-
-To update, run `git pull --ff-only` and `bun install --frozen-lockfile` at the repository root.
-
-The server supports stock OpenCode 2.3.0 with `experimental.mcp_events` and protocol `2026-07-28`.
-
-## MCP events
-
-Use protocol `2026-07-28` and the `io.modelcontextprotocol/events` extension. `events/list` advertises SDK-known handler names and generated callback schemas. A catalog entry does not mean that the app has permission to receive it or that Lark delivers it over WebSocket.
-
-Use OpenCode's `watch_mcp_event` with the `lark-events` server for native MCP subscriptions. The Lark CLI event consumer is a separate tool. Select an event in each `events/stream` request:
-
-```json
-{
-  "name": "im.message.receive_v1",
-  "arguments": {
-    "watchId": "my-watch",
-    "filter": {
-      "message.chat_id": "oc_example"
-    }
-  },
-  "cursor": null
-}
-```
-
-Each active watch needs a nonempty ID unique within the server process. The operator can set `LARK_WATCH_MAX_SECONDS` in the server environment to a positive integer. It defaults to 3600 seconds. The lifetime starts when the watch is accepted, including connection readiness. Agents cannot override it. Use `list_watches` to see active IDs and their start and expiry times. Use `stop_watch` with a `watchId` to stop a watch and wait for cleanup. Expired and stopped watches send a terminal notification. Watches are not persisted across server restarts.
-
-Call `stop_watch` before disconnecting if you want the watch to stop. A watch can outlive a project's disconnection. Existing callers should replace `watch_list` with `list_watches` and `watch_stop` with `stop_watch`.
-
-Filter keys are exact scalar dot paths in the SDK's flattened callback payload. Fields combine with AND. A nonempty array of expected values combines with OR. Values use strict equality. Missing fields do not match. Unknown paths and values outside the generated type, enum, or const constraints are rejected. The server does not traverse arrays or interpret expressions. Omit `filter` to match all payloads.
-
-Delivery is live-only. Cursors are null and resume requests are rejected. Notifications carry the opening request ID in `_meta["io.modelcontextprotocol/subscriptionId"]`. The server sends `active`, `event`, `heartbeat`, `error`, and `terminated` notifications as applicable. Heartbeats run every 20 seconds.
-
-The SDK reconnects automatically, but events during a disconnect can be missed. A terminal SDK error ends existing subscriptions. Initial connection failures, including an invalid secret, can retry until the watch expires. Cancel or stop the subscription to stop waiting. SDK cancellation is best effort.
-
-By default, each matching event produces one notification. Its `data` is the raw SDK callback payload. The notification keeps the upstream `event_id` and v2 millisecond `create_time` when valid. Otherwise it uses a `local-` UUID or local receipt time. `_meta["lark-events-mcp/timestampOrigin"]` identifies the timestamp as `upstream` or `local`. Local IDs do not provide deduplication across restarts.
-
-An optional `transform` argument contains a Code Mode program. It receives `input.event` with `eventId`, `timestamp`, `timestampOrigin`, and raw `data`. A string result becomes notification data. Null, undefined, or a valueless program suppresses the notification. A final expression can return a value. Empty programs, errors, other result types, and truncated results are logged and suppressed. Filters run before the program.
-
-An optional `decisions` argument requires `transform`. Supply native `questions` and optional standing `input` parts. The server appends the current event as a JSON input part and makes one native Decisions request for each matching event. The transform receives the original `input.event` and the full native `input.result`, including per-question errors. API failures are logged and suppress delivery. The server does not decide whether to reply.
-
-The operator can set `LARK_DECISIONS_MODEL` to a native JSON model reference such as `{"providerID":"your-provider","id":"your-model","variant":"optional-variant"}`. Omit `variant` when it is not needed. The model is fixed for the process and cannot be supplied by a watch. Without this setting, raw and transform-only watches still work. Decisions uses the existing local OpenCode service and does not start it. Stopping or expiring a watch aborts its local request; provider cancellation and billing are not guaranteed.
-
-The interpreter exposes no host tools or extensions. Its confinement is not OS isolation or a hard memory limit. The interpreter timeout is 1000 ms. Transform source is limited to 65536 bytes, input to 1048576 bytes, and output to 16384 bytes. Serialized string delivery is also limited to 16384 JavaScript string units.
-
-This changes the previous batch notification contract. The `data.events` wrapper and the `debounce` argument are no longer supported. An OpenCode watch configured to run once receives one event. Oversized events may be truncated by OpenCode. Stopping or cancelling a watch discards pending events.
-
-Only v2 event envelopes are supported. Names such as `im.message.receive_v1` still use v2 envelopes.
-
-The server drops events with a v2 event-header timestamp more than one hour old before deduplication and delivery. Events without a valid header timestamp use local receipt time and are not age-filtered.
-
-The server suppresses repeated upstream event IDs for the same event name. It keeps up to 10,000 IDs for one hour in memory. Events without an upstream ID are not deduplicated. Restarting the server clears the IDs.
-
-Event buffers are in-memory and unbounded. Slow subscribers can increase memory use. There is no persistence or replay.
