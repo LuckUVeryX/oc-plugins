@@ -15,6 +15,14 @@ test("uses native results and JSON event input", async () => {
   for (const source of ["return null", "return undefined", "const x = 1", "return"]) {
     expect(await run(source)).toBeNull();
   }
+  expect(
+    await Effect.runPromise(
+      makeTransform()('return "result" in input ? "present" : "absent"', {
+        event,
+        result: undefined,
+      }),
+    ),
+  ).toBe("absent");
 });
 
 test("rejects invalid results, errors, truncation and host capabilities", async () => {
@@ -30,7 +38,9 @@ test("rejects invalid results, errors, truncation and host capabilities", async 
   ]) {
     await expect(run(source)).rejects.toBeDefined();
   }
-  await expect(Effect.runPromise(makeTransform()("while (true) {}", event))).rejects.toBeDefined();
+  await expect(
+    Effect.runPromise(makeTransform()("while (true) {}", { event })),
+  ).rejects.toBeDefined();
 });
 
 test("enforces input and serialized output limits", async () => {
@@ -42,6 +52,6 @@ test("enforces input and serialized output limits", async () => {
     Effect.runPromise(transform('return "ok"', { event: "a".repeat(1048565) })),
   ).rejects.toBeDefined();
   await expect(
-    Effect.runPromise(makeTransform()('return "\\n".repeat(8192)', event)),
+    Effect.runPromise(makeTransform()('return "\\n".repeat(8192)', { event })),
   ).rejects.toBeDefined();
 });
