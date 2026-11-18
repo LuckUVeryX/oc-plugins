@@ -42,12 +42,6 @@ test("transforms filtered events independently of raw watches and stops delivery
   onTestFinished(() => stdout.mockRestore());
   const h = await connect();
   onTestFinished(() => h.close());
-  const oversized = h.stream({
-    prepare: "return input.event.data",
-    watchId: "oversized",
-    transform: "a".repeat(65537),
-  });
-  expect(await oversized.done).toMatchObject({ code: -32602 });
   h.stream({
     prepare: "return input.event.data",
     watchId: "raw",

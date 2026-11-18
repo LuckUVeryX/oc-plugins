@@ -14,7 +14,6 @@ export async function connect(
     decide?: Options["decide"];
     eventTimeoutSeconds?: number;
     larkRequest?: Options["larkRequest"];
-    ready?: (name: string) => Effect.Effect<void>;
     transport?: (transport: ReturnType<typeof InMemoryTransport.createLinkedPair>[1]) => void;
   } = {},
 ) {
@@ -32,10 +31,10 @@ export async function connect(
     larkRequest: options.larkRequest ?? (async () => ({ code: 0, msg: "ok", data: null })),
     producers: {
       larkRequest: options.larkRequest ?? (async () => ({ code: 0, msg: "ok", data: null })),
-      acquire: (name) =>
+      acquire: () =>
         Effect.succeed({
           messages,
-          ready: options.ready?.(name) ?? Effect.void,
+          ready: Effect.void,
           terminal: Effect.succeed(undefined),
         }),
     },
@@ -87,7 +86,6 @@ export async function connect(
   const result = Schema.toStandardSchemaV1(Schema.Unknown);
   return {
     client,
-    catalog,
     notifications,
     stream(args: Record<string, unknown>, name = "im.message.receive_v1") {
       const controller = new AbortController();
@@ -101,7 +99,6 @@ export async function connect(
       requests.push(done);
       return { done, abort: () => controller.abort() };
     },
-    send: (message: SourceMessage) => Effect.runPromise(PubSub.publish(messages, message)),
     publish: (event: Partial<Omit<Event, "kind">> & Pick<Event, "eventId" | "payload">) =>
       Effect.runPromise(
         PubSub.publish(messages, {
