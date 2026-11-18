@@ -13,8 +13,8 @@ const Catalog = Schema.Struct({ events: Schema.Array(EventDefinition) });
 export class LarkCatalog extends Context.Service<
   LarkCatalog,
   {
-    readonly list: () => Effect.Effect<ReadonlyArray<EventDefinition>>;
-    readonly schema: (name: string) => Effect.Effect<EventDefinition, Error>;
+    readonly events: ReadonlyArray<EventDefinition>;
+    readonly get: (name: string) => EventDefinition | undefined;
   }
 >()("lark-events-mcp/LarkCatalog") {}
 
@@ -24,11 +24,8 @@ export const catalogLayer = Layer.effect(
     const catalog = yield* Schema.decodeUnknownEffect(Catalog)(generated);
     const byName = new Map(catalog.events.map((event) => [event.name, event]));
     return LarkCatalog.of({
-      list: () => Effect.succeed(catalog.events),
-      schema: (name) => {
-        const event = byName.get(name);
-        return event ? Effect.succeed(event) : Effect.fail(new Error(`unknown event: ${name}`));
-      },
+      events: catalog.events,
+      get: (name) => byName.get(name),
     });
   }),
 );

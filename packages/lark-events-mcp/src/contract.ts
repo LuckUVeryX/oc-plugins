@@ -115,35 +115,31 @@ const matchesLeaf = (value: Scalar, leaf: FilterLeaf): boolean => {
 
 export const decodeArguments = (schema: unknown, input: unknown) =>
   Effect.gen(function* () {
-    const error = (message: string) => ({ _tag: "error" as const, message });
     if (!isObject(input) || Array.isArray(input))
-      return error("stream arguments must be an object");
+      return yield* Effect.fail("stream arguments must be an object");
     if (Object.keys(input).some((key) => !Object.hasOwn(WatchArguments.fields, key)))
-      return error("unknown stream argument");
+      return yield* Effect.fail("unknown stream argument");
     const decoded = yield* Schema.decodeUnknownEffect(WatchArguments)(input, {
       onExcessProperty: "error",
     }).pipe(Effect.option);
-    if (decoded._tag === "None") return error("invalid watch arguments");
+    if (decoded._tag === "None") return yield* Effect.fail("invalid watch arguments");
     const { watchId, filter: raw = {}, transform, decisions } = decoded.value;
     if (decisions !== undefined && transform === undefined)
-      return error("decisions requires transform");
-    if (!isObject(raw) || Array.isArray(raw)) return error("filter must be an object");
+      return yield* Effect.fail("decisions requires transform");
+    if (!isObject(raw) || Array.isArray(raw)) return yield* Effect.fail("filter must be an object");
     const leaves = new Map(filterLeaves(schema).map((leaf) => [leaf.path, leaf]));
     const filter: Array<readonly [string, ReadonlyArray<Scalar>]> = [];
     for (const [path, value] of Object.entries(raw)) {
       const leaf = leaves.get(path);
-      if (!leaf) return error(`unknown filter path: ${path}`);
+      if (!leaf) return yield* Effect.fail(`unknown filter path: ${path}`);
       const values = isScalar(value) ? [value] : Array.isArray(value) ? value : undefined;
       if (!values || values.length === 0 || !values.every(isScalar))
-        return error(`filter ${path} must be a scalar or non-empty array of scalars`);
+        return yield* Effect.fail(`filter ${path} must be a scalar or non-empty array of scalars`);
       if (!values.every((scalar) => matchesLeaf(scalar, leaf)))
-        return error(`invalid value for filter ${path}`);
+        return yield* Effect.fail(`invalid value for filter ${path}`);
       filter.push([path, values]);
     }
-    return {
-      _tag: "ok" as const,
-      value: { filter, watchId, transform, decisions },
-    };
+    return { filter, watchId, transform, decisions };
   });
 
 export const matchesFilter = (filter: Filter, payload: unknown): boolean =>
