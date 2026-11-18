@@ -6,17 +6,6 @@ type Scalar = typeof Scalar.Type;
 const isScalar = Schema.is(Scalar);
 const WatchArguments = Schema.Struct({
   watchId: Schema.NonEmptyString,
-  durationSeconds: Schema.optionalKey(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
-  debounce: Schema.optionalKey(
-    Schema.Struct({
-      waitSeconds: Schema.optionalKey(
-        Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
-      ),
-      maxWaitSeconds: Schema.optionalKey(
-        Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
-      ),
-    }),
-  ),
   filter: Schema.optionalKey(Schema.Unknown),
 });
 
@@ -72,31 +61,6 @@ export const inputSchemaDocument = (schema: unknown): Record<string, unknown> =>
         minLength: 1,
         description: "Unique among active watches in this server process.",
       },
-      durationSeconds: {
-        type: "integer",
-        minimum: 1,
-        default: 3600,
-        description: "Lifetime in seconds from acceptance, including connection readiness.",
-      },
-      debounce: {
-        type: "object",
-        description: "Batch timing in seconds. maxWaitSeconds must be at least waitSeconds.",
-        properties: {
-          waitSeconds: {
-            type: "integer",
-            minimum: 0,
-            default: 5,
-            description: "Quiet period before flushing. Zero delivers events immediately.",
-          },
-          maxWaitSeconds: {
-            type: "integer",
-            minimum: 0,
-            default: 30,
-            description: "Maximum batch age measured from its first event.",
-          },
-        },
-        additionalProperties: false,
-      },
       filter: {
         type: "object",
         description: "Match all paths with strict equality. An array matches any listed value.",
@@ -128,22 +92,11 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
     const error = (message: string) => ({ _tag: "error" as const, message });
     if (!isObject(input) || Array.isArray(input))
       return error("stream arguments must be an object");
-    if (
-      Object.keys(input).some(
-        (key) => !["filter", "watchId", "durationSeconds", "debounce"].includes(key),
-      )
-    )
+    if (Object.keys(input).some((key) => !["filter", "watchId"].includes(key)))
       return error("unknown stream argument");
-    if (
-      isObject(input["debounce"]) &&
-      Object.keys(input["debounce"]).some((key) => !["waitSeconds", "maxWaitSeconds"].includes(key))
-    )
-      return error("unknown debounce argument");
     const decoded = yield* Schema.decodeUnknownEffect(WatchArguments)(input).pipe(Effect.option);
     if (decoded._tag === "None") return error("invalid watch arguments");
-    const { watchId, durationSeconds = 3600, filter: raw = {}, debounce } = decoded.value;
-    const { waitSeconds = 5, maxWaitSeconds = 30 } = debounce ?? {};
-    if (maxWaitSeconds < waitSeconds) return error("maxWaitSeconds must be at least waitSeconds");
+    const { watchId, filter: raw = {} } = decoded.value;
     if (!isObject(raw) || Array.isArray(raw)) return error("filter must be an object");
     const leaves = new Map(filterLeaves(schema).map((leaf) => [leaf.path, leaf]));
     const filter: Array<readonly [string, ReadonlyArray<Scalar>]> = [];
@@ -159,7 +112,7 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
     }
     return {
       _tag: "ok" as const,
-      value: { filter, watchId, durationSeconds, waitSeconds, maxWaitSeconds },
+      value: { filter, watchId },
     };
   });
 

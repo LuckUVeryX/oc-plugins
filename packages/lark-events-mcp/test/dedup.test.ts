@@ -34,7 +34,7 @@ test("delivers fresh events once and drops stale events", async () => {
           const catalog = yield* LarkCatalog;
           const producers = yield* EventProducers;
           yield* Effect.promise(async () => {
-            const server = makeServer({ catalog, producers });
+            const server = makeServer({ catalog, producers, maxSeconds: 3600 });
             const client = new Client({ name: "dedup-test", version: "1" });
             const active = Promise.withResolvers<void>();
             const received: unknown[] = [];
@@ -50,6 +50,8 @@ test("delivers fresh events once and drops stale events", async () => {
               {
                 params: Schema.toStandardSchemaV1(
                   Schema.Struct({
+                    eventId: Schema.String,
+                    timestamp: Schema.String,
                     data: Schema.Unknown,
                     _meta: Schema.Record(Schema.String, Schema.Unknown),
                   }),
@@ -84,7 +86,7 @@ test("delivers fresh events once and drops stale events", async () => {
                     method: "events/stream",
                     params: {
                       name,
-                      arguments: { watchId, debounce: { waitSeconds: 0 } },
+                      arguments: { watchId },
                     },
                   },
                   Schema.toStandardSchemaV1(Schema.Unknown),
@@ -117,34 +119,24 @@ test("delivers fresh events once and drops stale events", async () => {
               await vi.waitFor(() => {
                 expect(JSON.stringify(received)).toContain("fresh-sentinel");
               });
-              expect(received).toEqual(
-                expect.arrayContaining([
-                  expect.objectContaining({
-                    data: expect.objectContaining({
-                      events: [
-                        expect.objectContaining({
-                          eventId: "same",
-                          data: expect.objectContaining({
-                            message: { chat_id: "oc_test", message_id: "same" },
-                          }),
-                        }),
-                      ],
-                    }),
+              expect(received).toEqual([
+                expect.objectContaining({
+                  eventId: "same",
+                  timestamp: new Date(Number(recent)).toISOString(),
+                  _meta: expect.objectContaining({ "lark-events-mcp/timestampOrigin": "upstream" }),
+                  data: expect.objectContaining({
+                    message: { chat_id: "oc_test", message_id: "same" },
                   }),
-                  expect.objectContaining({
-                    data: expect.objectContaining({
-                      events: [
-                        expect.objectContaining({
-                          eventId: "fresh-sentinel",
-                          data: expect.objectContaining({
-                            message: { chat_id: "oc_test", message_id: "fresh-sentinel" },
-                          }),
-                        }),
-                      ],
-                    }),
+                }),
+                expect.objectContaining({
+                  eventId: "fresh-sentinel",
+                  timestamp: new Date(Number(recent)).toISOString(),
+                  _meta: expect.objectContaining({ "lark-events-mcp/timestampOrigin": "upstream" }),
+                  data: expect.objectContaining({
+                    message: { chat_id: "oc_test", message_id: "fresh-sentinel" },
                   }),
-                ]),
-              );
+                }),
+              ]);
               expect(received).toHaveLength(2);
             } finally {
               controller.abort();

@@ -66,7 +66,6 @@ Use OpenCode's `watch_mcp_event` with the `lark-events` server for native MCP su
   "name": "im.message.receive_v1",
   "arguments": {
     "watchId": "my-watch",
-    "durationSeconds": 3600,
     "filter": {
       "message.chat_id": "oc_example"
     }
@@ -75,7 +74,7 @@ Use OpenCode's `watch_mcp_event` with the `lark-events` server for native MCP su
 }
 ```
 
-Each active watch needs a nonempty ID unique within the server process. The lifetime defaults to 3600 seconds and starts when the watch is accepted, including connection readiness. Use `watch_list` to see active IDs and their start and expiry times. Use `watch_stop` with a `watchId` to stop a watch and wait for cleanup. Expired and stopped watches send a terminal notification. Watches are not persisted across server restarts.
+Each active watch needs a nonempty ID unique within the server process. The operator can set `LARK_WATCH_MAX_SECONDS` in the server environment to a positive integer. It defaults to 3600 seconds. The lifetime starts when the watch is accepted, including connection readiness. Agents cannot override it. Use `watch_list` to see active IDs and their start and expiry times. Use `watch_stop` with a `watchId` to stop a watch and wait for cleanup. Expired and stopped watches send a terminal notification. Watches are not persisted across server restarts.
 
 If you want to stop a watch, call `watch_stop` before disconnecting or closing the UI. A watch can outlive a project's disconnection.
 
@@ -85,11 +84,9 @@ Delivery is live-only. Cursors are null and resume requests are rejected. Notifi
 
 The SDK reconnects automatically, but events during a disconnect can be missed. A terminal SDK error ends existing subscriptions. Initial connection failures, including an invalid secret, can retry until the watch expires. Cancel or stop the subscription to stop waiting. SDK cancellation is best effort.
 
-Event notifications now carry `data: { "events": [...] }` instead of a raw callback payload. Each item contains `eventId`, `timestamp`, `timestampOrigin`, and the raw callback `data`, in arrival order. Each event keeps a valid upstream `event_id` or receives a `local-` UUID. Its timestamp uses a valid v2 millisecond `create_time` or falls back to local receipt time. Local IDs do not provide deduplication across restarts. The outer notification has a separate local ID and flush timestamp.
+Each matching event produces one notification. Its `data` is the raw SDK callback payload. The notification keeps the upstream `event_id` and v2 millisecond `create_time` when valid. Otherwise it uses a `local-` UUID or local receipt time. `_meta["lark-events-mcp/timestampOrigin"]` identifies the timestamp as `upstream` or `local`. Local IDs do not provide deduplication across restarts.
 
-By default a batch flushes after 5 seconds without a matching event or 30 seconds after its first event, whichever comes first. Set `debounce.waitSeconds` and `debounce.maxWaitSeconds` to nonnegative integer seconds to change these limits. The maximum must be at least the quiet period. A zero quiet period delivers each event immediately. An OpenCode watch configured to run once receives its first batch, not necessarily one event.
-
-Batches flush before their JSON data exceeds 16,384 JavaScript string code units. An oversized individual event is sent alone and OpenCode may truncate it. Expiry flushes a pending batch before termination. Stopping or cancelling a watch discards its pending batch.
+This changes the previous batch notification contract. The `data.events` wrapper and the `debounce` argument are no longer supported. An OpenCode watch configured to run once receives one event. Oversized events may be truncated by OpenCode. Stopping or cancelling a watch discards pending events.
 
 Only v2 event envelopes are supported. Names such as `im.message.receive_v1` still use v2 envelopes.
 
