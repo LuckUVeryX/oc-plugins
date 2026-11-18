@@ -81,7 +81,6 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
               name: FLAT_KEY,
               arguments: {
                 watchId: `heartbeat-${controllers.length}`,
-                debounce: { waitSeconds: 0 },
                 filter: { "message.chat_id": "oc_test" },
               },
             },
@@ -104,7 +103,13 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
       { method: "events/list", params: {} },
       Schema.toStandardSchemaV1(
         Schema.Struct({
-          events: Schema.Array(Schema.Struct({ name: Schema.String, inputSchema: Schema.Unknown })),
+          events: Schema.Array(
+            Schema.Struct({
+              name: Schema.String,
+              inputSchema: Schema.Unknown,
+              payloadSchema: Schema.Unknown,
+            }),
+          ),
         }),
       ),
     );
@@ -114,6 +119,22 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
       "properties",
       "message.chat_id",
     ]);
+    const definition = listing.events.find((event) => event.name === FLAT_KEY);
+    expect(definition?.inputSchema).not.toHaveProperty(["properties", "debounce"]);
+    expect(definition?.payloadSchema).toEqual(
+      (await Effect.runPromise(catalog.schema(FLAT_KEY))).payloadSchema,
+    );
+    const invalidDebounce = client
+      .request(
+        {
+          method: "events/stream",
+          params: { name: FLAT_KEY, arguments: { watchId: "invalid", debounce: {} } },
+        },
+        Schema.toStandardSchemaV1(Schema.Unknown),
+      )
+      .catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await invalidDebounce).toMatchObject({ code: -32602 });
     const first = subscribe();
     subscribe();
     await vi.advanceTimersByTimeAsync(0);
@@ -147,16 +168,7 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
       active.map((value) => ({
         ...value,
         method: "event",
-        data: {
-          events: [
-            {
-              eventId: "test-event",
-              timestamp: new Date(0).toISOString(),
-              timestampOrigin: "local",
-              data: { message: { chat_id: "oc_test" } },
-            },
-          ],
-        },
+        data: { message: { chat_id: "oc_test" } },
       })),
     );
     await vi.advanceTimersByTimeAsync(10_000);
@@ -284,30 +296,22 @@ test("watch controls and deadlines include connection readiness", async () => {
       .catch((error: unknown) => error);
     await vi.advanceTimersByTimeAsync(0);
     expect(await invalid).toMatchObject({ code: -32602 });
-    const accepted = Promise.withResolvers<void>();
-    await Effect.runPromise(
-      PubSub.publish(messages, {
-        kind: "event",
-        eventId: "original",
-        timestamp: new Date(0).toISOString(),
-        timestampOrigin: "upstream",
-        payload: {
-          get hello() {
-            accepted.resolve();
-            return "world";
-          },
-        },
-      }),
-    );
-    await accepted.promise;
-    await vi.advanceTimersByTimeAsync(0);
-    expect(received.filter((value) => value.method === "event")).toEqual([]);
     expect(await tool("watch_stop", { watchId: "one" })).toEqual({ watchId: "one", stopped: true });
-    expect(received.filter((value) => value.method === "event")).toEqual([]);
     expect(await tool("watch_stop", { watchId: "one" })).toEqual({
       watchId: "one",
       stopped: false,
     });
+    await Effect.runPromise(
+      PubSub.publish(messages, {
+        kind: "event",
+        eventId: "after-stop",
+        timestamp: new Date(0).toISOString(),
+        timestampOrigin: "local",
+        payload: { hello: "after-stop" },
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(received.filter((value) => value.method === "event")).toEqual([]);
     subscribe("one", FLAT_KEY, 1);
     await vi.advanceTimersByTimeAsync(0);
     await Effect.runPromise(
@@ -324,16 +328,7 @@ test("watch controls and deadlines include connection readiness", async () => {
     expect(received.slice(-2)).toEqual([
       {
         method: "event",
-        data: {
-          events: [
-            {
-              eventId: "original",
-              timestamp: new Date(0).toISOString(),
-              timestampOrigin: "upstream",
-              data: { hello: "world" },
-            },
-          ],
-        },
+        data: { hello: "world" },
       },
       { method: "terminated", reason: "Expired" },
     ]);
@@ -351,134 +346,6 @@ test("watch controls and deadlines include connection readiness", async () => {
   } finally {
     for (const controller of controllers) controller.abort();
     await Promise.all(requests);
-    await client.close();
-    await server.close();
-    await Effect.runPromise(PubSub.shutdown(messages));
-    vi.useRealTimers();
-  }
-});
-
-test("batches by quiet time, maximum time and size", async () => {
-  vi.useFakeTimers({
-    toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
-  });
-  const messages = await Effect.runPromise(PubSub.unbounded<SourceMessage>());
-  const catalog = await Effect.runPromise(
-    Effect.gen(function* () {
-      return yield* LarkCatalog;
-    }).pipe(Effect.provide(catalogLayer)),
-  );
-  const server = makeServer({
-    catalog,
-    producers: {
-      acquire: () =>
-        Effect.succeed({ messages, ready: Effect.void, terminal: Effect.succeed(undefined) }),
-    },
-  });
-  const client = new Client({ name: "batch-test", version: "0.0.0" });
-  const received: Array<{ method: string; data?: unknown; error?: unknown; eventId?: string }> = [];
-  const notificationSchema = Schema.toStandardSchemaV1(
-    Schema.Struct({
-      data: Schema.optionalKey(Schema.Unknown),
-      error: Schema.optionalKey(Schema.Unknown),
-      eventId: Schema.optionalKey(Schema.String),
-    }),
-  );
-  for (const method of ["active", "heartbeat", "event", "terminated"])
-    client.setNotificationHandler(
-      `notifications/events/${method}`,
-      { params: notificationSchema },
-      (value) => {
-        received.push({ method, ...value });
-      },
-    );
-  const [a, b] = InMemoryTransport.createLinkedPair();
-  const controller = new AbortController();
-  const result = Schema.toStandardSchemaV1(Schema.Unknown);
-  let request: Promise<unknown> | undefined;
-  const publish = (id: string, chat = "ok", text = "") =>
-    Effect.runPromise(
-      PubSub.publish(messages, {
-        kind: "event",
-        eventId: id,
-        timestamp: "2026-01-01T00:00:00.000Z",
-        timestampOrigin: "upstream",
-        payload: { message: { chat_id: chat, text } },
-      }),
-    );
-  const batches = () => received.filter((item) => item.method === "event").map((item) => item.data);
-  try {
-    await server.connect(b);
-    await client.connect(a);
-    const invalid = client
-      .request(
-        {
-          method: "events/stream",
-          params: {
-            name: FLAT_KEY,
-            arguments: { watchId: "invalid", debounce: { waitSeconds: 31 } },
-          },
-        },
-        result,
-      )
-      .catch((error: unknown) => error);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(await invalid).toBeInstanceOf(Error);
-    request = client
-      .request(
-        {
-          method: "events/stream",
-          params: {
-            name: FLAT_KEY,
-            arguments: {
-              watchId: "one",
-              filter: { "message.chat_id": "ok" },
-            },
-          },
-        },
-        result,
-        { signal: controller.signal, timeout: 120_000 },
-      )
-      .catch((error: unknown) => error);
-    await vi.advanceTimersByTimeAsync(0);
-    await publish("ignored", "no");
-    await publish("a");
-    await vi.advanceTimersByTimeAsync(4000);
-    await publish("b");
-    for (const id of ["c", "d", "e", "f", "g", "h"]) {
-      await vi.advanceTimersByTimeAsync(4000);
-      await publish(id);
-    }
-    expect(batches()).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(2000);
-    expect(batches()).toHaveLength(1);
-    expect(batches()[0]).toMatchObject({
-      events: ["a", "b", "c", "d", "e", "f", "g", "h"].map((eventId) => ({
-        eventId,
-        timestampOrigin: "upstream",
-      })),
-    });
-    await publish("quiet");
-    await vi.advanceTimersByTimeAsync(4000);
-    await publish("ignored-during-quiet", "no");
-    await vi.advanceTimersByTimeAsync(999);
-    expect(batches()).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(batches()[1]).toMatchObject({ events: [{ eventId: "quiet" }] });
-    await publish("large1", "ok", "x".repeat(9000));
-    await publish("large2", "ok", "x".repeat(9000));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(batches()[2]).toMatchObject({ events: [{ eventId: "large1" }] });
-    expect(JSON.stringify(batches()[2]).length).toBeLessThanOrEqual(16384);
-    await publish("oversized", "ok", "x".repeat(17000));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(batches()[3]).toMatchObject({ events: [{ eventId: "large2" }] });
-    expect(batches()[4]).toMatchObject({ events: [{ eventId: "oversized" }] });
-    const ids = received.filter((item) => item.method === "event").map((item) => item.eventId);
-    expect(new Set(ids).size).toBe(5);
-  } finally {
-    controller.abort();
-    await request;
     await client.close();
     await server.close();
     await Effect.runPromise(PubSub.shutdown(messages));
