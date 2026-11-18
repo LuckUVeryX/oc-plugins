@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile, realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { Effect, Schema, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 const expected = JSON.parse(await readFile(new URL("./expected.json", import.meta.url), "utf8"));
@@ -196,67 +196,6 @@ for (const manifest of expected.packages) {
       ).pipe(Effect.provide(TestClock.layer())),
     );
     console.log("idle timer, cancellation, token threshold, and root-session filter passed");
-  }
-
-  if (manifest.name === "oc-lark-decisions") {
-    const { BunServices } = await import("@effect/platform-bun");
-    const { TransformInput } = await import("oc-lark-decisions/transform");
-    const { makeTransformLoader } = await import(
-      pathToFileURL(join(dirname(entry), "transform-loader.ts")).href
-    );
-    const input = Schema.decodeUnknownSync(TransformInput)({
-      root: { chatId: "chat", rootId: "root" },
-      events: [],
-      history: { items: [], hasMore: false },
-      result: { answers: [{ type: "predicate", name: "urgent", probability: 0.9 }] },
-    });
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const load = yield* makeTransformLoader;
-        const transform = yield* load({
-          source: `
-import type { Transform } from "oc-lark-decisions/transform";
-import { identity } from "effect/Function";
-export default ((input) => identity("review:" + input.root.rootId)) satisfies Transform;
-`,
-        });
-        assert.equal(yield* transform.run(input), "review:root");
-      }).pipe(Effect.scoped, Effect.provide(BunServices.layer)),
-    );
-    const stored = new Map();
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const tools = new Map();
-        yield* plugin.effect({
-          options: { model: { providerID: "test", id: "test" } },
-          tool: {
-            transform: (register) =>
-              Effect.sync(() => {
-                register({ add: (tool) => tools.set(tool.name, tool) });
-                return { dispose: Effect.void };
-              }),
-          },
-          storage: {
-            get: (key) => Effect.sync(() => stored.get(key)),
-            set: (key, value) => Effect.sync(() => stored.set(key, value)),
-            remove: (key) => Effect.sync(() => stored.delete(key)),
-          },
-          event: { subscribe: () => Stream.never },
-          experimental: {
-            generate: { decisions: () => Effect.die("history must not evaluate messages") },
-          },
-          session: { prompt: () => Effect.die("history must not queue a prompt") },
-        });
-        const history = tools.get("lark_history");
-        assert(history, "packed plugin registers lark_history");
-        const { output } = yield* history.execute({}, { sessionID: "ses_history" });
-        assert.deepEqual(output, []);
-        assert.equal(stored.size, 0, "reading history does not write storage");
-      }).pipe(Effect.scoped, Effect.provide(BunServices.layer)),
-    );
-    console.log(
-      "decisions public schema, real transform loader, and read-only history tool passed",
-    );
   }
 }
 console.log("public exports, package contracts, and one compatible dependency family passed");

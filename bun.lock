@@ -59,18 +59,6 @@
         "effect": "4.1.0",
       },
     },
-    "packages/oc-lark-decisions": {
-      "name": "oc-lark-decisions",
-      "version": "0.0.0",
-      "dependencies": {
-        "@effect/platform-bun": "4.1.0",
-      },
-      "peerDependencies": {
-        "@opencode/plugin": "2.3.0",
-        "@opencode/schema": "2.3.0",
-        "effect": "4.1.0",
-      },
-    },
   },
   "packages": {
     "@ai-sdk/provider": ["@ai-sdk/provider@3.0.8", "", { "dependencies": { "json-schema": "^0.4.0" } }, "sha512-oGMAgGoQdBXbZqNG0Ze56CHjDZ1IDYOwGYxYjO5KLSlz5HiNQ9udIXsPZ61VWaHGZ5XW/jyjmr6t2xz2jGVwbQ=="],
@@ -782,8 +770,6 @@
     "oc-fallback": ["oc-fallback@workspace:packages/oc-fallback"],
 
     "oc-idle": ["oc-idle@workspace:packages/oc-idle"],
-
-    "oc-lark-decisions": ["oc-lark-decisions@workspace:packages/oc-lark-decisions"],
 
     "open": ["open@11.0.4", "", { "dependencies": { "default-browser": "^5.5.1", "define-lazy-prop": "^3.0.0", "is-in-ssh": "^1.0.0", "is-inside-container": "^1.0.0", "powershell-utils": "^0.2.1", "wsl-utils": "^1.0.0" } }, "sha512-++Zlftm0kVLPmzC06t6epuWmcRMDbI4z5P3NNX979WA/k23+NtSOynEGzsVfZwguKw2mi5umVgnBlJQMwRz4Pg=="],
 
