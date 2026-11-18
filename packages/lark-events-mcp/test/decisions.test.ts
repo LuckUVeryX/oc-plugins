@@ -1,18 +1,11 @@
-import { Client } from "@modelcontextprotocol/client";
-import {
-  fromJsonSchema,
-  InMemoryTransport,
-  SUBSCRIPTION_ID_META_KEY,
-} from "@modelcontextprotocol/server";
+import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { Generate } from "@opencode/schema/generate";
-import { ConfigProvider, Effect, JsonSchema, PubSub, Schema, SchemaRepresentation } from "effect";
+import { ConfigProvider, Effect, JsonSchema, Schema, SchemaRepresentation } from "effect";
 import { afterAll, expect, test, vi } from "vitest";
-import { catalogLayer, LarkCatalog } from "../src/catalog.ts";
 import { decisionModel } from "../src/config.ts";
 import { decodeArguments } from "../src/contract.ts";
 import { makeDecisions } from "../src/decisions.ts";
-import type { SourceMessage } from "../src/producers.ts";
-import { makeServer } from "../src/server.ts";
+import { connect } from "./harness.ts";
 
 const originalFetch = globalThis.fetch;
 let observeAbort = () => {};
@@ -112,78 +105,18 @@ test("native requests pass through MCP and stop aborts pending local HTTP", asyn
       return Response.json({ data: answer });
     },
   });
-  const messages = await Effect.runPromise(PubSub.unbounded<SourceMessage>());
-  const catalog = await Effect.runPromise(
-    Effect.gen(function* () {
-      return yield* LarkCatalog;
-    }).pipe(Effect.provide(catalogLayer)),
-  );
   const decide = makeDecisions(model, async () => ({
     url: http.url.toString(),
     auth: { type: "basic", username: "fake", password: "secret" },
   }));
-  const server = makeServer({
-    catalog,
-    maxSeconds: 60,
-    decide,
-    producers: {
-      acquire: () =>
-        Effect.succeed({ messages, ready: Effect.void, terminal: Effect.succeed(undefined) }),
-    },
-  });
-  const client = new Client({ name: "decisions-test", version: "1" });
-  const active: (string | number)[] = [];
-  const events: { id: string | number; eventId: string; data: unknown }[] = [];
-  const meta = Schema.Struct({
-    [SUBSCRIPTION_ID_META_KEY]: Schema.Union([Schema.String, Schema.Number]),
-  });
-  client.setNotificationHandler(
-    "notifications/events/active",
-    { params: Schema.toStandardSchemaV1(Schema.Struct({ _meta: meta })) },
-    (v) => {
-      active.push(v._meta[SUBSCRIPTION_ID_META_KEY]);
-    },
-  );
-  client.setNotificationHandler(
-    "notifications/events/event",
-    {
-      params: Schema.toStandardSchemaV1(
-        Schema.Struct({ _meta: meta, eventId: Schema.String, data: Schema.Unknown }),
-      ),
-    },
-    (v) => {
-      events.push({ id: v._meta[SUBSCRIPTION_ID_META_KEY], eventId: v.eventId, data: v.data });
-    },
-  );
-  const [a, b] = InMemoryTransport.createLinkedPair();
-  const controllers: AbortController[] = [];
-  const requests: Promise<unknown>[] = [];
-  const stream = (args: object) => {
-    const controller = new AbortController();
-    controllers.push(controller);
-    requests.push(
-      client
-        .request(
-          { method: "events/stream", params: { name: "im.message.receive_v1", arguments: args } },
-          Schema.toStandardSchemaV1(Schema.Unknown),
-          { signal: controller.signal },
-        )
-        .catch(() => undefined),
-    );
-  };
+  const h = await connect({ decide });
+  const client = h.client;
+  const stream = (args: Record<string, unknown>) => h.stream(args);
   const publish = (eventId: string, chat = "match") =>
-    Effect.runPromise(
-      PubSub.publish(messages, {
-        kind: "event",
-        eventId,
-        timestamp: "2026-01-01T00:00:00.000Z",
-        timestampOrigin: "upstream",
-        payload: { message: { chat_id: chat } },
-      }),
-    );
+    h.publish({ eventId, payload: { message: { chat_id: chat } } });
+  const active = () => h.notifications.filter((n) => n.type === "active").map((n) => n.id);
+  const events = () => h.notifications.filter((n) => n.type === "event");
   try {
-    await server.connect(b);
-    await client.connect(a);
     const listing = await client.request(
       { method: "events/list", params: {} },
       Schema.toStandardSchemaV1(
@@ -305,15 +238,19 @@ test("native requests pass through MCP and stop aborts pending local HTTP", asyn
       decisions: { questions, input: [...input, { type: "text", text: "second-watch" }] },
       transform: "return input.event.eventId",
     });
-    await vi.waitFor(() => expect(active).toHaveLength(4));
+    await vi.waitFor(() => expect(active()).toHaveLength(4));
     await publish("filtered", "other");
     await publish("one");
     await publish("suppress");
     await publish("failure");
     await publish("two");
     await vi.waitFor(() => {
-      expect(events.some((event) => event.id === active[2] && event.eventId === "two")).toBe(true);
-      expect(events.some((event) => event.id === active[3] && event.eventId === "two")).toBe(true);
+      expect(events().some((event) => event.id === active()[2] && event.eventId === "two")).toBe(
+        true,
+      );
+      expect(events().some((event) => event.id === active()[3] && event.eventId === "two")).toBe(
+        true,
+      );
     });
     expect(bodies).toHaveLength(8);
     expect(auth).toBe(`Basic ${btoa("fake:secret")}`);
@@ -333,19 +270,22 @@ test("native requests pass through MCP and stop aborts pending local HTTP", asyn
         },
       ],
     });
-    expect(events.filter((event) => event.id === active[2]).map((event) => event.data)).toEqual([
-      "one:fixture:choice:3",
-      "two:fixture:choice:3",
-    ]);
-    expect(events.filter((event) => event.id === active[3]).map((event) => event.data)).toEqual([
-      "one",
-      "suppress",
-      "two",
-    ]);
+    expect(
+      events()
+        .filter((event) => event.id === active()[2])
+        .map((event) => event.data),
+    ).toEqual(["one:fixture:choice:3", "two:fixture:choice:3"]);
+    expect(
+      events()
+        .filter((event) => event.id === active()[3])
+        .map((event) => event.data),
+    ).toEqual(["one", "suppress", "two"]);
     await publish("hold");
     await held.promise;
     await vi.waitFor(() =>
-      expect(events.some((event) => event.id === active[3] && event.eventId === "hold")).toBe(true),
+      expect(events().some((event) => event.id === active()[3] && event.eventId === "hold")).toBe(
+        true,
+      ),
     );
     await client.request(
       {
@@ -362,14 +302,10 @@ test("native requests pass through MCP and stop aborts pending local HTTP", asyn
     await aborted.promise;
     release.resolve();
     expect(bodies).toHaveLength(10);
-    expect(events.filter((event) => event.id === active[2])).toHaveLength(2);
+    expect(events().filter((event) => event.id === active()[2])).toHaveLength(2);
   } finally {
     release.resolve();
-    for (const controller of controllers) controller.abort();
-    await Promise.all(requests);
-    await client.close();
-    await server.close();
-    await Effect.runPromise(PubSub.shutdown(messages));
+    await h.close();
     http.stop(true);
   }
 });
@@ -390,96 +326,27 @@ test("heartbeat continues during a held request and expiry discards queued event
       return Response.json({ data: answer });
     },
   });
-  const messages = await Effect.runPromise(PubSub.unbounded<SourceMessage>());
-  const catalog = await Effect.runPromise(
-    Effect.gen(function* () {
-      return yield* LarkCatalog;
-    }).pipe(Effect.provide(catalogLayer)),
-  );
-  const server = makeServer({
-    catalog,
+  const h = await connect({
     maxSeconds: 22,
     decide: makeDecisions(model, async () => ({ url: http.url.toString(), auth: undefined })),
-    producers: {
-      acquire: () =>
-        Effect.succeed({ messages, ready: Effect.void, terminal: Effect.succeed(undefined) }),
-    },
   });
-  const client = new Client({ name: "expiry-test", version: "1" });
-  const active = Promise.withResolvers<void>();
-  const heartbeat = Promise.withResolvers<void>();
-  const terminated = Promise.withResolvers<void>();
-  let deliveries = 0;
-  client.setNotificationHandler(
-    "notifications/events/heartbeat",
-    { params: Schema.toStandardSchemaV1(Schema.Unknown) },
-    () => {
-      heartbeat.resolve();
-    },
-  );
-  client.setNotificationHandler(
-    "notifications/events/active",
-    { params: Schema.toStandardSchemaV1(Schema.Unknown) },
-    () => {
-      active.resolve();
-    },
-  );
-  client.setNotificationHandler(
-    "notifications/events/terminated",
-    { params: Schema.toStandardSchemaV1(Schema.Unknown) },
-    () => {
-      terminated.resolve();
-    },
-  );
-  client.setNotificationHandler(
-    "notifications/events/event",
-    { params: Schema.toStandardSchemaV1(Schema.Unknown) },
-    () => {
-      deliveries++;
-    },
-  );
-  const [a, b] = InMemoryTransport.createLinkedPair();
-  const controller = new AbortController();
-  let request: Promise<unknown> = Promise.resolve();
   try {
-    await server.connect(b);
-    await client.connect(a);
-    request = client
-      .request(
-        {
-          method: "events/stream",
-          params: {
-            name: "im.message.receive_v1",
-            arguments: { watchId: "expiry", decisions: { questions }, transform: 'return "bad"' },
-          },
-        },
-        Schema.toStandardSchemaV1(Schema.Unknown),
-        { signal: controller.signal },
-      )
-      .catch(() => undefined);
-    await Promise.race([
-      active.promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error("no active")), 2000)),
-    ]);
-    const publish = (eventId: string) =>
-      Effect.runPromise(
-        PubSub.publish(messages, {
-          kind: "event",
-          eventId,
-          timestamp: "2026-01-01T00:00:00.000Z",
-          timestampOrigin: "local",
-          payload: {},
-        }),
-      );
+    h.stream({ watchId: "expiry", decisions: { questions }, transform: 'return "bad"' });
+    await vi.waitFor(() => expect(h.notifications.some((n) => n.type === "active")).toBe(true));
+    const publish = (eventId: string) => h.publish({ eventId, payload: {} });
     await publish("first");
     await Promise.race([
       held.promise,
       new Promise((_, reject) => setTimeout(() => reject(new Error("no HTTP")), 2000)),
     ]);
     await publish("queued");
-    await heartbeat.promise;
+    await vi.waitFor(() => expect(h.notifications.some((n) => n.type === "heartbeat")).toBe(true), {
+      timeout: 25_000,
+    });
     await Promise.race([
-      terminated.promise,
+      vi.waitFor(() => expect(h.notifications.some((n) => n.type === "terminated")).toBe(true), {
+        timeout: 3000,
+      }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("no termination")), 3000)),
     ]);
     await Promise.race([
@@ -488,14 +355,10 @@ test("heartbeat continues during a held request and expiry discards queued event
     ]);
     released.resolve();
     expect(calls).toBe(1);
-    expect(deliveries).toBe(0);
+    expect(h.notifications.filter((n) => n.type === "event")).toEqual([]);
   } finally {
     released.resolve();
-    controller.abort();
-    await request;
-    await client.close();
-    await server.close();
-    await Effect.runPromise(PubSub.shutdown(messages));
+    await h.close();
     http.stop(true);
   }
 });
