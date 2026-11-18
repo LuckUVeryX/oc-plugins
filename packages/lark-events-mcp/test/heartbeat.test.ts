@@ -48,11 +48,26 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
     expect(definition?.payloadSchema).toEqual({
       anyOf: [h.catalog.get(name)?.payloadSchema, { type: "string" }],
     });
-    const invalid = h.stream({ watchId: "invalid", debounce: {} });
+    const invalid = h.stream({
+      prepare: "return input.event.data",
+      transform: "return JSON.stringify(input.prepared)",
+      watchId: "invalid",
+      debounce: {},
+    });
     await vi.advanceTimersByTimeAsync(0);
     expect(await invalid.done).toMatchObject({ code: -32602 });
-    const first = h.stream({ watchId: "heartbeat-1", filter: { "message.chat_id": "oc_test" } });
-    h.stream({ watchId: "heartbeat-2", filter: { "message.chat_id": "oc_test" } });
+    const first = h.stream({
+      prepare: "return input.event.data",
+      transform: "return JSON.stringify(input.prepared)",
+      watchId: "heartbeat-1",
+      filter: { "message.chat_id": "oc_test" },
+    });
+    h.stream({
+      prepare: "return input.event.data",
+      transform: "return JSON.stringify(input.prepared)",
+      watchId: "heartbeat-2",
+      filter: { "message.chat_id": "oc_test" },
+    });
     await vi.advanceTimersByTimeAsync(0);
     const active = h.notifications.filter((n) => n.type === "active");
     expect(active).toHaveLength(2);
@@ -66,7 +81,7 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
     await h.publish({ eventId: "test", payload: { message: { chat_id: "oc_test" } } });
     await vi.advanceTimersByTimeAsync(0);
     expect(h.notifications.filter((n) => n.type === "event").map((n) => [n.id, n.data])).toEqual(
-      active.map((n) => [n.id, { message: { chat_id: "oc_test" } }]),
+      active.map((n) => [n.id, JSON.stringify({ message: { chat_id: "oc_test" } })]),
     );
     await vi.advanceTimersByTimeAsync(10_000);
     expect(heartbeats()).toHaveLength(4);
@@ -97,7 +112,11 @@ test("watch controls and deadlines include connection readiness", async () => {
     ready: (eventName) => (eventName === name ? Effect.void : Effect.never),
   });
   try {
-    h.stream({ watchId: "one" });
+    h.stream({
+      prepare: "return input.event.data",
+      transform: "return JSON.stringify(input.prepared)",
+      watchId: "one",
+    });
     await vi.advanceTimersByTimeAsync(0);
     expect((await h.call("list_watches")).watches).toEqual([
       {
@@ -107,8 +126,17 @@ test("watch controls and deadlines include connection readiness", async () => {
         expiresAt: new Date(Date.now() + 1000).toISOString(),
       },
     ]);
-    const duplicate = h.stream({ watchId: "one" });
-    const invalid = h.stream({ watchId: "invalid", durationSeconds: 1 });
+    const duplicate = h.stream({
+      prepare: "return input.event.data",
+      transform: "return JSON.stringify(input.prepared)",
+      watchId: "one",
+    });
+    const invalid = h.stream({
+      prepare: "return input.event.data",
+      transform: "return JSON.stringify(input.prepared)",
+      watchId: "invalid",
+      durationSeconds: 1,
+    });
     await vi.advanceTimersByTimeAsync(0);
     expect(await duplicate.done).toMatchObject({ code: -32602 });
     expect(await invalid.done).toMatchObject({ code: -32602 });
@@ -120,7 +148,11 @@ test("watch controls and deadlines include connection readiness", async () => {
       watchId: "one",
       stopped: false,
     });
-    h.stream({ watchId: "one" });
+    h.stream({
+      prepare: "return input.event.data",
+      transform: "return JSON.stringify(input.prepared)",
+      watchId: "one",
+    });
     await vi.advanceTimersByTimeAsync(0);
     const expiry = (await h.call("list_watches")).watches[0].expiresAt;
     await vi.advanceTimersByTimeAsync(500);
@@ -129,12 +161,19 @@ test("watch controls and deadlines include connection readiness", async () => {
     expect((await h.call("list_watches")).watches[0].expiresAt).toBe(expiry);
     await vi.advanceTimersByTimeAsync(500);
     expect(h.notifications.filter((n) => n.type === "event").map((n) => n.data)).toEqual([
-      { hello: "world" },
+      JSON.stringify({ hello: "world" }),
     ]);
     expect(h.notifications.filter((n) => n.reason === "Expired")).toHaveLength(1);
     expect((await h.call("list_watches")).watches).toEqual([]);
     const waitingName = h.catalog.events.find((entry) => entry.name !== name)!.name;
-    h.stream({ watchId: "waiting" }, waitingName);
+    h.stream(
+      {
+        prepare: "return input.event.data",
+        transform: "return JSON.stringify(input.prepared)",
+        watchId: "waiting",
+      },
+      waitingName,
+    );
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(1000);
     expect(h.notifications.filter((n) => n.reason === "Expired")).toHaveLength(2);
@@ -163,7 +202,11 @@ test("stop_watch returns only after the watch has stopped", async () => {
     },
   });
   try {
-    h.stream({ watchId: "held" });
+    h.stream({
+      prepare: "return input.event.data",
+      transform: "return JSON.stringify(input.prepared)",
+      watchId: "held",
+    });
     await vi.waitFor(() => expect(h.notifications.some((n) => n.type === "active")).toBe(true));
     let stopped = false;
     const stop = h.call("stop_watch", { watchId: "held" }).then((result) => {

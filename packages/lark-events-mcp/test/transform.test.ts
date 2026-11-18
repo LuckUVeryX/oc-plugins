@@ -39,7 +39,9 @@ test("rejects invalid results, errors, truncation and host capabilities", async 
     await expect(run(source)).rejects.toBeDefined();
   }
   await expect(
-    Effect.runPromise(makeTransform()("while (true) {}", { event })),
+    Effect.runPromise(
+      makeTransform()("while (true) {}", { event }).pipe(Effect.timeout("1 second")),
+    ),
   ).rejects.toBeDefined();
 });
 

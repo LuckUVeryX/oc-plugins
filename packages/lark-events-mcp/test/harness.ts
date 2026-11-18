@@ -12,6 +12,8 @@ export async function connect(
   options: {
     maxSeconds?: number;
     decide?: Options["decide"];
+    eventTimeoutSeconds?: number;
+    larkRequest?: Options["larkRequest"];
     ready?: (name: string) => Effect.Effect<void>;
     transport?: (transport: ReturnType<typeof InMemoryTransport.createLinkedPair>[1]) => void;
   } = {},
@@ -26,7 +28,10 @@ export async function connect(
     catalog,
     maxSeconds: options.maxSeconds ?? 60,
     decide: options.decide,
+    eventTimeoutSeconds: options.eventTimeoutSeconds ?? 30,
+    larkRequest: options.larkRequest ?? (async () => ({ code: 0, msg: "ok", data: null })),
     producers: {
+      larkRequest: options.larkRequest ?? (async () => ({ code: 0, msg: "ok", data: null })),
       acquire: (name) =>
         Effect.succeed({
           messages,

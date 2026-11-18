@@ -42,10 +42,19 @@ test("transforms filtered events independently of raw watches and stops delivery
   onTestFinished(() => stdout.mockRestore());
   const h = await connect();
   onTestFinished(() => h.close());
-  const oversized = h.stream({ watchId: "oversized", transform: "a".repeat(65537) });
+  const oversized = h.stream({
+    prepare: "return input.event.data",
+    watchId: "oversized",
+    transform: "a".repeat(65537),
+  });
   expect(await oversized.done).toMatchObject({ code: -32602 });
-  h.stream({ watchId: "raw" });
   h.stream({
+    prepare: "return input.event.data",
+    watchId: "raw",
+    transform: "return JSON.stringify(input.prepared)",
+  });
+  h.stream({
+    prepare: "return input.event.data",
     watchId: "transformed",
     filter: { "message.chat_id": "match" },
     transform:
@@ -63,9 +72,7 @@ test("transforms filtered events independently of raw watches and stops delivery
   await publish("failed");
   await publish("sentinel");
   await vi.waitFor(() =>
-    expect(h.notifications.some((n) => n.id === transformed && n.eventId === "sentinel")).toBe(
-      true,
-    ),
+    expect(h.notifications.some((n) => n.id === transformed && n.type === "terminated")).toBe(true),
   );
   const events = () => h.notifications.filter((n) => n.type === "event");
   expect(events().filter((n) => n.id === transformed)).toEqual([
@@ -77,14 +84,6 @@ test("transforms filtered events independently of raw watches and stops delivery
       timestamp: "2026-01-01T00:00:00.000Z",
       origin: "upstream",
     },
-    {
-      type: "event",
-      id: transformed,
-      data: "match",
-      eventId: "sentinel",
-      timestamp: "2026-01-01T00:00:00.000Z",
-      origin: "upstream",
-    },
   ]);
   expect(
     events()
@@ -92,8 +91,10 @@ test("transforms filtered events independently of raw watches and stops delivery
       .map((n) => n.eventId),
   ).toEqual(["one", "two", "suppressed", "failed", "sentinel"]);
   expect(stdout).not.toHaveBeenCalled();
-  await h.call("stop_watch", { watchId: "transformed" });
-  h.stream({ watchId: "slow", transform: "while (true) {}" });
+  expect(
+    h.notifications.find((n) => n.id === transformed && n.type === "terminated")?.reason,
+  ).toContain("transform failed on failed:");
+  h.stream({ prepare: "return input.event.data", watchId: "slow", transform: "while (true) {}" });
   await vi.waitFor(() =>
     expect(h.notifications.filter((n) => n.type === "active")).toHaveLength(3),
   );
@@ -106,6 +107,6 @@ test("transforms filtered events independently of raw watches and stops delivery
   await vi.waitFor(() =>
     expect(events().some((n) => n.id === raw && n.eventId === "after-stop")).toBe(true),
   );
-  expect(events().filter((n) => n.id === transformed)).toHaveLength(2);
+  expect(events().filter((n) => n.id === transformed)).toHaveLength(1);
   expect(events().filter((n) => n.id === slow)).toEqual([]);
 });
