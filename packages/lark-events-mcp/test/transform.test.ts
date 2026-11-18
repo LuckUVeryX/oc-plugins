@@ -38,7 +38,9 @@ test("rejects invalid results, errors, truncation and host capabilities", async 
   ]) {
     await expect(run(source)).rejects.toBeDefined();
   }
-  await expect(Effect.runPromise(makeTransform()("while (true) {}", event))).rejects.toBeDefined();
+  await expect(
+    Effect.runPromise(makeTransform()("while (true) {}", { event })),
+  ).rejects.toBeDefined();
 });
 
 test("enforces input and serialized output limits", async () => {
@@ -50,6 +52,6 @@ test("enforces input and serialized output limits", async () => {
     Effect.runPromise(transform('return "ok"', { event: "a".repeat(1048565) })),
   ).rejects.toBeDefined();
   await expect(
-    Effect.runPromise(makeTransform()('return "\\n".repeat(8192)', event)),
+    Effect.runPromise(makeTransform()('return "\\n".repeat(8192)', { event })),
   ).rejects.toBeDefined();
 });
