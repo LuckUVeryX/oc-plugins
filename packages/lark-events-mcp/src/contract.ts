@@ -7,6 +7,7 @@ const isScalar = Schema.is(Scalar);
 const WatchArguments = Schema.Struct({
   watchId: Schema.NonEmptyString,
   filter: Schema.optionalKey(Schema.Unknown),
+  transform: Schema.optionalKey(Schema.String),
 });
 
 interface FilterLeaf {
@@ -59,13 +60,20 @@ export const inputSchemaDocument = (schema: unknown): Record<string, unknown> =>
       watchId: {
         type: "string",
         minLength: 1,
-        description: "Unique among active watches in this server process.",
+        description:
+          "Choose an ID unique among active Lark event watches. Reuse it with stop_watch.",
       },
       filter: {
         type: "object",
-        description: "Match all paths with strict equality. An array matches any listed value.",
+        description:
+          "Match raw payload fields by dot path. All paths must match exactly. An array allows any listed value for that path.",
         properties,
         additionalProperties: false,
+      },
+      transform: {
+        type: "string",
+        description:
+          "Format or suppress each matching event with a Code Mode program. Read input.event.data for the payload. Return a string to deliver that string, or null to suppress the event. Omit for raw delivery.",
       },
     },
     required: ["watchId"],
@@ -92,11 +100,11 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
     const error = (message: string) => ({ _tag: "error" as const, message });
     if (!isObject(input) || Array.isArray(input))
       return error("stream arguments must be an object");
-    if (Object.keys(input).some((key) => !["filter", "watchId"].includes(key)))
+    if (Object.keys(input).some((key) => !["filter", "watchId", "transform"].includes(key)))
       return error("unknown stream argument");
     const decoded = yield* Schema.decodeUnknownEffect(WatchArguments)(input).pipe(Effect.option);
     if (decoded._tag === "None") return error("invalid watch arguments");
-    const { watchId, filter: raw = {} } = decoded.value;
+    const { watchId, filter: raw = {}, transform } = decoded.value;
     if (!isObject(raw) || Array.isArray(raw)) return error("filter must be an object");
     const leaves = new Map(filterLeaves(schema).map((leaf) => [leaf.path, leaf]));
     const filter: Array<readonly [string, ReadonlyArray<Scalar>]> = [];
@@ -112,7 +120,7 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
     }
     return {
       _tag: "ok" as const,
-      value: { filter, watchId },
+      value: { filter, watchId, transform },
     };
   });
 

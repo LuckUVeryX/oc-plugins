@@ -34,7 +34,11 @@ test("delivers fresh events once and drops stale events", async () => {
           const catalog = yield* LarkCatalog;
           const producers = yield* EventProducers;
           yield* Effect.promise(async () => {
-            const server = makeServer({ catalog, producers, maxSeconds: 3600 });
+            const server = makeServer({
+              catalog,
+              producers,
+              maxSeconds: 3600,
+            });
             const client = new Client({ name: "dedup-test", version: "1" });
             const active = Promise.withResolvers<void>();
             const received: unknown[] = [];
