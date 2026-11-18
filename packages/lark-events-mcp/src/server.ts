@@ -18,6 +18,7 @@ const HEARTBEAT_INTERVAL = "20 seconds";
 interface ServerOptions {
   readonly catalog: Effect.Success<typeof LarkCatalog>;
   readonly producers: Effect.Success<typeof EventProducers>;
+  readonly maxSeconds: number;
 }
 
 const streamParams = Schema.toStandardSchemaV1(
@@ -144,7 +145,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
           .pipe(Effect.mapError((error) => invalidParams(error.message)));
         const decoded = yield* decodeArguments(definition.payloadSchema, params.arguments ?? {});
         if (decoded._tag === "error") return yield* Effect.fail(invalidParams(decoded.message));
-        const { filter, watchId, durationSeconds } = decoded.value;
+        const { filter, watchId } = decoded.value;
         const ended = yield* Deferred.make<string>();
         const finished = yield* Deferred.make<void>();
         const startedAt = yield* Clock.currentTimeMillis;
@@ -153,7 +154,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
           finished,
           eventName: params.name,
           startedAt: new Date(startedAt).toISOString(),
-          expiresAt: new Date(startedAt + durationSeconds * 1000).toISOString(),
+          expiresAt: new Date(startedAt + options.maxSeconds * 1000).toISOString(),
         };
         yield* Effect.addFinalizer(() =>
           Effect.gen(function* () {
@@ -167,7 +168,8 @@ export const makeServer = (options: ServerOptions): McpServer => {
           return true;
         });
         if (!registered) return yield* Effect.fail(invalidParams("watchId is already active"));
-        yield* Effect.sleep(durationSeconds * 1000).pipe(
+        const now = yield* Clock.currentTimeMillis;
+        yield* Effect.sleep(Math.max(0, startedAt + options.maxSeconds * 1000 - now)).pipe(
           Effect.andThen(Deferred.succeed(ended, "Expired")),
           Effect.forkScoped,
         );

@@ -6,7 +6,6 @@ type Scalar = typeof Scalar.Type;
 const isScalar = Schema.is(Scalar);
 const WatchArguments = Schema.Struct({
   watchId: Schema.NonEmptyString,
-  durationSeconds: Schema.optionalKey(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
   filter: Schema.optionalKey(Schema.Unknown),
 });
 
@@ -62,12 +61,6 @@ export const inputSchemaDocument = (schema: unknown): Record<string, unknown> =>
         minLength: 1,
         description: "Unique among active watches in this server process.",
       },
-      durationSeconds: {
-        type: "integer",
-        minimum: 1,
-        default: 3600,
-        description: "Lifetime in seconds from acceptance, including connection readiness.",
-      },
       filter: {
         type: "object",
         description: "Match all paths with strict equality. An array matches any listed value.",
@@ -99,11 +92,11 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
     const error = (message: string) => ({ _tag: "error" as const, message });
     if (!isObject(input) || Array.isArray(input))
       return error("stream arguments must be an object");
-    if (Object.keys(input).some((key) => !["filter", "watchId", "durationSeconds"].includes(key)))
+    if (Object.keys(input).some((key) => !["filter", "watchId"].includes(key)))
       return error("unknown stream argument");
     const decoded = yield* Schema.decodeUnknownEffect(WatchArguments)(input).pipe(Effect.option);
     if (decoded._tag === "None") return error("invalid watch arguments");
-    const { watchId, durationSeconds = 3600, filter: raw = {} } = decoded.value;
+    const { watchId, filter: raw = {} } = decoded.value;
     if (!isObject(raw) || Array.isArray(raw)) return error("filter must be an object");
     const leaves = new Map(filterLeaves(schema).map((leaf) => [leaf.path, leaf]));
     const filter: Array<readonly [string, ReadonlyArray<Scalar>]> = [];
@@ -119,7 +112,7 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
     }
     return {
       _tag: "ok" as const,
-      value: { filter, watchId, durationSeconds },
+      value: { filter, watchId },
     };
   });
 
