@@ -123,9 +123,12 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
     const definition = listing.events.find((event) => event.name === FLAT_KEY);
     expect(definition?.inputSchema).not.toHaveProperty(["properties", "debounce"]);
     expect(definition?.inputSchema).not.toHaveProperty(["properties", "durationSeconds"]);
-    expect(definition?.payloadSchema).toEqual(
-      (await Effect.runPromise(catalog.schema(FLAT_KEY))).payloadSchema,
-    );
+    expect(definition?.payloadSchema).toEqual({
+      anyOf: [
+        (await Effect.runPromise(catalog.schema(FLAT_KEY))).payloadSchema,
+        { type: "string" },
+      ],
+    });
     const invalidDebounce = client
       .request(
         {
@@ -274,7 +277,7 @@ test("watch controls and deadlines include connection readiness", async () => {
     await client.connect(a);
     subscribe("one");
     await vi.advanceTimersByTimeAsync(0);
-    const listed = await tool("watch_list");
+    const listed = await tool("list_watches");
     expect(listed.watches).toEqual([
       {
         watchId: "one",
@@ -297,8 +300,8 @@ test("watch controls and deadlines include connection readiness", async () => {
       .catch((error: unknown) => error);
     await vi.advanceTimersByTimeAsync(0);
     expect(await invalid).toMatchObject({ code: -32602 });
-    expect(await tool("watch_stop", { watchId: "one" })).toEqual({ watchId: "one", stopped: true });
-    expect(await tool("watch_stop", { watchId: "one" })).toEqual({
+    expect(await tool("stop_watch", { watchId: "one" })).toEqual({ watchId: "one", stopped: true });
+    expect(await tool("stop_watch", { watchId: "one" })).toEqual({
       watchId: "one",
       stopped: false,
     });
@@ -315,7 +318,7 @@ test("watch controls and deadlines include connection readiness", async () => {
     expect(received.filter((value) => value.method === "event")).toEqual([]);
     subscribe("one", FLAT_KEY);
     await vi.advanceTimersByTimeAsync(0);
-    const expiry = (await tool("watch_list")).watches[0].expiresAt;
+    const expiry = (await tool("list_watches")).watches[0].expiresAt;
     await vi.advanceTimersByTimeAsync(500);
     await Effect.runPromise(
       PubSub.publish(messages, {
@@ -327,7 +330,7 @@ test("watch controls and deadlines include connection readiness", async () => {
       }),
     );
     await vi.advanceTimersByTimeAsync(0);
-    expect((await tool("watch_list")).watches[0].expiresAt).toBe(expiry);
+    expect((await tool("list_watches")).watches[0].expiresAt).toBe(expiry);
     await vi.advanceTimersByTimeAsync(500);
     expect(received.slice(-2)).toEqual([
       {
@@ -336,7 +339,7 @@ test("watch controls and deadlines include connection readiness", async () => {
       },
       { method: "terminated", reason: "Expired" },
     ]);
-    expect((await tool("watch_list")).watches).toEqual([]);
+    expect((await tool("list_watches")).watches).toEqual([]);
     const waitingName = (await Effect.runPromise(catalog.list())).find(
       (entry) => entry.name !== FLAT_KEY,
     )!.name;
@@ -346,7 +349,7 @@ test("watch controls and deadlines include connection readiness", async () => {
     expect(received.filter((value) => value.reason === "Expired")).toHaveLength(2);
     await vi.advanceTimersByTimeAsync(20_000);
     expect(received.filter((value) => value.method === "heartbeat")).toEqual([]);
-    expect((await tool("watch_list")).watches).toEqual([]);
+    expect((await tool("list_watches")).watches).toEqual([]);
   } finally {
     for (const controller of controllers) controller.abort();
     await Promise.all(requests);
