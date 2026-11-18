@@ -31,8 +31,7 @@ export const makeTransform = () => {
       if (typeof result.value !== "string")
         return yield* Effect.fail<TransformFailure>("InvalidOutput");
       const serialized = JSON.stringify(result.value);
-      if (bytes(serialized) > 16384 || serialized.length > 16384)
-        return yield* Effect.fail<TransformFailure>("OutputTooLarge");
+      if (bytes(serialized) > 16384) return yield* Effect.fail<TransformFailure>("OutputTooLarge");
       return result.value;
     });
 };

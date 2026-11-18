@@ -177,18 +177,19 @@ export const makeServer = (options: ServerOptions): McpServer => {
           startedAt: new Date(startedAt).toISOString(),
           expiresAt: new Date(startedAt + options.maxSeconds * 1000).toISOString(),
         };
-        yield* Effect.addFinalizer(() =>
-          Effect.gen(function* () {
-            if (watches.get(watchId) === watch) watches.delete(watchId);
-            yield* Deferred.succeed(finished, undefined);
+        yield* Effect.acquireRelease(
+          Effect.suspend(() => {
+            if (watches.has(watchId))
+              return Effect.fail(invalidParams("watchId is already active"));
+            watches.set(watchId, watch);
+            return Effect.void;
           }),
+          () =>
+            Effect.gen(function* () {
+              watches.delete(watchId);
+              yield* Deferred.succeed(finished, undefined);
+            }),
         );
-        const registered = yield* Effect.sync(() => {
-          if (watches.has(watchId)) return false;
-          watches.set(watchId, watch);
-          return true;
-        });
-        if (!registered) return yield* Effect.fail(invalidParams("watchId is already active"));
         const now = yield* Clock.currentTimeMillis;
         yield* Effect.sleep(Math.max(0, startedAt + options.maxSeconds * 1000 - now)).pipe(
           Effect.andThen(Deferred.succeed(ended, "Expired")),
