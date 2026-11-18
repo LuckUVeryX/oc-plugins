@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, SUBSCRIPTION_ID_META_KEY } from "@modelcontextprotocol/server";
 import { Cause, Effect, Exit, PubSub, Schema } from "effect";
-import { expect, test, vi } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 import { catalogLayer, LarkCatalog } from "../src/catalog.ts";
 import type { SourceMessage } from "../src/producers.ts";
 import { makeServer } from "../src/server.ts";
@@ -44,6 +44,8 @@ vi.mock("@opencode/codemode", async (importOriginal) => {
 });
 
 test("transforms filtered events independently of raw watches and stops delivery", async () => {
+  const stdout = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  onTestFinished(() => stdout.mockRestore());
   const messages = await Effect.runPromise(PubSub.unbounded<SourceMessage>());
   const catalog = await Effect.runPromise(
     Effect.gen(function* () {
@@ -187,6 +189,7 @@ test("transforms filtered events independently of raw watches and stops delivery
       ),
     );
     expect(observed.executions).toBe(4);
+    expect(stdout).not.toHaveBeenCalled();
     expect(events.filter((event) => event.id === active[1]).map((event) => event.eventId)).toEqual([
       "two",
       "sentinel",
