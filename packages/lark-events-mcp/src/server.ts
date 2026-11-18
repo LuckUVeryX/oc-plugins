@@ -14,7 +14,6 @@ export const EVENTS_EXTENSION = "io.modelcontextprotocol/events";
 
 // OpenCode cancels event subscriptions after 60 seconds without a notification.
 const HEARTBEAT_INTERVAL = "20 seconds";
-const BATCH_LIMIT = 16_384;
 
 interface ServerOptions {
   readonly catalog: Effect.Success<typeof LarkCatalog>;
@@ -111,26 +110,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
               description: describe(definition),
               delivery: ["push"],
               inputSchema: inputSchemaDocument(definition.payloadSchema),
-              payloadSchema: {
-                type: "object",
-                required: ["events"],
-                properties: {
-                  events: {
-                    type: "array",
-                    minItems: 1,
-                    items: {
-                      type: "object",
-                      required: ["eventId", "timestamp", "timestampOrigin", "data"],
-                      properties: {
-                        eventId: { type: "string" },
-                        timestamp: { type: "string" },
-                        timestampOrigin: { enum: ["upstream", "local"] },
-                        data: definition.payloadSchema,
-                      },
-                    },
-                  },
-                },
-              },
+              payloadSchema: definition.payloadSchema,
             })),
           };
         }),
@@ -164,7 +144,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
           .pipe(Effect.mapError((error) => invalidParams(error.message)));
         const decoded = yield* decodeArguments(definition.payloadSchema, params.arguments ?? {});
         if (decoded._tag === "error") return yield* Effect.fail(invalidParams(decoded.message));
-        const { filter, watchId, durationSeconds, waitSeconds, maxWaitSeconds } = decoded.value;
+        const { filter, watchId, durationSeconds } = decoded.value;
         const ended = yield* Deferred.make<string>();
         const finished = yield* Deferred.make<void>();
         const startedAt = yield* Clock.currentTimeMillis;
@@ -208,86 +188,26 @@ export const makeServer = (options: ServerOptions): McpServer => {
           });
           return {};
         }
-        type Item = {
-          eventId: string;
-          timestamp: string;
-          timestampOrigin: "upstream" | "local";
-          data: unknown;
-        };
-        type Batch = { events: Item[]; size: number; firstAt: number; lastAt: number };
-        let batch: Batch | undefined;
-        const flush = () =>
-          Effect.gen(function* () {
-            if (!batch) return;
-            const events = batch.events;
-            batch = undefined;
-            const now = yield* Clock.currentTimeMillis;
-            yield* notify(
-              "event",
-              {
-                eventId: `local-${crypto.randomUUID()}`,
-                name: params.name,
-                timestamp: new Date(now).toISOString(),
-                data: { events },
-              },
-              { "lark-events-mcp/timestampOrigin": "local" },
-            );
-          });
         const worker = Effect.gen(function* () {
           yield* notify("active");
           const recorded = yield* producer.terminal;
           if (recorded !== undefined) return recorded;
           let connected = true;
           while (true) {
-            const now = yield* Clock.currentTimeMillis;
-            const deadline =
-              batch &&
-              Math.min(batch.lastAt + waitSeconds * 1000, batch.firstAt + maxWaitSeconds * 1000);
-            if (deadline !== undefined && deadline <= now) {
-              yield* flush();
-              continue;
-            }
-            const next =
-              deadline === undefined
-                ? yield* PubSub.take(subscription).pipe(
-                    Effect.map((message) => ({ kind: "message" as const, message })),
-                  )
-                : yield* Effect.raceFirst(
-                    PubSub.take(subscription).pipe(
-                      Effect.map((message) => ({ kind: "message" as const, message })),
-                    ),
-                    Effect.sleep(deadline - now).pipe(Effect.as({ kind: "flush" as const })),
-                  );
-            if (next.kind === "flush") {
-              yield* flush();
-              continue;
-            }
-            const message = next.message;
+            const message = yield* PubSub.take(subscription);
             switch (message.kind) {
               case "event": {
                 if (!matchesFilter(filter, message.payload)) break;
-                const item: Item = {
-                  eventId: message.eventId,
-                  timestamp: message.timestamp,
-                  timestampOrigin: message.timestampOrigin,
-                  data: message.payload,
-                };
-                const itemSize = JSON.stringify(item).length;
-                if (batch && batch.size + 1 + itemSize > BATCH_LIMIT) yield* flush();
-                const at = yield* Clock.currentTimeMillis;
-                if (batch) {
-                  batch.events.push(item);
-                  batch.size += 1 + itemSize;
-                  batch.lastAt = at;
-                } else {
-                  batch = {
-                    events: [item],
-                    size: '{"events":[]}'.length + itemSize,
-                    firstAt: at,
-                    lastAt: at,
-                  };
-                }
-                if (waitSeconds === 0 || batch.size > BATCH_LIMIT) yield* flush();
+                yield* notify(
+                  "event",
+                  {
+                    eventId: message.eventId,
+                    name: params.name,
+                    timestamp: message.timestamp,
+                    data: message.payload,
+                  },
+                  { "lark-events-mcp/timestampOrigin": message.timestampOrigin },
+                );
                 break;
               }
               case "reconnecting":
@@ -317,7 +237,6 @@ export const makeServer = (options: ServerOptions): McpServer => {
           Deferred.await(ended),
           Effect.raceFirst(worker, heartbeat),
         );
-        if (reason === "Expired") yield* flush();
         yield* notify("terminated", { error: { code: -32000, message: reason } });
         return {};
       }).pipe(Effect.scoped),
