@@ -1,9 +1,8 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, SUBSCRIPTION_ID_META_KEY } from "@modelcontextprotocol/server";
-import { Cause, ConfigProvider, Effect, Exit, PubSub, Schema } from "effect";
+import { Cause, Effect, Exit, PubSub, Schema } from "effect";
 import { expect, test, vi } from "vitest";
 import { catalogLayer, LarkCatalog } from "../src/catalog.ts";
-import { transformConfig } from "../src/config.ts";
 import type { SourceMessage } from "../src/producers.ts";
 import { makeServer } from "../src/server.ts";
 
@@ -51,11 +50,9 @@ test("transforms filtered events independently of raw watches and stops delivery
       return yield* LarkCatalog;
     }).pipe(Effect.provide(catalogLayer)),
   );
-  const limits = Effect.runSync(transformConfig.parse(ConfigProvider.fromEnvRecord({})));
   const server = makeServer({
     catalog,
     maxSeconds: 60,
-    transformConfig: { ...limits, timeoutMs: 30_000, sourceBytes: 512 },
     producers: {
       acquire: () =>
         Effect.succeed({ messages, ready: Effect.void, terminal: Effect.succeed(undefined) }),
@@ -117,7 +114,7 @@ test("transforms filtered events independently of raw watches and stops delivery
           method: "events/stream",
           params: {
             name: "im.message.receive_v1",
-            arguments: { watchId: "oversized", transform: "a".repeat(513) },
+            arguments: { watchId: "oversized", transform: "a".repeat(65537) },
           },
         },
         Schema.toStandardSchemaV1(Schema.Unknown),
@@ -197,7 +194,7 @@ test("transforms filtered events independently of raw watches and stops delivery
     await client.request(
       {
         method: "tools/call",
-        params: { name: "watch_stop", arguments: { watchId: "transformed" } },
+        params: { name: "stop_watch", arguments: { watchId: "transformed" } },
       },
       Schema.toStandardSchemaV1(Schema.Unknown),
     );
@@ -241,7 +238,7 @@ test("transforms filtered events independently of raw watches and stops delivery
     );
     await observed.entered.promise;
     await client.request(
-      { method: "tools/call", params: { name: "watch_stop", arguments: { watchId: "slow" } } },
+      { method: "tools/call", params: { name: "stop_watch", arguments: { watchId: "slow" } } },
       Schema.toStandardSchemaV1(Schema.Unknown),
     );
     expect(await observed.exited.promise).toBe(true);

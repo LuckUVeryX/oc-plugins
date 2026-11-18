@@ -74,9 +74,9 @@ Use OpenCode's `watch_mcp_event` with the `lark-events` server for native MCP su
 }
 ```
 
-Each active watch needs a nonempty ID unique within the server process. The operator can set `LARK_WATCH_MAX_SECONDS` in the server environment to a positive integer. It defaults to 3600 seconds. The lifetime starts when the watch is accepted, including connection readiness. Agents cannot override it. Use `watch_list` to see active IDs and their start and expiry times. Use `watch_stop` with a `watchId` to stop a watch and wait for cleanup. Expired and stopped watches send a terminal notification. Watches are not persisted across server restarts.
+Each active watch needs a nonempty ID unique within the server process. The operator can set `LARK_WATCH_MAX_SECONDS` in the server environment to a positive integer. It defaults to 3600 seconds. The lifetime starts when the watch is accepted, including connection readiness. Agents cannot override it. Use `list_watches` to see active IDs and their start and expiry times. Use `stop_watch` with a `watchId` to stop a watch and wait for cleanup. Expired and stopped watches send a terminal notification. Watches are not persisted across server restarts.
 
-If you want to stop a watch, call `watch_stop` before disconnecting or closing the UI. A watch can outlive a project's disconnection.
+Call `stop_watch` before disconnecting if you want the watch to stop. A watch can outlive a project's disconnection. Existing callers should replace `watch_list` with `list_watches` and `watch_stop` with `stop_watch`.
 
 Filter keys are exact scalar dot paths in the SDK's flattened callback payload. Fields combine with AND. A nonempty array of expected values combines with OR. Values use strict equality. Missing fields do not match. Unknown paths and values outside the generated type, enum, or const constraints are rejected. The server does not traverse arrays or interpret expressions. Omit `filter` to match all payloads.
 
@@ -88,7 +88,7 @@ By default, each matching event produces one notification. Its `data` is the raw
 
 An optional `transform` argument contains a Code Mode program. It receives `input.event` with `eventId`, `timestamp`, `timestampOrigin`, and raw `data`. A string result becomes notification data. Null, undefined, or a valueless program suppresses the notification. A final expression can return a value. Empty programs, errors, other result types, and truncated results are logged and suppressed. Filters run before the program.
 
-The interpreter exposes no host tools or extensions. Its confinement is not OS isolation or a hard memory limit. The operator can set positive integer limits with `LARK_TRANSFORM_TIMEOUT_MS` (default 1000), `LARK_TRANSFORM_SOURCE_BYTES` (65536), `LARK_TRANSFORM_INPUT_BYTES` (1048576), and `LARK_TRANSFORM_OUTPUT_BYTES` (16384). Serialized string delivery is also limited to 16384 JavaScript string units.
+The interpreter exposes no host tools or extensions. Its confinement is not OS isolation or a hard memory limit. The interpreter timeout is 1000 ms. Transform source is limited to 65536 bytes, input to 1048576 bytes, and output to 16384 bytes. Serialized string delivery is also limited to 16384 JavaScript string units.
 
 This changes the previous batch notification contract. The `data.events` wrapper and the `debounce` argument are no longer supported. An OpenCode watch configured to run once receives one event. Oversized events may be truncated by OpenCode. Stopping or cancelling a watch discards pending events.
 
