@@ -12,6 +12,7 @@ import {
   Ref,
   Schema,
 } from "effect";
+import { logger } from "./sdk-logger.ts";
 
 export class SourceError extends Schema.TaggedError<SourceError>()("SourceError", {
   message: Schema.String,
@@ -42,9 +43,6 @@ export class EventProducers extends Context.Service<
     >;
   }
 >()("lark-events-mcp/EventProducers") {}
-
-const log = (...message: unknown[]) => console.error(...message);
-const logger = { error: log, warn: log, info: log, debug: log, trace: log };
 
 const STALE_EVENT_CUTOFF_MS = 60 * 60 * 1000;
 
