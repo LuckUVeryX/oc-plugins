@@ -4,19 +4,10 @@ import { watchMaxSeconds } from "../src/config.ts";
 
 const read = (value?: string) =>
   Effect.runPromise(
-    Effect.gen(function* () {
-      return yield* watchMaxSeconds;
-    }).pipe(
-      Effect.provide(
-        ConfigProvider.layer(
-          ConfigProvider.fromEnvRecord(
-            value === undefined ? {} : { LARK_WATCH_MAX_SECONDS: value },
-            {
-              preserveEmptyStrings: true,
-            },
-          ),
-        ),
-      ),
+    watchMaxSeconds.parse(
+      ConfigProvider.fromEnvRecord(value === undefined ? {} : { LARK_WATCH_MAX_SECONDS: value }, {
+        preserveEmptyStrings: true,
+      }),
     ),
   );
 
