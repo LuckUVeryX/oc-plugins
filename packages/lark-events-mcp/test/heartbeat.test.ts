@@ -1,12 +1,10 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, SUBSCRIPTION_ID_META_KEY } from "@modelcontextprotocol/server";
-import { ConfigProvider, Effect, PubSub, Schema } from "effect";
+import { Effect, PubSub, Schema } from "effect";
 import { expect, test, vi } from "vitest";
 import { makeServer } from "../src/server.ts";
 import { catalogLayer, LarkCatalog } from "../src/catalog.ts";
 import type { SourceMessage } from "../src/producers.ts";
-import { transformConfig } from "../src/config.ts";
-const limits = Effect.runSync(transformConfig.parse(ConfigProvider.fromEnvRecord({})));
 const FLAT_KEY = "im.message.receive_v1";
 
 test("fixed heartbeats survive event traffic and stop on cancellation or termination", async () => {
@@ -20,7 +18,6 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
   const server = makeServer({
     catalog,
     maxSeconds: 3600,
-    transformConfig: limits,
     producers: {
       acquire: () =>
         Effect.succeed({
@@ -221,7 +218,6 @@ test("watch controls and deadlines include connection readiness", async () => {
   const server = makeServer({
     catalog,
     maxSeconds: 1,
-    transformConfig: limits,
     producers: {
       acquire: (name) =>
         Effect.succeed({
@@ -281,7 +277,7 @@ test("watch controls and deadlines include connection readiness", async () => {
     await client.connect(a);
     subscribe("one");
     await vi.advanceTimersByTimeAsync(0);
-    const listed = await tool("watch_list");
+    const listed = await tool("list_watches");
     expect(listed.watches).toEqual([
       {
         watchId: "one",
@@ -304,8 +300,8 @@ test("watch controls and deadlines include connection readiness", async () => {
       .catch((error: unknown) => error);
     await vi.advanceTimersByTimeAsync(0);
     expect(await invalid).toMatchObject({ code: -32602 });
-    expect(await tool("watch_stop", { watchId: "one" })).toEqual({ watchId: "one", stopped: true });
-    expect(await tool("watch_stop", { watchId: "one" })).toEqual({
+    expect(await tool("stop_watch", { watchId: "one" })).toEqual({ watchId: "one", stopped: true });
+    expect(await tool("stop_watch", { watchId: "one" })).toEqual({
       watchId: "one",
       stopped: false,
     });
@@ -322,7 +318,7 @@ test("watch controls and deadlines include connection readiness", async () => {
     expect(received.filter((value) => value.method === "event")).toEqual([]);
     subscribe("one", FLAT_KEY);
     await vi.advanceTimersByTimeAsync(0);
-    const expiry = (await tool("watch_list")).watches[0].expiresAt;
+    const expiry = (await tool("list_watches")).watches[0].expiresAt;
     await vi.advanceTimersByTimeAsync(500);
     await Effect.runPromise(
       PubSub.publish(messages, {
@@ -334,7 +330,7 @@ test("watch controls and deadlines include connection readiness", async () => {
       }),
     );
     await vi.advanceTimersByTimeAsync(0);
-    expect((await tool("watch_list")).watches[0].expiresAt).toBe(expiry);
+    expect((await tool("list_watches")).watches[0].expiresAt).toBe(expiry);
     await vi.advanceTimersByTimeAsync(500);
     expect(received.slice(-2)).toEqual([
       {
@@ -343,7 +339,7 @@ test("watch controls and deadlines include connection readiness", async () => {
       },
       { method: "terminated", reason: "Expired" },
     ]);
-    expect((await tool("watch_list")).watches).toEqual([]);
+    expect((await tool("list_watches")).watches).toEqual([]);
     const waitingName = (await Effect.runPromise(catalog.list())).find(
       (entry) => entry.name !== FLAT_KEY,
     )!.name;
@@ -353,7 +349,7 @@ test("watch controls and deadlines include connection readiness", async () => {
     expect(received.filter((value) => value.reason === "Expired")).toHaveLength(2);
     await vi.advanceTimersByTimeAsync(20_000);
     expect(received.filter((value) => value.method === "heartbeat")).toEqual([]);
-    expect((await tool("watch_list")).watches).toEqual([]);
+    expect((await tool("list_watches")).watches).toEqual([]);
   } finally {
     for (const controller of controllers) controller.abort();
     await Promise.all(requests);

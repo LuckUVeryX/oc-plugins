@@ -9,7 +9,7 @@ import { Clock, Deferred, Effect, PubSub, Schedule, Schema } from "effect";
 import type { EventDefinition, LarkCatalog } from "./catalog.ts";
 import { decodeArguments, inputSchemaDocument, matchesFilter } from "./contract.ts";
 import type { EventProducers } from "./producers.ts";
-import { bytes, makeTransform, type TransformConfig } from "./transform.ts";
+import { bytes, makeTransform } from "./transform.ts";
 import type { makeDecisions } from "./decisions.ts";
 
 export const EVENTS_EXTENSION = "io.modelcontextprotocol/events";
@@ -21,7 +21,6 @@ interface ServerOptions {
   readonly catalog: Effect.Success<typeof LarkCatalog>;
   readonly producers: Effect.Success<typeof EventProducers>;
   readonly maxSeconds: number;
-  readonly transformConfig: TransformConfig;
   readonly decide?: ReturnType<typeof makeDecisions> | undefined;
 }
 
@@ -36,7 +35,7 @@ const streamParams = Schema.toStandardSchemaV1(
 const invalidParams = (message: string) => new ProtocolError(INVALID_PARAMS, message);
 
 const describe = (definition: EventDefinition): string =>
-  `Lark MCP push subscription. Use watch_mcp_event on lark-events. ${definition.description || definition.name}`;
+  `Watch this Lark event with watch_mcp_event on lark-events. ${definition.description || definition.name}`;
 
 interface Watch {
   readonly ended: Deferred.Deferred<string>;
@@ -49,35 +48,44 @@ interface Watch {
 const watches = new Map<string, Watch>();
 
 export const makeServer = (options: ServerOptions): McpServer => {
-  const transformEvent = makeTransform(options.transformConfig);
+  const transformEvent = makeTransform();
   const server = new McpServer(
     { name: "lark-events-mcp", version: "0.0.0" },
     { capabilities: { extensions: { [EVENTS_EXTENSION]: {} } } },
   );
 
-  server.registerTool("watch_list", { description: "List active Lark MCP watches." }, () => ({
-    content: [
-      {
-        type: "text",
-        text: JSON.stringify({
-          watches: [...watches].map(([watchId, { eventName, startedAt, expiresAt }]) => ({
-            watchId,
-            eventName,
-            startedAt,
-            expiresAt,
-          })),
-        }),
-      },
-    ],
-  }));
   server.registerTool(
-    "watch_stop",
+    "list_watches",
+    { description: "List active Lark event watches with their IDs and expiry times." },
+    () => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            watches: [...watches].map(([watchId, { eventName, startedAt, expiresAt }]) => ({
+              watchId,
+              eventName,
+              startedAt,
+              expiresAt,
+            })),
+          }),
+        },
+      ],
+    }),
+  );
+  server.registerTool(
+    "stop_watch",
     {
-      description: "Stop an active Lark MCP watch and wait for cleanup.",
+      description:
+        "Stop a Lark event watch by ID before it expires. Returns once the watch has stopped.",
       inputSchema: fromJsonSchema<{ watchId: string }>({
         type: "object",
         properties: {
-          watchId: { type: "string", minLength: 1, description: "ID of the active watch." },
+          watchId: {
+            type: "string",
+            minLength: 1,
+            description: "Use the ID from watch registration or list_watches.",
+          },
         },
         required: ["watchId"],
         additionalProperties: false,
@@ -153,8 +161,8 @@ export const makeServer = (options: ServerOptions): McpServer => {
         const { filter, watchId, transform, decisions } = decoded.value;
         if (decisions !== undefined && options.decide === undefined)
           return yield* Effect.fail(invalidParams("decisions model is not configured"));
-        if (transform !== undefined && bytes(transform) > options.transformConfig.sourceBytes)
-          return yield* Effect.fail(invalidParams("transform source exceeds operator limit"));
+        if (transform !== undefined && bytes(transform) > 65536)
+          return yield* Effect.fail(invalidParams("transform source exceeds 65536 bytes"));
         const ended = yield* Deferred.make<string>();
         const finished = yield* Deferred.make<void>();
         const startedAt = yield* Clock.currentTimeMillis;
@@ -219,21 +227,8 @@ export const makeServer = (options: ServerOptions): McpServer => {
                   };
                   let input: unknown = { event };
                   if (decisions !== undefined && options.decide !== undefined) {
-                    const json = yield* Schema.decodeUnknownEffect(Schema.Json)(event).pipe(
-                      Effect.option,
-                    );
-                    if (json._tag === "None") {
-                      yield* Effect.logWarning("Event decisions failed").pipe(
-                        Effect.annotateLogs({
-                          watchId,
-                          eventId: message.eventId,
-                          kind: "InvalidInput",
-                        }),
-                      );
-                      break;
-                    }
                     const decision = yield* options
-                      .decide(decisions, json.value)
+                      .decide(decisions, event)
                       .pipe(
                         Effect.catch((kind) =>
                           Effect.logWarning("Event decisions failed").pipe(

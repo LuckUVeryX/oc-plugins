@@ -1,8 +1,6 @@
 import { CodeMode } from "@opencode/codemode";
 import { Effect, Schema } from "effect";
-import type { transformConfig } from "./config.ts";
 
-export type TransformConfig = Effect.Success<typeof transformConfig>;
 export type TransformFailure =
   | CodeMode.DiagnosticKind
   | "InvalidInput"
@@ -12,16 +10,16 @@ export type TransformFailure =
 
 export const bytes = (value: string): number => Buffer.byteLength(value, "utf8");
 
-export const makeTransform = (config: TransformConfig) => {
+export const makeTransform = () => {
   const runtime = CodeMode.make({
-    limits: { timeoutMs: config.timeoutMs, maxToolCalls: 0, maxOutputBytes: config.outputBytes },
+    limits: { timeoutMs: 1000, maxToolCalls: 0, maxOutputBytes: 16384 },
   });
   return (source: string, inputValue: unknown): Effect.Effect<string | null, TransformFailure> =>
     Effect.gen(function* () {
       const encoded = yield* Effect.try(() => JSON.stringify(inputValue)).pipe(
         Effect.mapError((): TransformFailure => "InvalidInput"),
       );
-      if (encoded === undefined || bytes(encoded) > config.inputBytes)
+      if (encoded === undefined || bytes(encoded) > 1048576)
         return yield* Effect.fail<TransformFailure>("InputTooLarge");
       const input = yield* Schema.decodeUnknownEffect(Schema.Json)(JSON.parse(encoded)).pipe(
         Effect.mapError((): TransformFailure => "InvalidInput"),
@@ -33,7 +31,7 @@ export const makeTransform = (config: TransformConfig) => {
       if (typeof result.value !== "string")
         return yield* Effect.fail<TransformFailure>("InvalidOutput");
       const serialized = JSON.stringify(result.value);
-      if (bytes(serialized) > config.outputBytes || serialized.length > 16384)
+      if (bytes(serialized) > 16384 || serialized.length > 16384)
         return yield* Effect.fail<TransformFailure>("OutputTooLarge");
       return result.value;
     });

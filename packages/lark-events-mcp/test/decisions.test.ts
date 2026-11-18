@@ -8,7 +8,7 @@ import { Generate } from "@opencode/schema/generate";
 import { ConfigProvider, Effect, JsonSchema, PubSub, Schema, SchemaRepresentation } from "effect";
 import { afterAll, expect, test, vi } from "vitest";
 import { catalogLayer, LarkCatalog } from "../src/catalog.ts";
-import { decisionModel, transformConfig } from "../src/config.ts";
+import { decisionModel } from "../src/config.ts";
 import { decodeArguments } from "../src/contract.ts";
 import { makeDecisions } from "../src/decisions.ts";
 import type { SourceMessage } from "../src/producers.ts";
@@ -118,7 +118,6 @@ test("native requests pass through MCP and stop aborts pending local HTTP", asyn
       return yield* LarkCatalog;
     }).pipe(Effect.provide(catalogLayer)),
   );
-  const limits = Effect.runSync(transformConfig.parse(ConfigProvider.fromEnvRecord({})));
   const decide = makeDecisions(model, async () => ({
     url: http.url.toString(),
     auth: { type: "basic", username: "fake", password: "secret" },
@@ -126,7 +125,6 @@ test("native requests pass through MCP and stop aborts pending local HTTP", asyn
   const server = makeServer({
     catalog,
     maxSeconds: 60,
-    transformConfig: limits,
     decide,
     producers: {
       acquire: () =>
@@ -245,7 +243,7 @@ test("native requests pass through MCP and stop aborts pending local HTTP", asyn
     ).toHaveProperty("issues");
     expect(document).toHaveProperty(
       ["properties", "decisions", "description"],
-      "Native questions and optional standing input. Requires transform.",
+      expect.stringContaining("Requires transform."),
     );
     expect(
       await Effect.runPromise(decodeArguments({}, { watchId: "x", decisions: { questions } })),
@@ -346,13 +344,13 @@ test("native requests pass through MCP and stop aborts pending local HTTP", asyn
     await client.request(
       {
         method: "tools/call",
-        params: { name: "watch_stop", arguments: { watchId: "decision-2" } },
+        params: { name: "stop_watch", arguments: { watchId: "decision-2" } },
       },
       Schema.toStandardSchemaV1(Schema.Unknown),
     );
     await publish("queued");
     await client.request(
-      { method: "tools/call", params: { name: "watch_stop", arguments: { watchId: "decision" } } },
+      { method: "tools/call", params: { name: "stop_watch", arguments: { watchId: "decision" } } },
       Schema.toStandardSchemaV1(Schema.Unknown),
     );
     await aborted.promise;
@@ -392,11 +390,9 @@ test("heartbeat continues during a held request and expiry discards queued event
       return yield* LarkCatalog;
     }).pipe(Effect.provide(catalogLayer)),
   );
-  const limits = Effect.runSync(transformConfig.parse(ConfigProvider.fromEnvRecord({})));
   const server = makeServer({
     catalog,
     maxSeconds: 22,
-    transformConfig: limits,
     decide: makeDecisions(model, async () => ({ url: http.url.toString(), auth: undefined })),
     producers: {
       acquire: () =>

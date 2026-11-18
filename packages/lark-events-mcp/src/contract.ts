@@ -76,18 +76,20 @@ export const inputSchemaDocument = (schema: unknown): Record<string, unknown> =>
       watchId: {
         type: "string",
         minLength: 1,
-        description: "Unique among active watches in this server process.",
+        description:
+          "Choose an ID unique among active Lark event watches. Reuse it with stop_watch.",
       },
       filter: {
         type: "object",
-        description: "Match all paths with strict equality. An array matches any listed value.",
+        description:
+          "Match raw payload fields by dot path. All paths must match exactly. An array allows any listed value for that path.",
         properties,
         additionalProperties: false,
       },
       transform: {
         type: "string",
         description:
-          "Code Mode program. input.event contains eventId, timestamp, timestampOrigin and data. Return a string to deliver, or null/undefined for no event.",
+          "Format or suppress each matching event with a Code Mode program. Read input.event.data for the payload. Return a string to deliver that string, or null to suppress the event. Omit for raw delivery.",
       },
       decisions: strictDocument(decisions.schema),
     },
@@ -116,11 +118,7 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
     const error = (message: string) => ({ _tag: "error" as const, message });
     if (!isObject(input) || Array.isArray(input))
       return error("stream arguments must be an object");
-    if (
-      Object.keys(input).some(
-        (key) => !["filter", "watchId", "transform", "decisions"].includes(key),
-      )
-    )
+    if (Object.keys(input).some((key) => !Object.hasOwn(WatchArguments.fields, key)))
       return error("unknown stream argument");
     const decoded = yield* Schema.decodeUnknownEffect(WatchArguments)(input, {
       onExcessProperty: "error",
