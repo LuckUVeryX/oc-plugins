@@ -3,20 +3,30 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { BunRuntime } from "@effect/platform-bun";
 import { Cause, ConfigProvider, Effect, Exit, Layer, Logger, Runtime } from "effect";
 import { catalogLayer, LarkCatalog } from "./catalog.ts";
-import { watchMaxSeconds } from "./config.ts";
+import { decisionModel, watchMaxSeconds } from "./config.ts";
+import { makeDecisions } from "./decisions.ts";
 import { EventProducers, producersLayer } from "./producers.ts";
 import { makeServer } from "./server.ts";
 
-const serve = (maxSeconds: number) =>
+const serve = (maxSeconds: number, model: Effect.Success<typeof decisionModel>) =>
   Effect.gen(function* () {
     const catalog = yield* LarkCatalog;
     const producers = yield* EventProducers;
     yield* Effect.acquireRelease(
       Effect.sync(() =>
-        serveStdio(() => makeServer({ catalog, producers, maxSeconds }), {
-          legacy: "reject",
-          onerror: (error) => console.error(error),
-        }),
+        serveStdio(
+          () =>
+            makeServer({
+              catalog,
+              producers,
+              maxSeconds,
+              decide: model._tag === "Some" ? makeDecisions(model.value) : undefined,
+            }),
+          {
+            legacy: "reject",
+            onerror: (error) => console.error(error),
+          },
+        ),
       ),
       (handle) => Effect.promise(() => handle.close()),
     );
@@ -29,7 +39,8 @@ const serve = (maxSeconds: number) =>
 
 const program = Effect.gen(function* () {
   const maxSeconds = yield* watchMaxSeconds;
-  yield* serve(maxSeconds);
+  const model = yield* decisionModel;
+  yield* serve(maxSeconds, model);
 }).pipe(
   Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ preserveEmptyStrings: true }))),
 );
