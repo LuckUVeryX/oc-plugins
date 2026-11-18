@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect";
 import { isObject } from "effect/Predicate";
+import { Decisions } from "./decisions.ts";
 
 const Scalar = Schema.Union([Schema.String, Schema.Number, Schema.Boolean]);
 type Scalar = typeof Scalar.Type;
@@ -8,6 +9,7 @@ const WatchArguments = Schema.Struct({
   watchId: Schema.NonEmptyString,
   filter: Schema.optionalKey(Schema.Unknown),
   transform: Schema.optionalKey(Schema.String),
+  decisions: Schema.optionalKey(Decisions),
 });
 
 interface FilterLeaf {
@@ -48,7 +50,21 @@ const leafDocument = (leaf: FilterLeaf): Record<string, unknown> => ({
   ...(leaf.values === undefined ? {} : { enum: leaf.values }),
 });
 
+const strictDocument = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(strictDocument);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      key,
+      key === "additionalProperties" && entry === true && "properties" in value
+        ? false
+        : strictDocument(entry),
+    ]),
+  );
+};
+
 export const inputSchemaDocument = (schema: unknown): Record<string, unknown> => {
+  const decisions = Schema.toJsonSchemaDocument(Decisions);
   const properties: Record<string, unknown> = {};
   for (const leaf of filterLeaves(schema))
     properties[leaf.path] = {
@@ -75,7 +91,9 @@ export const inputSchemaDocument = (schema: unknown): Record<string, unknown> =>
         description:
           "Format or suppress each matching event with a Code Mode program. Read input.event.data for the payload. Return a string to deliver that string, or null to suppress the event. Omit for raw delivery.",
       },
+      decisions: strictDocument(decisions.schema),
     },
+    $defs: strictDocument(decisions.definitions),
     required: ["watchId"],
     additionalProperties: false,
   };
@@ -100,11 +118,15 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
     const error = (message: string) => ({ _tag: "error" as const, message });
     if (!isObject(input) || Array.isArray(input))
       return error("stream arguments must be an object");
-    if (Object.keys(input).some((key) => !["filter", "watchId", "transform"].includes(key)))
+    if (Object.keys(input).some((key) => !Object.hasOwn(WatchArguments.fields, key)))
       return error("unknown stream argument");
-    const decoded = yield* Schema.decodeUnknownEffect(WatchArguments)(input).pipe(Effect.option);
+    const decoded = yield* Schema.decodeUnknownEffect(WatchArguments)(input, {
+      onExcessProperty: "error",
+    }).pipe(Effect.option);
     if (decoded._tag === "None") return error("invalid watch arguments");
-    const { watchId, filter: raw = {}, transform } = decoded.value;
+    const { watchId, filter: raw = {}, transform, decisions } = decoded.value;
+    if (decisions !== undefined && transform === undefined)
+      return error("decisions requires transform");
     if (!isObject(raw) || Array.isArray(raw)) return error("filter must be an object");
     const leaves = new Map(filterLeaves(schema).map((leaf) => [leaf.path, leaf]));
     const filter: Array<readonly [string, ReadonlyArray<Scalar>]> = [];
@@ -120,7 +142,7 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
     }
     return {
       _tag: "ok" as const,
-      value: { filter, watchId, transform },
+      value: { filter, watchId, transform, decisions },
     };
   });
 
