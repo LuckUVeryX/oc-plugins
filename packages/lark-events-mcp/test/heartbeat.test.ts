@@ -65,8 +65,8 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
     await h.publish({ eventId: "ignored", payload: { message: { chat_id: "oc_other" } } });
     await h.publish({ eventId: "test", payload: { message: { chat_id: "oc_test" } } });
     await vi.advanceTimersByTimeAsync(0);
-    expect(h.notifications.filter((n) => n.type === "event").map((n) => n.id)).toEqual(
-      active.map((n) => n.id),
+    expect(h.notifications.filter((n) => n.type === "event").map((n) => [n.id, n.data])).toEqual(
+      active.map((n) => [n.id, { message: { chat_id: "oc_test" } }]),
     );
     await vi.advanceTimersByTimeAsync(10_000);
     expect(heartbeats()).toHaveLength(4);
@@ -144,5 +144,39 @@ test("watch controls and deadlines include connection readiness", async () => {
   } finally {
     await h.close();
     vi.useRealTimers();
+  }
+});
+
+test("stop_watch returns only after the watch has stopped", async () => {
+  const held = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const h = await connect({
+    transport: (transport) => {
+      const send = transport.send.bind(transport);
+      transport.send = async (message, options) => {
+        if ("method" in message && message.method === "notifications/events/terminated") {
+          held.resolve();
+          await release.promise;
+        }
+        return send(message, options);
+      };
+    },
+  });
+  try {
+    h.stream({ watchId: "held" });
+    await vi.waitFor(() => expect(h.notifications.some((n) => n.type === "active")).toBe(true));
+    let stopped = false;
+    const stop = h.call("stop_watch", { watchId: "held" }).then((result) => {
+      stopped = true;
+      return result;
+    });
+    await held.promise;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(stopped).toBe(false);
+    release.resolve();
+    expect(await stop).toEqual({ watchId: "held", stopped: true });
+  } finally {
+    release.resolve();
+    await h.close();
   }
 });

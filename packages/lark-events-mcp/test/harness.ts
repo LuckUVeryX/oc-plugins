@@ -47,6 +47,7 @@ export async function connect(
   }> = [];
   const params = Schema.toStandardSchemaV1(
     Schema.Struct({
+      cursor: Schema.Null,
       _meta: Schema.Struct({
         [SUBSCRIPTION_ID_META_KEY]: Schema.Union([Schema.String, Schema.Number]),
         "lark-events-mcp/timestampOrigin": Schema.optionalKey(Schema.String),
@@ -54,7 +55,7 @@ export async function connect(
       eventId: Schema.optionalKey(Schema.String),
       timestamp: Schema.optionalKey(Schema.String),
       data: Schema.optionalKey(Schema.Unknown),
-      error: Schema.optionalKey(Schema.Struct({ message: Schema.String })),
+      error: Schema.optionalKey(Schema.Struct({ code: Schema.Number, message: Schema.String })),
     }),
   );
   for (const type of ["active", "heartbeat", "event", "error", "terminated"]) {
