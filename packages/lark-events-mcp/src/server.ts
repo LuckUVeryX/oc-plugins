@@ -38,8 +38,7 @@ const run = <A, E>(effect: Effect.Effect<A, E>, options?: Effect.RunOptions) =>
 
 const invalidParams = (message: string) => new ProtocolError(INVALID_PARAMS, message);
 
-const describe = (definition: EventDefinition): string =>
-  `Watch this Lark event with watch_mcp_event on lark-events. ${definition.description || definition.name}`;
+const describe = (definition: EventDefinition): string => definition.description || definition.name;
 
 interface Watch {
   readonly ended: Deferred.Deferred<string>;
@@ -62,7 +61,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
 
   server.registerTool(
     "list_watches",
-    { description: "List active Lark event watches with their IDs and expiry times." },
+    { description: "List active watches with IDs, event names, and start and expiry times." },
     () => ({
       content: [
         {
@@ -82,15 +81,14 @@ export const makeServer = (options: ServerOptions): McpServer => {
   server.registerTool(
     "stop_watch",
     {
-      description:
-        "Stop a Lark event watch by ID before it expires. Returns once the watch has stopped.",
+      description: "Stop a watch by ID and wait for it to stop.",
       inputSchema: fromJsonSchema<{ watchId: string }>({
         type: "object",
         properties: {
           watchId: {
             type: "string",
             minLength: 1,
-            description: "Use the ID from watch registration or list_watches.",
+            description: "Use the watch ID or find it with list_watches.",
           },
         },
         required: ["watchId"],
@@ -151,19 +149,28 @@ export const makeServer = (options: ServerOptions): McpServer => {
       Effect.gen(function* () {
         if (params.cursor !== undefined && params.cursor !== null)
           return yield* Effect.fail(
-            invalidParams("lark events are live-only; cursor must be null or omitted"),
+            invalidParams("Events are live-only; omit cursor or set it to null"),
           );
         const definition = options.catalog.get(params.name);
-        if (!definition) return yield* Effect.fail(invalidParams(`unknown event: ${params.name}`));
+        if (!definition)
+          return yield* Effect.fail(
+            invalidParams(`Unknown event: ${params.name}; choose a listed event`),
+          );
         const { filter, watchId, transform, decisions } = yield* decodeArguments(
           definition.payloadSchema,
           params.arguments ?? {},
         ).pipe(Effect.mapError(invalidParams));
         const decide = options.decide;
         if (decisions !== undefined && decide === undefined)
-          return yield* Effect.fail(invalidParams("decisions model is not configured"));
+          return yield* Effect.fail(
+            invalidParams(
+              "Decisions is unavailable because the operator has not configured a model; retry without decisions",
+            ),
+          );
         if (transform !== undefined && bytes(transform) > 65536)
-          return yield* Effect.fail(invalidParams("transform source exceeds 65536 bytes"));
+          return yield* Effect.fail(
+            invalidParams("Transform source exceeds 65536 bytes; shorten it"),
+          );
         const ended = yield* Deferred.make<string>();
         const finished = yield* Deferred.make<void>();
         const startedAt = yield* Clock.currentTimeMillis;
@@ -177,7 +184,9 @@ export const makeServer = (options: ServerOptions): McpServer => {
         yield* Effect.acquireRelease(
           Effect.suspend(() => {
             if (watches.has(watchId))
-              return Effect.fail(invalidParams("watchId is already active"));
+              return Effect.fail(
+                invalidParams("watchId is already active; choose another ID or stop the watch"),
+              );
             watches.set(watchId, watch);
             return Effect.void;
           }),
