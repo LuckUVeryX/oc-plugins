@@ -124,10 +124,7 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
     expect(definition?.inputSchema).not.toHaveProperty(["properties", "debounce"]);
     expect(definition?.inputSchema).not.toHaveProperty(["properties", "durationSeconds"]);
     expect(definition?.payloadSchema).toEqual({
-      anyOf: [
-        (await Effect.runPromise(catalog.schema(FLAT_KEY))).payloadSchema,
-        { type: "string" },
-      ],
+      anyOf: [catalog.get(FLAT_KEY)?.payloadSchema, { type: "string" }],
     });
     const invalidDebounce = client
       .request(
@@ -340,9 +337,7 @@ test("watch controls and deadlines include connection readiness", async () => {
       { method: "terminated", reason: "Expired" },
     ]);
     expect((await tool("list_watches")).watches).toEqual([]);
-    const waitingName = (await Effect.runPromise(catalog.list())).find(
-      (entry) => entry.name !== FLAT_KEY,
-    )!.name;
+    const waitingName = catalog.events.find((entry) => entry.name !== FLAT_KEY)!.name;
     subscribe("waiting", waitingName);
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(1000);

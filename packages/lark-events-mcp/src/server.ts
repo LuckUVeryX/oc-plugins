@@ -118,21 +118,15 @@ export const makeServer = (options: ServerOptions): McpServer => {
   server.server.setRequestHandler(
     "events/list",
     { params: Schema.toStandardSchemaV1(Schema.Struct({})) },
-    () =>
-      run(
-        Effect.gen(function* () {
-          const definitions = yield* options.catalog.list();
-          return {
-            events: definitions.map((definition) => ({
-              name: definition.name,
-              description: describe(definition),
-              delivery: ["push"],
-              inputSchema: inputSchemaDocument(definition.payloadSchema),
-              payloadSchema: { anyOf: [definition.payloadSchema, { type: "string" }] },
-            })),
-          };
-        }),
-      ),
+    () => ({
+      events: options.catalog.events.map((definition) => ({
+        name: definition.name,
+        description: describe(definition),
+        delivery: ["push"],
+        inputSchema: inputSchemaDocument(definition.payloadSchema),
+        payloadSchema: { anyOf: [definition.payloadSchema, { type: "string" }] },
+      })),
+    }),
   );
 
   server.server.setRequestHandler("events/stream", { params: streamParams }, (params, ctx) => {
@@ -157,13 +151,14 @@ export const makeServer = (options: ServerOptions): McpServer => {
           return yield* Effect.fail(
             invalidParams("lark events are live-only; cursor must be null or omitted"),
           );
-        const definition = yield* options.catalog
-          .schema(params.name)
-          .pipe(Effect.mapError((error) => invalidParams(error.message)));
-        const decoded = yield* decodeArguments(definition.payloadSchema, params.arguments ?? {});
-        if (decoded._tag === "error") return yield* Effect.fail(invalidParams(decoded.message));
-        const { filter, watchId, transform, decisions } = decoded.value;
-        if (decisions !== undefined && options.decide === undefined)
+        const definition = options.catalog.get(params.name);
+        if (!definition) return yield* Effect.fail(invalidParams(`unknown event: ${params.name}`));
+        const { filter, watchId, transform, decisions } = yield* decodeArguments(
+          definition.payloadSchema,
+          params.arguments ?? {},
+        ).pipe(Effect.mapError(invalidParams));
+        const decide = options.decide;
+        if (decisions !== undefined && decide === undefined)
           return yield* Effect.fail(invalidParams("decisions model is not configured"));
         if (transform !== undefined && bytes(transform) > 65536)
           return yield* Effect.fail(invalidParams("transform source exceeds 65536 bytes"));

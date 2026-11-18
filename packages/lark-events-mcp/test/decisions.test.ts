@@ -246,20 +246,24 @@ test("native requests pass through MCP and stop aborts pending local HTTP", asyn
       expect.stringContaining("Requires transform."),
     );
     expect(
-      await Effect.runPromise(decodeArguments({}, { watchId: "x", decisions: { questions } })),
-    ).toMatchObject({ _tag: "error" });
+      await Effect.runPromise(
+        Effect.flip(decodeArguments({}, { watchId: "x", decisions: { questions } })),
+      ),
+    ).toBe("decisions requires transform");
     expect(
       await Effect.runPromise(
-        decodeArguments(
-          {},
-          {
-            watchId: "x",
-            transform: "return null",
-            decisions: { questions, input: [{ type: "text", text: "x", model: "override" }] },
-          },
+        Effect.flip(
+          decodeArguments(
+            {},
+            {
+              watchId: "x",
+              transform: "return null",
+              decisions: { questions, input: [{ type: "text", text: "x", model: "override" }] },
+            },
+          ),
         ),
       ),
-    ).toMatchObject({ _tag: "error" });
+    ).toBe("invalid watch arguments");
     await expect(
       client.request(
         {
@@ -274,16 +278,18 @@ test("native requests pass through MCP and stop aborts pending local HTTP", asyn
     ).rejects.toMatchObject({ code: -32602 });
     expect(
       await Effect.runPromise(
-        decodeArguments(
-          {},
-          {
-            watchId: "x",
-            transform: "return null",
-            decisions: { questions: [{ ...questions[0], model: "bad" }] },
-          },
+        Effect.flip(
+          decodeArguments(
+            {},
+            {
+              watchId: "x",
+              transform: "return null",
+              decisions: { questions: [{ ...questions[0], model: "bad" }] },
+            },
+          ),
         ),
       ),
-    ).toMatchObject({ _tag: "error" });
+    ).toBe("invalid watch arguments");
     stream({ watchId: "raw" });
     stream({ watchId: "transform", transform: 'return "plain"' });
     stream({
