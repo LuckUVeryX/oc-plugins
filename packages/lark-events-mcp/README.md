@@ -187,6 +187,8 @@ A failing step stops the watch with its step, event ID and error. Fix the step a
 
 ## Troubleshoot
 
+`list_watches` returns each active watch's arguments. Pass them back to `watch_mcp_event` with your change to re-arm a watch.
+
 | Symptom                                                     | Cause                                                                                                            |
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Server fails to start                                       | `LARK_APP_ID` is missing or malformed, or `LARK_APP_SECRET` is empty. Server logs go to stderr.                  |

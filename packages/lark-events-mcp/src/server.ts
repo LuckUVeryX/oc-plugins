@@ -49,6 +49,7 @@ interface Watch {
   readonly eventName: string;
   readonly startedAt: string;
   readonly expiresAt: string;
+  readonly arguments: Record<string, unknown>;
 }
 
 const watches = new Map<string, Watch>();
@@ -94,17 +95,21 @@ export const makeServer = (options: ServerOptions): McpServer => {
 
   server.registerTool(
     "list_watches",
-    { description: "List active watches with IDs, event names, and start and expiry times." },
+    {
+      description:
+        "List active watches with their event, start and expiry times, and the arguments they were armed with.",
+    },
     () => ({
       content: [
         {
           type: "text",
           text: JSON.stringify({
-            watches: [...watches].map(([watchId, { eventName, startedAt, expiresAt }]) => ({
+            watches: [...watches].map(([watchId, watch]) => ({
               watchId,
-              eventName,
-              startedAt,
-              expiresAt,
+              eventName: watch.eventName,
+              startedAt: watch.startedAt,
+              expiresAt: watch.expiresAt,
+              arguments: watch.arguments,
             })),
           }),
         },
@@ -218,6 +223,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
           eventName: params.name,
           startedAt: new Date(startedAt).toISOString(),
           expiresAt: new Date(startedAt + options.maxSeconds * 1000).toISOString(),
+          arguments: params.arguments ?? {},
         };
         yield* Effect.acquireRelease(
           Effect.suspend(() => {
