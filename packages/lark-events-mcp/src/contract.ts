@@ -7,6 +7,7 @@ const isScalar = Schema.is(Scalar);
 const WatchArguments = Schema.Struct({
   watchId: Schema.NonEmptyString,
   filter: Schema.optionalKey(Schema.Unknown),
+  transform: Schema.optionalKey(Schema.String),
 });
 
 interface FilterLeaf {
@@ -67,6 +68,11 @@ export const inputSchemaDocument = (schema: unknown): Record<string, unknown> =>
         properties,
         additionalProperties: false,
       },
+      transform: {
+        type: "string",
+        description:
+          "Code Mode program. input.event contains eventId, timestamp, timestampOrigin and data. Return a string to deliver, or null/undefined for no event.",
+      },
     },
     required: ["watchId"],
     additionalProperties: false,
@@ -92,11 +98,11 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
     const error = (message: string) => ({ _tag: "error" as const, message });
     if (!isObject(input) || Array.isArray(input))
       return error("stream arguments must be an object");
-    if (Object.keys(input).some((key) => !["filter", "watchId"].includes(key)))
+    if (Object.keys(input).some((key) => !["filter", "watchId", "transform"].includes(key)))
       return error("unknown stream argument");
     const decoded = yield* Schema.decodeUnknownEffect(WatchArguments)(input).pipe(Effect.option);
     if (decoded._tag === "None") return error("invalid watch arguments");
-    const { watchId, filter: raw = {} } = decoded.value;
+    const { watchId, filter: raw = {}, transform } = decoded.value;
     if (!isObject(raw) || Array.isArray(raw)) return error("filter must be an object");
     const leaves = new Map(filterLeaves(schema).map((leaf) => [leaf.path, leaf]));
     const filter: Array<readonly [string, ReadonlyArray<Scalar>]> = [];
@@ -112,7 +118,7 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
     }
     return {
       _tag: "ok" as const,
-      value: { filter, watchId },
+      value: { filter, watchId, transform },
     };
   });
 

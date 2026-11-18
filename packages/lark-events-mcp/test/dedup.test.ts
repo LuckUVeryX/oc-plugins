@@ -5,6 +5,7 @@ import { expect, test, vi } from "vitest";
 import { catalogLayer, LarkCatalog } from "../src/catalog.ts";
 import { EventProducers, producersLayer } from "../src/producers.ts";
 import { makeServer } from "../src/server.ts";
+import { transformConfig } from "../src/config.ts";
 
 const sdk = vi.hoisted(() => ({
   dispatcher: undefined as undefined | import("@larksuiteoapi/node-sdk").EventDispatcher,
@@ -33,8 +34,14 @@ test("delivers fresh events once and drops stale events", async () => {
         Effect.gen(function* () {
           const catalog = yield* LarkCatalog;
           const producers = yield* EventProducers;
+          const limits = yield* transformConfig;
           yield* Effect.promise(async () => {
-            const server = makeServer({ catalog, producers, maxSeconds: 3600 });
+            const server = makeServer({
+              catalog,
+              producers,
+              maxSeconds: 3600,
+              transformConfig: limits,
+            });
             const client = new Client({ name: "dedup-test", version: "1" });
             const active = Promise.withResolvers<void>();
             const received: unknown[] = [];

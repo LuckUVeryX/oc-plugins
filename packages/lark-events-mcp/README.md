@@ -84,7 +84,11 @@ Delivery is live-only. Cursors are null and resume requests are rejected. Notifi
 
 The SDK reconnects automatically, but events during a disconnect can be missed. A terminal SDK error ends existing subscriptions. Initial connection failures, including an invalid secret, can retry until the watch expires. Cancel or stop the subscription to stop waiting. SDK cancellation is best effort.
 
-Each matching event produces one notification. Its `data` is the raw SDK callback payload. The notification keeps the upstream `event_id` and v2 millisecond `create_time` when valid. Otherwise it uses a `local-` UUID or local receipt time. `_meta["lark-events-mcp/timestampOrigin"]` identifies the timestamp as `upstream` or `local`. Local IDs do not provide deduplication across restarts.
+By default, each matching event produces one notification. Its `data` is the raw SDK callback payload. The notification keeps the upstream `event_id` and v2 millisecond `create_time` when valid. Otherwise it uses a `local-` UUID or local receipt time. `_meta["lark-events-mcp/timestampOrigin"]` identifies the timestamp as `upstream` or `local`. Local IDs do not provide deduplication across restarts.
+
+An optional `transform` argument contains a Code Mode program. It receives `input.event` with `eventId`, `timestamp`, `timestampOrigin`, and raw `data`. A string result becomes notification data. Null, undefined, or a valueless program suppresses the notification. A final expression can return a value. Empty programs, errors, other result types, and truncated results are logged and suppressed. Filters run before the program.
+
+The interpreter exposes no host tools or extensions. Its confinement is not OS isolation or a hard memory limit. The operator can set positive integer limits with `LARK_TRANSFORM_TIMEOUT_MS` (default 1000), `LARK_TRANSFORM_SOURCE_BYTES` (65536), `LARK_TRANSFORM_INPUT_BYTES` (1048576), and `LARK_TRANSFORM_OUTPUT_BYTES` (16384). Serialized string delivery is also limited to 16384 JavaScript string units.
 
 This changes the previous batch notification contract. The `data.events` wrapper and the `debounce` argument are no longer supported. An OpenCode watch configured to run once receives one event. Oversized events may be truncated by OpenCode. Stopping or cancelling a watch discards pending events.
 

@@ -3,17 +3,17 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { BunRuntime } from "@effect/platform-bun";
 import { Cause, ConfigProvider, Effect, Exit, Layer, Logger, Runtime } from "effect";
 import { catalogLayer, LarkCatalog } from "./catalog.ts";
-import { watchMaxSeconds } from "./config.ts";
+import { transformConfig, watchMaxSeconds } from "./config.ts";
 import { EventProducers, producersLayer } from "./producers.ts";
 import { makeServer } from "./server.ts";
 
-const serve = (maxSeconds: number) =>
+const serve = (maxSeconds: number, limits: Effect.Success<typeof transformConfig>) =>
   Effect.gen(function* () {
     const catalog = yield* LarkCatalog;
     const producers = yield* EventProducers;
     yield* Effect.acquireRelease(
       Effect.sync(() =>
-        serveStdio(() => makeServer({ catalog, producers, maxSeconds }), {
+        serveStdio(() => makeServer({ catalog, producers, maxSeconds, transformConfig: limits }), {
           legacy: "reject",
           onerror: (error) => console.error(error),
         }),
@@ -29,7 +29,8 @@ const serve = (maxSeconds: number) =>
 
 const program = Effect.gen(function* () {
   const maxSeconds = yield* watchMaxSeconds;
-  yield* serve(maxSeconds);
+  const limits = yield* transformConfig;
+  yield* serve(maxSeconds, limits);
 }).pipe(
   Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ preserveEmptyStrings: true }))),
 );

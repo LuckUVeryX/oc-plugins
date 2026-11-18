@@ -25,6 +25,7 @@
     "@larksuiteoapi/node-sdk": "1.76.0",
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/server": "2.4.0",
+    "@opencode/codemode": "2.3.0",
     "@opencode/plugin": "2.3.0",
     "@opencode/schema": "2.3.0",
     "@types/bun": "1.4.4",

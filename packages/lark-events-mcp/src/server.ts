@@ -9,6 +9,7 @@ import { Clock, Deferred, Effect, PubSub, Schedule, Schema } from "effect";
 import type { EventDefinition, LarkCatalog } from "./catalog.ts";
 import { decodeArguments, inputSchemaDocument, matchesFilter } from "./contract.ts";
 import type { EventProducers } from "./producers.ts";
+import { bytes, makeTransform, type TransformConfig } from "./transform.ts";
 
 export const EVENTS_EXTENSION = "io.modelcontextprotocol/events";
 
@@ -19,6 +20,7 @@ interface ServerOptions {
   readonly catalog: Effect.Success<typeof LarkCatalog>;
   readonly producers: Effect.Success<typeof EventProducers>;
   readonly maxSeconds: number;
+  readonly transformConfig: TransformConfig;
 }
 
 const streamParams = Schema.toStandardSchemaV1(
@@ -45,6 +47,7 @@ interface Watch {
 const watches = new Map<string, Watch>();
 
 export const makeServer = (options: ServerOptions): McpServer => {
+  const transformEvent = makeTransform(options.transformConfig);
   const server = new McpServer(
     { name: "lark-events-mcp", version: "0.0.0" },
     { capabilities: { extensions: { [EVENTS_EXTENSION]: {} } } },
@@ -111,7 +114,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
               description: describe(definition),
               delivery: ["push"],
               inputSchema: inputSchemaDocument(definition.payloadSchema),
-              payloadSchema: definition.payloadSchema,
+              payloadSchema: { anyOf: [definition.payloadSchema, { type: "string" }] },
             })),
           };
         }),
@@ -145,7 +148,9 @@ export const makeServer = (options: ServerOptions): McpServer => {
           .pipe(Effect.mapError((error) => invalidParams(error.message)));
         const decoded = yield* decodeArguments(definition.payloadSchema, params.arguments ?? {});
         if (decoded._tag === "error") return yield* Effect.fail(invalidParams(decoded.message));
-        const { filter, watchId } = decoded.value;
+        const { filter, watchId, transform } = decoded.value;
+        if (transform !== undefined && bytes(transform) > options.transformConfig.sourceBytes)
+          return yield* Effect.fail(invalidParams("transform source exceeds operator limit"));
         const ended = yield* Deferred.make<string>();
         const finished = yield* Deferred.make<void>();
         const startedAt = yield* Clock.currentTimeMillis;
@@ -200,13 +205,31 @@ export const makeServer = (options: ServerOptions): McpServer => {
             switch (message.kind) {
               case "event": {
                 if (!matchesFilter(filter, message.payload)) break;
+                let data: unknown = message.payload;
+                if (transform !== undefined) {
+                  const result = yield* transformEvent(transform, {
+                    eventId: message.eventId,
+                    timestamp: message.timestamp,
+                    timestampOrigin: message.timestampOrigin,
+                    data: message.payload,
+                  }).pipe(
+                    Effect.catch((kind) =>
+                      Effect.logWarning("Event transform failed").pipe(
+                        Effect.annotateLogs({ watchId, eventId: message.eventId, kind }),
+                        Effect.as(null),
+                      ),
+                    ),
+                  );
+                  if (result === null) break;
+                  data = result;
+                }
                 yield* notify(
                   "event",
                   {
                     eventId: message.eventId,
                     name: params.name,
                     timestamp: message.timestamp,
-                    data: message.payload,
+                    data,
                   },
                   { "lark-events-mcp/timestampOrigin": message.timestampOrigin },
                 );

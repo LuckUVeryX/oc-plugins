@@ -1,10 +1,12 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, SUBSCRIPTION_ID_META_KEY } from "@modelcontextprotocol/server";
-import { Effect, PubSub, Schema } from "effect";
+import { ConfigProvider, Effect, PubSub, Schema } from "effect";
 import { expect, test, vi } from "vitest";
 import { makeServer } from "../src/server.ts";
 import { catalogLayer, LarkCatalog } from "../src/catalog.ts";
 import type { SourceMessage } from "../src/producers.ts";
+import { transformConfig } from "../src/config.ts";
+const limits = Effect.runSync(transformConfig.parse(ConfigProvider.fromEnvRecord({})));
 const FLAT_KEY = "im.message.receive_v1";
 
 test("fixed heartbeats survive event traffic and stop on cancellation or termination", async () => {
@@ -18,6 +20,7 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
   const server = makeServer({
     catalog,
     maxSeconds: 3600,
+    transformConfig: limits,
     producers: {
       acquire: () =>
         Effect.succeed({
@@ -123,9 +126,12 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
     const definition = listing.events.find((event) => event.name === FLAT_KEY);
     expect(definition?.inputSchema).not.toHaveProperty(["properties", "debounce"]);
     expect(definition?.inputSchema).not.toHaveProperty(["properties", "durationSeconds"]);
-    expect(definition?.payloadSchema).toEqual(
-      (await Effect.runPromise(catalog.schema(FLAT_KEY))).payloadSchema,
-    );
+    expect(definition?.payloadSchema).toEqual({
+      anyOf: [
+        (await Effect.runPromise(catalog.schema(FLAT_KEY))).payloadSchema,
+        { type: "string" },
+      ],
+    });
     const invalidDebounce = client
       .request(
         {
@@ -215,6 +221,7 @@ test("watch controls and deadlines include connection readiness", async () => {
   const server = makeServer({
     catalog,
     maxSeconds: 1,
+    transformConfig: limits,
     producers: {
       acquire: (name) =>
         Effect.succeed({
