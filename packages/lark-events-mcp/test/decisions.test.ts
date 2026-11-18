@@ -58,6 +58,23 @@ const answer = {
   native: { fixture: true },
 };
 
+test("rejects decisions when no model is configured", async () => {
+  const h = await connect();
+  try {
+    const request = h.stream({
+      watchId: "unconfigured",
+      transform: "return null",
+      decisions: { questions },
+    });
+    expect(await request.done).toMatchObject({
+      code: -32602,
+      message: expect.stringContaining("decisions model is not configured"),
+    });
+  } finally {
+    await h.close();
+  }
+});
+
 test("operator model configuration rejects invalid explicit values", async () => {
   expect(
     (await Effect.runPromise(decisionModel.parse(ConfigProvider.fromEnvRecord({}))))._tag,
