@@ -57,7 +57,7 @@ The server supports stock OpenCode 2.3.0 with `experimental.mcp_events` and prot
 
 ## MCP events
 
-Use protocol `2026-07-28` and the `io.modelcontextprotocol/events` extension. `events/list` advertises SDK-known handler names and generated callback schemas. A catalog entry does not mean that the app has permission to receive it or that Lark delivers it over WebSocket.
+Use protocol `2026-07-28` and the `io.modelcontextprotocol/events` extension. `events/list` advertises SDK-known handler names, SDK descriptions, and generated callback schemas. A catalog entry does not mean that the app has permission to receive it or that Lark delivers it over WebSocket.
 
 Use OpenCode's `watch_mcp_event` with the `lark-events` server for native MCP subscriptions. The Lark CLI event consumer is a separate tool. Select an event in each `events/stream` request:
 
@@ -88,11 +88,11 @@ By default, each matching event produces one notification. Its `data` is the raw
 
 An optional `transform` argument contains a Code Mode program. It receives `input.event` with `eventId`, `timestamp`, `timestampOrigin`, and raw `data`. A string result becomes notification data. Null, undefined, or a valueless program suppresses the notification. A final expression can return a value. Empty programs, errors, other result types, and truncated results are logged and suppressed. Filters run before the program.
 
-An optional `decisions` argument requires `transform`. Supply native `questions` and optional standing `input` parts. The server appends the current event as a JSON input part and makes one native Decisions request for each matching event. The transform receives the original `input.event` and the full native `input.result`, including per-question errors. API failures are logged and suppress delivery. The server does not decide whether to reply.
+An optional `decisions` argument requires `transform`. Supply native `questions` and optional standing `input` parts. The server appends the current event as a JSON input part and makes one native Decisions request for each matching event. The operator's configured model answers the questions before the transform runs. The transform receives the original `input.event` and the full native `input.result`, including per-question errors. API failures are logged and suppress delivery. The server does not decide whether to reply.
 
 The operator can set `LARK_DECISIONS_MODEL` to a native JSON model reference such as `{"providerID":"your-provider","id":"your-model","variant":"optional-variant"}`. Omit `variant` when it is not needed. The model is fixed for the process and cannot be supplied by a watch. Without this setting, raw and transform-only watches still work. Decisions uses the existing local OpenCode service and does not start it. Stopping or expiring a watch aborts its local request; provider cancellation and billing are not guaranteed.
 
-The interpreter exposes no host tools or extensions. Its confinement is not OS isolation or a hard memory limit. The interpreter timeout is 1000 ms. Transform source is limited to 65536 bytes, input to 1048576 bytes, and output to 16384 bytes. Serialized string delivery is also limited to 16384 JavaScript string units.
+The interpreter exposes no host tools or extensions. Its confinement is not OS isolation or a hard memory limit. The interpreter timeout is 1000 ms. Transform source is limited to 65536 bytes, input to 1048576 bytes, and output to 16384 bytes. The returned string is also limited to 16384 UTF-8 bytes once serialized as JSON, including its quotes and escapes.
 
 This changes the previous batch notification contract. The `data.events` wrapper and the `debounce` argument are no longer supported. An OpenCode watch configured to run once receives one event. Oversized events may be truncated by OpenCode. Stopping or cancelling a watch discards pending events.
 

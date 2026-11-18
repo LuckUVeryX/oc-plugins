@@ -68,7 +68,7 @@ test("rejects decisions when no model is configured", async () => {
     });
     expect(await request.done).toMatchObject({
       code: -32602,
-      message: expect.stringContaining("decisions model is not configured"),
+      message: expect.stringContaining("the operator has not configured a model"),
     });
   } finally {
     await h.close();
@@ -195,11 +195,19 @@ test("native requests pass through MCP and stop aborts pending local HTTP", asyn
       ["properties", "decisions", "description"],
       expect.stringContaining("Requires transform."),
     );
+    for (const [input, message] of [
+      [null, "Expected object"],
+      [{}, 'Missing key\n  at ["watchId"]'],
+      [{ watchId: "x", extra: true }, 'Expected no excess property\n  at ["extra"]'],
+      [{ watchId: "x", filter: [] }, 'Expected object\n  at ["filter"]'],
+    ] as const) {
+      expect(await Effect.runPromise(Effect.flip(decodeArguments({}, input)))).toBe(message);
+    }
     expect(
       await Effect.runPromise(
         Effect.flip(decodeArguments({}, { watchId: "x", decisions: { questions } })),
       ),
-    ).toBe("decisions requires transform");
+    ).toBe("Decisions requires transform; add transform or omit decisions");
     expect(
       await Effect.runPromise(
         Effect.flip(
@@ -213,7 +221,7 @@ test("native requests pass through MCP and stop aborts pending local HTTP", asyn
           ),
         ),
       ),
-    ).toBe("invalid watch arguments");
+    ).toContain("Expected no excess property");
     await expect(
       client.request(
         {
@@ -239,7 +247,7 @@ test("native requests pass through MCP and stop aborts pending local HTTP", asyn
           ),
         ),
       ),
-    ).toBe("invalid watch arguments");
+    ).toContain("Expected no excess property");
     stream({ watchId: "raw" });
     stream({ watchId: "transform", transform: 'return "plain"' });
     stream({
