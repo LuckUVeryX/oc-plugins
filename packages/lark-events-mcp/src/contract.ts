@@ -8,7 +8,8 @@ const isScalar = Schema.is(Scalar);
 const WatchArguments = Schema.Struct({
   watchId: Schema.NonEmptyString,
   filter: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
-  transform: Schema.optionalKey(Schema.String),
+  prepare: Schema.String,
+  transform: Schema.String,
   decisions: Schema.optionalKey(Decisions),
 });
 
@@ -85,15 +86,20 @@ export const inputSchemaDocument = (schema: unknown): Record<string, unknown> =>
         properties,
         additionalProperties: false,
       },
+      prepare: {
+        type: "string",
+        description:
+          'Code Mode script that runs on each event after the filter. Read the event at input.event.data. Fetch context with await tools["lark-events"].get({ path, query }). Return the JSON the decision model and transform should see, or null to skip the event. For no preparation, use: return input.event.data',
+      },
       transform: {
         type: "string",
         description:
-          "Run a Code Mode program per matching event. Read the raw payload at input.event.data; input.event also has eventId, timestamp, and timestampOrigin. Return a string to deliver it; return null, undefined, or nothing to suppress it. Other results, errors, and exceeded limits also suppress it. Limits: 65536-byte source, 1048576-byte input, 1000 ms, 16384 bytes for the returned string as JSON, quotes included. Omit for raw delivery.",
+          "Code Mode script that runs last, without tools. Read input.event, input.prepared and input.result, which holds the decision answers. Return the string to deliver, or null to skip the event. For no shaping, use: return JSON.stringify(input.prepared)",
       },
       decisions: strictDocument(decisions.schema),
     },
     $defs: strictDocument(decisions.definitions),
-    required: ["watchId"],
+    required: ["watchId", "prepare", "transform"],
     additionalProperties: false,
   };
 };
@@ -117,9 +123,7 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
     const decoded = yield* Schema.decodeUnknownEffect(WatchArguments)(input, {
       onExcessProperty: "error",
     }).pipe(Effect.mapError((issue) => issue.message));
-    const { watchId, filter: raw = {}, transform, decisions } = decoded;
-    if (decisions !== undefined && transform === undefined)
-      return yield* Effect.fail("Decisions requires transform; add transform or omit decisions");
+    const { watchId, filter: raw = {}, prepare, transform, decisions } = decoded;
     const leaves = new Map(filterLeaves(schema).map((leaf) => [leaf.path, leaf]));
     const filter: Array<readonly [string, ReadonlyArray<Scalar>]> = [];
     for (const [path, value] of Object.entries(raw)) {
@@ -135,7 +139,7 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
         );
       filter.push([path, values]);
     }
-    return { filter, watchId, transform, decisions };
+    return { filter, watchId, prepare, transform, decisions };
   });
 
 export const matchesFilter = (filter: Filter, payload: unknown): boolean =>
