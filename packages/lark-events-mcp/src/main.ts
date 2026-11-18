@@ -3,20 +3,35 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { BunRuntime } from "@effect/platform-bun";
 import { Cause, ConfigProvider, Effect, Exit, Layer, Logger, Runtime } from "effect";
 import { catalogLayer, LarkCatalog } from "./catalog.ts";
-import { transformConfig, watchMaxSeconds } from "./config.ts";
+import { decisionModel, transformConfig, watchMaxSeconds } from "./config.ts";
+import { makeDecisions } from "./decisions.ts";
 import { EventProducers, producersLayer } from "./producers.ts";
 import { makeServer } from "./server.ts";
 
-const serve = (maxSeconds: number, limits: Effect.Success<typeof transformConfig>) =>
+const serve = (
+  maxSeconds: number,
+  limits: Effect.Success<typeof transformConfig>,
+  model: Effect.Success<typeof decisionModel>,
+) =>
   Effect.gen(function* () {
     const catalog = yield* LarkCatalog;
     const producers = yield* EventProducers;
     yield* Effect.acquireRelease(
       Effect.sync(() =>
-        serveStdio(() => makeServer({ catalog, producers, maxSeconds, transformConfig: limits }), {
-          legacy: "reject",
-          onerror: (error) => console.error(error),
-        }),
+        serveStdio(
+          () =>
+            makeServer({
+              catalog,
+              producers,
+              maxSeconds,
+              transformConfig: limits,
+              decide: model._tag === "Some" ? makeDecisions(model.value) : undefined,
+            }),
+          {
+            legacy: "reject",
+            onerror: (error) => console.error(error),
+          },
+        ),
       ),
       (handle) => Effect.promise(() => handle.close()),
     );
@@ -30,7 +45,8 @@ const serve = (maxSeconds: number, limits: Effect.Success<typeof transformConfig
 const program = Effect.gen(function* () {
   const maxSeconds = yield* watchMaxSeconds;
   const limits = yield* transformConfig;
-  yield* serve(maxSeconds, limits);
+  const model = yield* decisionModel;
+  yield* serve(maxSeconds, limits, model);
 }).pipe(
   Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ preserveEmptyStrings: true }))),
 );

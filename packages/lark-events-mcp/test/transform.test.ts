@@ -10,7 +10,7 @@ const event = {
   timestampOrigin: "local",
   data: { text: "hello" },
 };
-const run = (source: string) => Effect.runPromise(makeTransform(limits)(source, event));
+const run = (source: string) => Effect.runPromise(makeTransform(limits)(source, { event }));
 
 test("uses native results and JSON event input", async () => {
   expect(await run("input.event.data.text + input.event.eventId")).toBe("helloid");
@@ -33,17 +33,17 @@ test("rejects invalid results, errors, truncation and host capabilities", async 
     await expect(run(source)).rejects.toBeDefined();
   }
   await expect(
-    Effect.runPromise(makeTransform({ ...limits, timeoutMs: 10 })("while (true) {}", event)),
+    Effect.runPromise(makeTransform({ ...limits, timeoutMs: 10 })("while (true) {}", { event })),
   ).rejects.toBeDefined();
 });
 
 test("enforces input and serialized output limits", async () => {
   await expect(
-    Effect.runPromise(makeTransform({ ...limits, inputBytes: 1 })('return "ok"', event)),
+    Effect.runPromise(makeTransform({ ...limits, inputBytes: 1 })('return "ok"', { event })),
   ).rejects.toBeDefined();
   await expect(
     Effect.runPromise(
-      makeTransform({ ...limits, outputBytes: 10 })('return "\\n\\n\\n\\n\\n"', event),
+      makeTransform({ ...limits, outputBytes: 10 })('return "\\n\\n\\n\\n\\n"', { event }),
     ),
   ).rejects.toBeDefined();
 });

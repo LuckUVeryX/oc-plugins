@@ -16,9 +16,9 @@ export const makeTransform = (config: TransformConfig) => {
   const runtime = CodeMode.make({
     limits: { timeoutMs: config.timeoutMs, maxToolCalls: 0, maxOutputBytes: config.outputBytes },
   });
-  return (source: string, event: unknown): Effect.Effect<string | null, TransformFailure> =>
+  return (source: string, inputValue: unknown): Effect.Effect<string | null, TransformFailure> =>
     Effect.gen(function* () {
-      const encoded = yield* Effect.try(() => JSON.stringify({ event })).pipe(
+      const encoded = yield* Effect.try(() => JSON.stringify(inputValue)).pipe(
         Effect.mapError((): TransformFailure => "InvalidInput"),
       );
       if (encoded === undefined || bytes(encoded) > config.inputBytes)
