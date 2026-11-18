@@ -15,6 +15,14 @@ test("uses native results and JSON event input", async () => {
   for (const source of ["return null", "return undefined", "const x = 1", "return"]) {
     expect(await run(source)).toBeNull();
   }
+  expect(
+    await Effect.runPromise(
+      makeTransform()('return "result" in input ? "present" : "absent"', {
+        event,
+        result: undefined,
+      }),
+    ),
+  ).toBe("absent");
 });
 
 test("rejects invalid results, errors, truncation and host capabilities", async () => {
