@@ -1,13 +1,12 @@
 # oc-plugins
 
-Three OpenCode plugins and a standalone Lark Events MCP server in one Bun workspace.
+Two OpenCode plugins and a standalone Lark Events MCP server in one Bun workspace.
 
-| Package                                                   | Purpose                                                  |
-| --------------------------------------------------------- | -------------------------------------------------------- |
-| [oc-fallback](packages/oc-fallback/README.md)             | Switch models when a primary request hits the free limit |
-| [oc-idle](packages/oc-idle/README.md)                     | Compact large sessions after an idle period              |
-| [oc-lark-decisions](packages/oc-lark-decisions/README.md) | Evaluate Lark conversations and queue relevant prompts   |
-| [lark-events-mcp](packages/lark-events-mcp/README.md)     | Expose Lark SDK events over MCP stdio                    |
+| Package                                               | Purpose                                                  |
+| ----------------------------------------------------- | -------------------------------------------------------- |
+| [oc-fallback](packages/oc-fallback/README.md)         | Switch models when a primary request hits the free limit |
+| [oc-idle](packages/oc-idle/README.md)                 | Compact large sessions after an idle period              |
+| [lark-events-mcp](packages/lark-events-mcp/README.md) | Expose Lark SDK events over MCP stdio                    |
 
 Tested with OpenCode 2.3.0 and Effect 4.1.0. No build step is required.
 
@@ -18,7 +17,6 @@ Install the plugins you want:
 ```sh
 opencode plugin add 'github:LuckUVeryX/oc-plugins#main::path:packages/oc-fallback'
 opencode plugin add 'github:LuckUVeryX/oc-plugins#main::path:packages/oc-idle'
-opencode plugin add 'github:LuckUVeryX/oc-plugins#main::path:packages/oc-lark-decisions'
 ```
 
 Replace `main` with a release tag to pin a version.
@@ -33,9 +31,6 @@ Then add a package directory to your OpenCode config:
   "plugins": ["/absolute/path/to/oc-plugins/packages/oc-idle"],
 }
 ```
-
-For Lark transforms, replace `oc-lark-relay/transform` imports with `oc-lark-decisions/transform`.
-The runtime plugin ID is `oc-lark-decisions`, matching the package path.
 
 For the standalone server, see the [Lark Events MCP installation and reference](packages/lark-events-mcp/README.md).
 
