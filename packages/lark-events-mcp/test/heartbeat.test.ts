@@ -1,106 +1,28 @@
-import { Client } from "@modelcontextprotocol/client";
-import { InMemoryTransport, SUBSCRIPTION_ID_META_KEY } from "@modelcontextprotocol/server";
-import { Effect, PubSub, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { expect, test, vi } from "vitest";
-import { makeServer } from "../src/server.ts";
-import { catalogLayer, LarkCatalog } from "../src/catalog.ts";
-import type { SourceMessage } from "../src/producers.ts";
-const FLAT_KEY = "im.message.receive_v1";
+import { connect } from "./harness.ts";
+
+const name = "im.message.receive_v1";
 
 test("fixed heartbeats survive event traffic and stop on cancellation or termination", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  const messages = await Effect.runPromise(PubSub.unbounded<SourceMessage>());
-  const catalog = await Effect.runPromise(
-    Effect.gen(function* () {
-      return yield* LarkCatalog;
-    }).pipe(Effect.provide(catalogLayer)),
-  );
-  const server = makeServer({
-    catalog,
-    maxSeconds: 3600,
-    producers: {
-      acquire: () =>
-        Effect.succeed({
-          messages,
-          ready: Effect.void,
-          terminal: Effect.succeed(undefined),
-        }),
-    },
-  });
-  const client = new Client({ name: "heartbeat-test", version: "0.0.0" });
-  const notifications: Array<{
-    method: string;
-    cursor: null;
-    id: string | number;
-    reason?: string;
-    data?: unknown;
-  }> = [];
-  const params = Schema.toStandardSchemaV1(
-    Schema.Struct({
-      cursor: Schema.Null,
-      error: Schema.optionalKey(Schema.Struct({ code: Schema.Number, message: Schema.String })),
-      data: Schema.optionalKey(Schema.Unknown),
-      _meta: Schema.Struct({
-        [SUBSCRIPTION_ID_META_KEY]: Schema.Union([Schema.String, Schema.Number]),
-      }),
-    }),
-  );
-  for (const type of ["active", "heartbeat", "event", "terminated"]) {
-    client.setNotificationHandler(`notifications/events/${type}`, { params }, (value) => {
-      notifications.push({
-        method: type,
-        cursor: value.cursor,
-        id: value._meta[SUBSCRIPTION_ID_META_KEY],
-        ...(value.error ? { reason: value.error.message } : {}),
-        ...(value.data ? { data: value.data } : {}),
-      });
-    });
-  }
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const terminalStarted = Promise.withResolvers<void>();
   const releaseTerminal = Promise.withResolvers<void>();
-  const send = serverTransport.send.bind(serverTransport);
-  serverTransport.send = async (message, options) => {
-    if ("method" in message && message.method === "notifications/events/terminated") {
-      terminalStarted.resolve();
-      await releaseTerminal.promise;
-    }
-    return send(message, options);
-  };
-  const controllers: AbortController[] = [];
-  const requests: Promise<unknown>[] = [];
-  const result = Schema.toStandardSchemaV1(Schema.Unknown);
-  const subscribe = () => {
-    const controller = new AbortController();
-    controllers.push(controller);
-    requests.push(
-      client
-        .request(
-          {
-            method: "events/stream",
-            params: {
-              name: FLAT_KEY,
-              arguments: {
-                watchId: `heartbeat-${controllers.length}`,
-                filter: { "message.chat_id": "oc_test" },
-              },
-            },
-          },
-          result,
-          {
-            signal: controller.signal,
-            timeout: 120_000,
-          },
-        )
-        .catch((error: unknown) => error),
-    );
-    return controller;
-  };
-  const heartbeats = () => notifications.filter((value) => value.method === "heartbeat");
+  const h = await connect({
+    maxSeconds: 3600,
+    transport(transport) {
+      const send = transport.send.bind(transport);
+      transport.send = async (message, options) => {
+        if ("method" in message && message.method === "notifications/events/terminated") {
+          terminalStarted.resolve();
+          await releaseTerminal.promise;
+        }
+        return send(message, options);
+      };
+    },
+  });
   try {
-    await server.connect(serverTransport);
-    await client.connect(clientTransport);
-    const listing = await client.request(
+    const listing = await h.client.request(
       { method: "events/list", params: {} },
       Schema.toStandardSchemaV1(
         Schema.Struct({
@@ -114,64 +36,37 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
         }),
       ),
     );
-    expect(listing.events.find((event) => event.name === FLAT_KEY)?.inputSchema).toHaveProperty([
+    const definition = listing.events.find((event) => event.name === name);
+    expect(definition?.inputSchema).toHaveProperty([
       "properties",
       "filter",
       "properties",
       "message.chat_id",
     ]);
-    const definition = listing.events.find((event) => event.name === FLAT_KEY);
     expect(definition?.inputSchema).not.toHaveProperty(["properties", "debounce"]);
     expect(definition?.inputSchema).not.toHaveProperty(["properties", "durationSeconds"]);
     expect(definition?.payloadSchema).toEqual({
-      anyOf: [catalog.get(FLAT_KEY)?.payloadSchema, { type: "string" }],
+      anyOf: [h.catalog.get(name)?.payloadSchema, { type: "string" }],
     });
-    const invalidDebounce = client
-      .request(
-        {
-          method: "events/stream",
-          params: { name: FLAT_KEY, arguments: { watchId: "invalid", debounce: {} } },
-        },
-        Schema.toStandardSchemaV1(Schema.Unknown),
-      )
-      .catch((error: unknown) => error);
+    const invalid = h.stream({ watchId: "invalid", debounce: {} });
     await vi.advanceTimersByTimeAsync(0);
-    expect(await invalidDebounce).toMatchObject({ code: -32602 });
-    const first = subscribe();
-    subscribe();
+    expect(await invalid.done).toMatchObject({ code: -32602 });
+    const first = h.stream({ watchId: "heartbeat-1", filter: { "message.chat_id": "oc_test" } });
+    h.stream({ watchId: "heartbeat-2", filter: { "message.chat_id": "oc_test" } });
     await vi.advanceTimersByTimeAsync(0);
-    const active = notifications.filter((value) => value.method === "active");
+    const active = h.notifications.filter((n) => n.type === "active");
     expect(active).toHaveLength(2);
+    const heartbeats = () => h.notifications.filter((n) => n.type === "heartbeat");
     await vi.advanceTimersByTimeAsync(19_999);
     expect(heartbeats()).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
-    expect(heartbeats()).toEqual(active.map((value) => ({ ...value, method: "heartbeat" })));
+    expect(heartbeats()).toEqual(active.map((n) => ({ ...n, type: "heartbeat" })));
     await vi.advanceTimersByTimeAsync(10_000);
-    await Effect.runPromise(
-      PubSub.publish(messages, {
-        kind: "event",
-        payload: { message: { chat_id: "oc_other" } },
-        eventId: "ignored-event",
-        timestamp: new Date(0).toISOString(),
-        timestampOrigin: "local",
-      }),
-    );
-    await Effect.runPromise(
-      PubSub.publish(messages, {
-        kind: "event",
-        payload: { message: { chat_id: "oc_test" } },
-        eventId: "test-event",
-        timestamp: new Date(0).toISOString(),
-        timestampOrigin: "local",
-      }),
-    );
+    await h.publish({ eventId: "ignored", payload: { message: { chat_id: "oc_other" } } });
+    await h.publish({ eventId: "test", payload: { message: { chat_id: "oc_test" } } });
     await vi.advanceTimersByTimeAsync(0);
-    expect(notifications.filter((value) => value.method === "event")).toEqual(
-      active.map((value) => ({
-        ...value,
-        method: "event",
-        data: { message: { chat_id: "oc_test" } },
-      })),
+    expect(h.notifications.filter((n) => n.type === "event").map((n) => n.id)).toEqual(
+      active.map((n) => n.id),
     );
     await vi.advanceTimersByTimeAsync(10_000);
     expect(heartbeats()).toHaveLength(4);
@@ -179,178 +74,75 @@ test("fixed heartbeats survive event traffic and stop on cancellation or termina
     await vi.advanceTimersByTimeAsync(20_000);
     expect(heartbeats()).toHaveLength(5);
     expect(heartbeats().at(-1)?.id).toBe(active[1]?.id);
-    await Effect.runPromise(
-      PubSub.publish(messages, {
-        kind: "terminated",
-        message: "test source closed",
-      }),
-    );
+    await h.send({ kind: "terminated", message: "test source closed" });
     await terminalStarted.promise;
     await vi.advanceTimersByTimeAsync(20_000);
     expect(heartbeats()).toHaveLength(5);
     releaseTerminal.resolve();
     await vi.advanceTimersByTimeAsync(0);
-    expect(notifications.filter((value) => value.method === "terminated")).toEqual([
-      { ...active[1], method: "terminated", reason: "test source closed" },
+    expect(h.notifications.filter((n) => n.type === "terminated")).toEqual([
+      { ...active[1], type: "terminated", reason: "test source closed" },
     ]);
   } finally {
     releaseTerminal.resolve();
-    for (const controller of controllers) controller.abort();
-    await Promise.all(requests);
-    await client.close();
-    await server.close();
-    await Effect.runPromise(PubSub.shutdown(messages));
+    await h.close();
     vi.useRealTimers();
   }
 });
 
 test("watch controls and deadlines include connection readiness", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
-  const messages = await Effect.runPromise(PubSub.unbounded<SourceMessage>());
-  const catalog = await Effect.runPromise(
-    Effect.gen(function* () {
-      return yield* LarkCatalog;
-    }).pipe(Effect.provide(catalogLayer)),
-  );
-  const server = makeServer({
-    catalog,
+  const h = await connect({
     maxSeconds: 1,
-    producers: {
-      acquire: (name) =>
-        Effect.succeed({
-          messages,
-          ready: name === FLAT_KEY ? Effect.void : Effect.never,
-          terminal: Effect.succeed(undefined),
-        }),
-    },
+    ready: (eventName) => (eventName === name ? Effect.void : Effect.never),
   });
-  const client = new Client({ name: "controls-test", version: "0.0.0" });
-  const received: Array<{ method: string; data?: unknown; reason?: string }> = [];
-  const notificationParams = Schema.toStandardSchemaV1(
-    Schema.Struct({
-      data: Schema.optionalKey(Schema.Unknown),
-      error: Schema.optionalKey(Schema.Struct({ message: Schema.String })),
-    }),
-  );
-  for (const method of ["active", "event", "heartbeat", "terminated"]) {
-    client.setNotificationHandler(
-      `notifications/events/${method}`,
-      { params: notificationParams },
-      (value) => {
-        received.push({
-          method,
-          ...(value.data ? { data: value.data } : {}),
-          ...(value.error ? { reason: value.error.message } : {}),
-        });
-      },
-    );
-  }
-  const [a, b] = InMemoryTransport.createLinkedPair();
-  const result = Schema.toStandardSchemaV1(Schema.Unknown);
-  const requests: Promise<unknown>[] = [];
-  const controllers: AbortController[] = [];
-  const subscribe = (watchId: string, name = FLAT_KEY) => {
-    const controller = new AbortController();
-    controllers.push(controller);
-    const request = client
-      .request({ method: "events/stream", params: { name, arguments: { watchId } } }, result, {
-        signal: controller.signal,
-      })
-      .catch((error: unknown) => error);
-    requests.push(request);
-    return request;
-  };
-  const tool = async (name: string, args: Record<string, unknown> = {}) => {
-    const response = await client.request(
-      { method: "tools/call", params: { name, arguments: args } },
-      Schema.toStandardSchemaV1(
-        Schema.Struct({ content: Schema.Array(Schema.Struct({ text: Schema.String })) }),
-      ),
-    );
-    return JSON.parse(response.content[0]!.text);
-  };
   try {
-    await server.connect(b);
-    await client.connect(a);
-    subscribe("one");
+    h.stream({ watchId: "one" });
     await vi.advanceTimersByTimeAsync(0);
-    const listed = await tool("list_watches");
-    expect(listed.watches).toEqual([
+    expect((await h.call("list_watches")).watches).toEqual([
       {
         watchId: "one",
-        eventName: FLAT_KEY,
+        eventName: name,
         startedAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 1000).toISOString(),
       },
     ]);
-    const duplicate = subscribe("one");
+    const duplicate = h.stream({ watchId: "one" });
+    const invalid = h.stream({ watchId: "invalid", durationSeconds: 1 });
     await vi.advanceTimersByTimeAsync(0);
-    expect(await duplicate).toMatchObject({ code: -32602 });
-    const invalid = client
-      .request(
-        {
-          method: "events/stream",
-          params: { name: FLAT_KEY, arguments: { watchId: "invalid", durationSeconds: 1 } },
-        },
-        result,
-      )
-      .catch((error: unknown) => error);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(await invalid).toMatchObject({ code: -32602 });
-    expect(await tool("stop_watch", { watchId: "one" })).toEqual({ watchId: "one", stopped: true });
-    expect(await tool("stop_watch", { watchId: "one" })).toEqual({
+    expect(await duplicate.done).toMatchObject({ code: -32602 });
+    expect(await invalid.done).toMatchObject({ code: -32602 });
+    expect(await h.call("stop_watch", { watchId: "one" })).toEqual({
+      watchId: "one",
+      stopped: true,
+    });
+    expect(await h.call("stop_watch", { watchId: "one" })).toEqual({
       watchId: "one",
       stopped: false,
     });
-    await Effect.runPromise(
-      PubSub.publish(messages, {
-        kind: "event",
-        eventId: "after-stop",
-        timestamp: new Date(0).toISOString(),
-        timestampOrigin: "local",
-        payload: { hello: "after-stop" },
-      }),
-    );
+    h.stream({ watchId: "one" });
     await vi.advanceTimersByTimeAsync(0);
-    expect(received.filter((value) => value.method === "event")).toEqual([]);
-    subscribe("one", FLAT_KEY);
-    await vi.advanceTimersByTimeAsync(0);
-    const expiry = (await tool("list_watches")).watches[0].expiresAt;
+    const expiry = (await h.call("list_watches")).watches[0].expiresAt;
     await vi.advanceTimersByTimeAsync(500);
-    await Effect.runPromise(
-      PubSub.publish(messages, {
-        kind: "event",
-        eventId: "original",
-        timestamp: new Date(0).toISOString(),
-        timestampOrigin: "upstream",
-        payload: { hello: "world" },
-      }),
-    );
+    await h.publish({ eventId: "original", payload: { hello: "world" } });
     await vi.advanceTimersByTimeAsync(0);
-    expect((await tool("list_watches")).watches[0].expiresAt).toBe(expiry);
+    expect((await h.call("list_watches")).watches[0].expiresAt).toBe(expiry);
     await vi.advanceTimersByTimeAsync(500);
-    expect(received.slice(-2)).toEqual([
-      {
-        method: "event",
-        data: { hello: "world" },
-      },
-      { method: "terminated", reason: "Expired" },
+    expect(h.notifications.filter((n) => n.type === "event").map((n) => n.data)).toEqual([
+      { hello: "world" },
     ]);
-    expect((await tool("list_watches")).watches).toEqual([]);
-    const waitingName = catalog.events.find((entry) => entry.name !== FLAT_KEY)!.name;
-    subscribe("waiting", waitingName);
+    expect(h.notifications.filter((n) => n.reason === "Expired")).toHaveLength(1);
+    expect((await h.call("list_watches")).watches).toEqual([]);
+    const waitingName = h.catalog.events.find((entry) => entry.name !== name)!.name;
+    h.stream({ watchId: "waiting" }, waitingName);
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(1000);
-    expect(received.filter((value) => value.reason === "Expired")).toHaveLength(2);
+    expect(h.notifications.filter((n) => n.reason === "Expired")).toHaveLength(2);
     await vi.advanceTimersByTimeAsync(20_000);
-    expect(received.filter((value) => value.method === "heartbeat")).toEqual([]);
-    expect((await tool("list_watches")).watches).toEqual([]);
+    expect(h.notifications.filter((n) => n.type === "heartbeat")).toEqual([]);
+    expect((await h.call("list_watches")).watches).toEqual([]);
   } finally {
-    for (const controller of controllers) controller.abort();
-    await Promise.all(requests);
-    await client.close();
-    await server.close();
-    await Effect.runPromise(PubSub.shutdown(messages));
+    await h.close();
     vi.useRealTimers();
   }
 });
