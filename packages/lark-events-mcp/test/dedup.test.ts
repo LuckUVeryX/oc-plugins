@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Exit, Layer, Schema, Scope } from "effect";
 import { expect, test, vi } from "vitest";
 import { catalogLayer, LarkCatalog } from "../src/catalog.ts";
 import { EventProducers, producersLayer } from "../src/producers.ts";
@@ -8,6 +8,8 @@ import { makeServer } from "../src/server.ts";
 
 const sdk = vi.hoisted(() => ({
   dispatcher: undefined as undefined | import("@larksuiteoapi/node-sdk").EventDispatcher,
+  starts: 0,
+  closes: 0,
 }));
 vi.mock("@larksuiteoapi/node-sdk", async (importOriginal) => {
   const original = await importOriginal<typeof import("@larksuiteoapi/node-sdk")>();
@@ -16,10 +18,13 @@ vi.mock("@larksuiteoapi/node-sdk", async (importOriginal) => {
     WSClient: class {
       constructor(private options: { onReady: () => void }) {}
       async start({ eventDispatcher }: { eventDispatcher: typeof sdk.dispatcher }) {
+        sdk.starts++;
         sdk.dispatcher = eventDispatcher;
         this.options.onReady();
       }
-      close() {}
+      close() {
+        sdk.closes++;
+      }
     },
   };
 });
@@ -152,6 +157,29 @@ test("delivers fresh events once and drops stale events", async () => {
             }
           });
         }).pipe(Effect.provide(Layer.mergeAll(catalogLayer, producersLayer))),
+      ),
+    );
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+test("connects only while a watch is open", async () => {
+  vi.stubEnv("LARK_APP_ID", "cli_0123456789abcdef");
+  vi.stubEnv("LARK_APP_SECRET", "offline");
+  sdk.starts = 0;
+  sdk.closes = 0;
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const producers = yield* EventProducers;
+          const watch = yield* Scope.make();
+          yield* producers.acquire("im.message.receive_v1").pipe(Scope.provide(watch));
+          expect(sdk.starts).toBe(1);
+          yield* Scope.close(watch, Exit.void);
+          expect(sdk.closes).toBe(1);
+        }).pipe(Effect.provide(producersLayer)),
       ),
     );
   } finally {
