@@ -39,7 +39,7 @@ The server does not create the Lark app, its permissions, or its event subscript
 The server has these limits:
 
 - Delivery is live only. Events that arrive while no watch is open, or while the connection is reconnecting, are lost.
-- [Lark sends each event to one WebSocket client](https://open.larksuite.com/document/ukTMukTMukTM/uYDNxYjL2QTM24iN0EjN/event-subscription-configure-/use-websocket) of an app. Any other consumer of the same app, such as `lark-cli event consume` or this server on another machine, splits the events with it.
+- [Lark sends each event to one WebSocket client](https://open.larksuite.com/document/ukTMukTMukTM/uYDNxYjL2QTM24iN0EjN/event-subscription-configure-/use-websocket) of an app. The server connects only while a watch is open, so an idle server takes no events. While connected, other consumers of the same app, such as `lark-cli event consume` or this server on another machine, split the events with it.
 - Each watch expires after one hour by default.
 - OpenCode ends every watch without a stop message when it reloads, restarts, or unloads a location after 60 minutes without session activity. An open watch is not session activity.
 

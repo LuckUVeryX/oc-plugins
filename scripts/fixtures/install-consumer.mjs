@@ -79,7 +79,7 @@ async function verifyExecutable(name) {
   assert(!signal.aborted, `${name}: executable did not stop after stdin EOF`);
   const diagnostics = await stderr;
   assert.equal(exited, 0, `${name}: executable exited ${exited}\n${diagnostics}`);
-  assert(diagnostics.includes("offline SDK started"), `${name}: offline SDK was not used`);
+  assert(!diagnostics.includes("offline SDK started"), `${name}: idle server started the SDK`);
   assert(
     responses.every((response) => response.jsonrpc === "2.0"),
     `${name}: non-MCP stdout`,

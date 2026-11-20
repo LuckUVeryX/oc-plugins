@@ -9,9 +9,11 @@ import {
   Effect,
   Layer,
   PubSub,
+  RcRef,
   Redacted,
   Ref,
   Schema,
+  Scope,
 } from "effect";
 
 export class SourceError extends Schema.TaggedError<SourceError>()("SourceError", {
@@ -40,7 +42,8 @@ export class EventProducers extends Context.Service<
         readonly ready: Effect.Effect<void, SourceError>;
         readonly terminal: Effect.Effect<string | undefined>;
       },
-      SourceError
+      SourceError,
+      Scope.Scope
     >;
   }
 >()("lark-events-mcp/EventProducers") {}
@@ -89,52 +92,67 @@ export const producersLayer = Layer.effect(
         params: query,
         signal,
       });
-    let ready = yield* Deferred.make<void, SourceError>();
     const seen = yield* Cache.make({
       capacity: 10_000,
       timeToLive: "1 hour",
       lookup: (_key: string) => Ref.make(false),
     });
-    const dispatcher = new EventDispatcher({ logger });
-    const entries = new Map<string, PubSub.PubSub<SourceMessage>>();
-    let terminal: string | undefined;
-    const publish = (message: SourceMessage) => {
-      for (const messages of entries.values()) Effect.runFork(PubSub.publish(messages, message));
-    };
-    const fail = (error: SourceError) => {
-      terminal = error.message;
-      Effect.runFork(Deferred.fail(ready, error));
-      publish({ kind: "terminated", message: error.message });
-    };
-    const client = new WSClient({
-      appId,
-      appSecret: Redacted.value(secret),
-      domain: Domain.Lark,
-      logger,
-      onReady: () => {
-        Effect.runFork(Deferred.succeed(ready, undefined));
-      },
-      onReconnecting: () => {
-        ready = Effect.runSync(Deferred.make<void, SourceError>());
-        publish({ kind: "reconnecting" });
-      },
-      onReconnected: () => {
-        Effect.runFork(Deferred.succeed(ready, undefined));
-        publish({ kind: "reconnected" });
-      },
-      onError: (error) => fail(new SourceError({ message: error.message })),
-    });
-    yield* Effect.addFinalizer(() =>
-      Effect.gen(function* () {
-        yield* Effect.sync(() => client.close({ force: true }));
-        yield* Effect.forEach(entries.values(), PubSub.shutdown, { discard: true });
+    const connection = yield* RcRef.make({
+      acquire: Effect.gen(function* () {
+        let ready = yield* Deferred.make<void, SourceError>();
+        const dispatcher = new EventDispatcher({ logger });
+        const entries = new Map<string, PubSub.PubSub<SourceMessage>>();
+        let terminal: string | undefined;
+        const publish = (message: SourceMessage) => {
+          for (const messages of entries.values())
+            Effect.runFork(PubSub.publish(messages, message));
+        };
+        const fail = (error: SourceError) => {
+          terminal = error.message;
+          Effect.runFork(Deferred.fail(ready, error));
+          publish({ kind: "terminated", message: error.message });
+        };
+        const client = new WSClient({
+          appId,
+          appSecret: Redacted.value(secret),
+          domain: Domain.Lark,
+          logger,
+          onReady: () => {
+            Effect.runFork(Deferred.succeed(ready, undefined));
+          },
+          onReconnecting: () => {
+            ready = Effect.runSync(Deferred.make<void, SourceError>());
+            publish({ kind: "reconnecting" });
+          },
+          onReconnected: () => {
+            Effect.runFork(Deferred.succeed(ready, undefined));
+            publish({ kind: "reconnected" });
+          },
+          onError: (error) => fail(new SourceError({ message: error.message })),
+        });
+        yield* Effect.addFinalizer(() =>
+          Effect.gen(function* () {
+            yield* Effect.sync(() => client.close({ force: true }));
+            yield* Effect.forEach(entries.values(), PubSub.shutdown, { discard: true });
+          }),
+        );
+        void client.start({ eventDispatcher: dispatcher }).catch((error: unknown) => {
+          fail(
+            new SourceError({ message: error instanceof Error ? error.message : String(error) }),
+          );
+        });
+        return {
+          dispatcher,
+          entries,
+          ready: Effect.suspend(() => Deferred.await(ready)),
+          terminal: () => terminal,
+        };
       }),
-    );
-    void client.start({ eventDispatcher: dispatcher }).catch((error: unknown) => {
-      fail(new SourceError({ message: error instanceof Error ? error.message : String(error) }));
     });
     const acquire = Effect.fn("EventProducers.acquire")(function* (event: string) {
-      if (terminal !== undefined) return yield* Effect.fail(new SourceError({ message: terminal }));
+      const { dispatcher, entries, ready, terminal } = yield* RcRef.get(connection);
+      const failure = terminal();
+      if (failure !== undefined) return yield* Effect.fail(new SourceError({ message: failure }));
       let messages = entries.get(event);
       if (!messages) {
         messages = yield* PubSub.unbounded<SourceMessage>();
@@ -165,8 +183,8 @@ export const producersLayer = Layer.effect(
       }
       return {
         messages,
-        ready: Effect.suspend(() => Deferred.await(ready)),
-        terminal: Effect.sync(() => terminal),
+        ready,
+        terminal: Effect.sync(terminal),
       };
     });
     return EventProducers.of({ acquire, larkRequest });
