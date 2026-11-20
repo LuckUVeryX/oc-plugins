@@ -39,8 +39,9 @@ The server does not create the Lark app, its permissions, or its event subscript
 The server has these limits:
 
 - Delivery is live only. Events that arrive while no watch is open, or while the connection is reconnecting, are lost.
-- [Lark sends each event to one WebSocket client](https://open.larksuite.com/document/ukTMukTMukTM/uYDNxYjL2QTM24iN0EjN/event-subscription-configure-/use-websocket) of an app. Any other consumer of the same app, such as `lark-cli event consume` or this server on another machine, splits the events with it.
+- [Lark sends each event to one WebSocket client](https://open.larksuite.com/document/ukTMukTMukTM/uYDNxYjL2QTM24iN0EjN/event-subscription-configure-/use-websocket) of an app. The server connects only while a watch is open, so an idle server takes no events. While connected, other consumers of the same app, such as `lark-cli event consume` or this server on another machine, split the events with it.
 - Each watch expires after one hour by default.
+- OpenCode ends every watch without a stop message when it reloads, restarts, or unloads a location after 60 minutes without session activity. An open watch is not session activity.
 
 Every watch's prepare script, and the agent through `get`, can read anything the app's scopes allow. Grant only the scopes your watches need. HR, payroll, and mail scopes expose personal data to the decision model.
 
@@ -74,7 +75,7 @@ Follow these steps on the machine that runs the OpenCode service. Ask the user f
 
    ```jsonc
    {
-     "experimental": { "mcp_events": true },
+     "experimental": { "mcp_events": true, "location_idle_timeout": false },
      "mcp": {
        "servers": {
          "lark-events": {
@@ -97,6 +98,8 @@ Follow these steps on the machine that runs the OpenCode service. Ask the user f
    ```
 
    If you cloned somewhere else, put the absolute path in `command` and `cwd`. OpenCode expands `{env:HOME}` but not `$HOME`.
+
+   `"location_idle_timeout": false` stops OpenCode from unloading idle locations, so a watch can run longer than an hour. If the user declines it, keep `LARK_WATCH_MAX_SECONDS` at or below the default `3600`.
 
    Put this block in the global config only. With `"pool": true`, projects in one OpenCode service share one Lark connection when the command, `cwd`, environment, protocol, and timeout match. A project-level override opens a second connection, and the two connections split the events.
 
@@ -187,6 +190,8 @@ A failing step stops the watch with its step, event ID and error. Fix the step a
 
 ## Troubleshoot
 
+`list_watches` returns each active watch's arguments. Pass them back to `watch_mcp_event` with your change to re-arm a watch.
+
 | Symptom                                                     | Cause                                                                                                            |
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Server fails to start                                       | `LARK_APP_ID` is missing or malformed, or `LARK_APP_SECRET` is empty. Server logs go to stderr.                  |
@@ -195,9 +200,12 @@ A failing step stops the watch with its step, event ID and error. Fix the step a
 | An event never arrives                                      | The app lacks the permission or subscription, or Lark does not deliver that event over WebSocket.                |
 | A watch stops with `prepare failed` and `Lark API 99991672` | The app lacks a read scope for the request.                                                                      |
 | A watch stops with a timeout                                | The event exceeded `LARK_EVENT_TIMEOUT_SECONDS`. Inspect the named step or increase the limit.                   |
+| A watch disappears without a stop message                   | OpenCode reloaded, restarted, or unloaded the idle location. Set `location_idle_timeout` to `false` and re-arm.  |
 | Memory grows over time                                      | Watches outlive the project that opened them and buffers are unbounded. Run `list_watches` and stop unused ones. |
 
 ## Update
+
+A restart ends every watch. Save each watch's arguments from `list_watches` first, and re-arm with them afterwards.
 
 Run this at the repository root, then restart the OpenCode service:
 
