@@ -1,0 +1,33 @@
+{
+  "name": "events-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Standalone MCP events server for Lark and GitLab over stdio",
+  "bin": {
+    "events-mcp": "./src/main.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "scripts": {
+    "generate": "bun ../../scripts/events-mcp/generate-sdk-events.ts",
+    "generate:gitlab": "bun ../../scripts/events-mcp/generate-gitlab-events.ts",
+    "generate:check": "bun ../../scripts/events-mcp/generate-sdk-events.ts --check && bun ../../scripts/events-mcp/generate-gitlab-events.ts --check",
+    "typecheck": "bun --bun tsc -p tsconfig.json",
+    "test": "bun --bun vitest run --passWithNoTests",
+    "check": "bun run generate:check && bun run typecheck && bun run test"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.1.0",
+    "@larksuiteoapi/node-sdk": "1.76.0",
+    "@modelcontextprotocol/server": "2.4.0",
+    "@opencode/client": "2.3.0",
+    "@opencode/codemode": "2.3.0",
+    "@opencode/schema": "2.3.0",
+    "effect": "4.1.0"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
+  }
+}
