@@ -1,0 +1,1238 @@
+{
+  "events": [
+    {
+      "name": "ciPipelineStatusesUpdated",
+      "description": "Triggered when any pipeline status is updated.\n\nParams: projectId (global id, gid://gitlab/Project/599) or projectFullPath, optional sha.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "description": "global id, gid://gitlab/Project/599"
+          },
+          "projectFullPath": {
+            "type": "string",
+            "description": "Full path of the project."
+          },
+          "sha": {
+            "type": "string",
+            "description": "Filter updates to pipelines run for the given commit SHA."
+          }
+        },
+        "anyOf": [
+          {
+            "required": ["projectId"]
+          },
+          {
+            "required": ["projectFullPath"]
+          }
+        ],
+        "additionalProperties": false
+      },
+      "query": "subscription($projectId: ProjectID, $projectFullPath: ID, $sha: String) { ciPipelineStatusesUpdated(projectId: $projectId, projectFullPath: $projectFullPath, sha: $sha) { id iid name status ref sha source path duration failureReason createdAt updatedAt finishedAt detailedStatus { name label text } project { id fullPath name webUrl } mergeRequest { id iid title state webUrl } user { username name } } }",
+      "payload": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "iid": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CREATED",
+              "WAITING_FOR_RESOURCE",
+              "PREPARING",
+              "WAITING_FOR_CALLBACK",
+              "PENDING",
+              "RUNNING",
+              "FAILED",
+              "SUCCESS",
+              "CANCELING",
+              "CANCELED",
+              "SKIPPED",
+              "MANUAL",
+              "SCHEDULED"
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "sha": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "integer"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "type": "string"
+          },
+          "detailedStatus": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "fullPath": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "webUrl": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "fullPath", "name"]
+          },
+          "mergeRequest": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "iid": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["merged", "opened", "closed", "locked", "all"]
+              },
+              "webUrl": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "iid", "title", "state"]
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "username": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": ["username", "name"]
+          }
+        },
+        "required": ["id", "iid", "status", "createdAt", "updatedAt", "detailedStatus"]
+      },
+      "occurredAtField": "updatedAt"
+    },
+    {
+      "name": "ciPipelineStatusUpdated",
+      "description": "Triggered when a pipeline status is updated.\n\nParams: pipelineId (global id, gid://gitlab/Ci::Pipeline/463669).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "pipelineId": {
+            "type": "string",
+            "description": "global id, gid://gitlab/Ci::Pipeline/463669"
+          }
+        },
+        "required": ["pipelineId"],
+        "additionalProperties": false
+      },
+      "query": "subscription($pipelineId: CiPipelineID!) { ciPipelineStatusUpdated(pipelineId: $pipelineId) { id iid name status ref sha source path duration failureReason createdAt updatedAt finishedAt detailedStatus { name label text } project { id fullPath name webUrl } mergeRequest { id iid title state webUrl } user { username name } } }",
+      "payload": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "iid": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CREATED",
+              "WAITING_FOR_RESOURCE",
+              "PREPARING",
+              "WAITING_FOR_CALLBACK",
+              "PENDING",
+              "RUNNING",
+              "FAILED",
+              "SUCCESS",
+              "CANCELING",
+              "CANCELED",
+              "SKIPPED",
+              "MANUAL",
+              "SCHEDULED"
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "sha": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "integer"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "type": "string"
+          },
+          "detailedStatus": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "fullPath": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "webUrl": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "fullPath", "name"]
+          },
+          "mergeRequest": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "iid": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["merged", "opened", "closed", "locked", "all"]
+              },
+              "webUrl": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "iid", "title", "state"]
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "username": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": ["username", "name"]
+          }
+        },
+        "required": ["id", "iid", "status", "createdAt", "updatedAt", "detailedStatus"]
+      },
+      "occurredAtField": "updatedAt"
+    },
+    {
+      "name": "ciJobStatusUpdated",
+      "description": "Triggered when a job status is updated.\n\nParams: jobId (global id, gid://gitlab/Ci::Build/2093168).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "description": "global id, gid://gitlab/Ci::Build/2093168"
+          }
+        },
+        "required": ["jobId"],
+        "additionalProperties": false
+      },
+      "query": "subscription($jobId: CiBuildID!) { ciJobStatusUpdated(jobId: $jobId) { id name status kind refName shortSha webPath duration queuedDuration failureMessage allowFailure retryable manualJob createdAt startedAt finishedAt stage { name status } project { id fullPath name webUrl } pipeline { id iid path } } }",
+      "payload": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CREATED",
+              "WAITING_FOR_RESOURCE",
+              "PREPARING",
+              "WAITING_FOR_CALLBACK",
+              "PENDING",
+              "RUNNING",
+              "SUCCESS",
+              "FAILED",
+              "CANCELING",
+              "CANCELED",
+              "SKIPPED",
+              "MANUAL",
+              "SCHEDULED"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["BUILD", "BRIDGE"]
+          },
+          "refName": {
+            "type": "string"
+          },
+          "shortSha": {
+            "type": "string"
+          },
+          "webPath": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "integer"
+          },
+          "queuedDuration": {
+            "type": "string"
+          },
+          "failureMessage": {
+            "type": "string"
+          },
+          "allowFailure": {
+            "type": "boolean"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "manualJob": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "fullPath": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "webUrl": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "fullPath", "name"]
+          },
+          "pipeline": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "iid": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": ["kind", "shortSha", "allowFailure", "retryable", "createdAt"]
+      }
+    },
+    {
+      "name": "userMergeRequestUpdated",
+      "description": "Triggered when a merge request the user is an assignee or a reviewer of is updated.\n\nParams: userId (global id, gid://gitlab/User/256, the token's own user).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "global id, gid://gitlab/User/256, the token's own user"
+          }
+        },
+        "required": ["userId"],
+        "additionalProperties": false
+      },
+      "query": "subscription($userId: UserID!) { userMergeRequestUpdated(userId: $userId) { id iid name title state draft mergeStatusEnum detailedMergeStatus mergeable approved approvalsLeft approvalsRequired createdAt updatedAt mergedAt closedAt sourceBranch targetBranch diffHeadSha webUrl project { id fullPath name webUrl } author { username name } headPipeline { id iid status ref sha path updatedAt } } }",
+      "payload": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "iid": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["merged", "opened", "closed", "locked", "all"]
+          },
+          "draft": {
+            "type": "boolean"
+          },
+          "mergeStatusEnum": {
+            "type": "string",
+            "enum": [
+              "UNCHECKED",
+              "CHECKING",
+              "CAN_BE_MERGED",
+              "CANNOT_BE_MERGED",
+              "CANNOT_BE_MERGED_RECHECK"
+            ]
+          },
+          "detailedMergeStatus": {
+            "type": "string",
+            "enum": [
+              "UNCHECKED",
+              "CHECKING",
+              "MERGEABLE",
+              "COMMITS_STATUS",
+              "CI_MUST_PASS",
+              "CI_STILL_RUNNING",
+              "DISCUSSIONS_NOT_RESOLVED",
+              "DRAFT_STATUS",
+              "NOT_OPEN",
+              "NOT_APPROVED",
+              "BLOCKED_STATUS",
+              "EXTERNAL_STATUS_CHECKS",
+              "PREPARING",
+              "JIRA_ASSOCIATION",
+              "CONFLICT",
+              "NEED_REBASE",
+              "APPROVALS_SYNCING",
+              "LOCKED_PATHS",
+              "LOCKED_LFS_FILES",
+              "MERGE_TIME",
+              "SECURITY_POLICIES_VIOLATIONS",
+              "TITLE_NOT_MATCHING",
+              "REQUESTED_CHANGES",
+              "SECURITY_POLICY_PIPELINE_CHECK"
+            ]
+          },
+          "mergeable": {
+            "type": "boolean"
+          },
+          "approved": {
+            "type": "boolean"
+          },
+          "approvalsLeft": {
+            "type": "integer"
+          },
+          "approvalsRequired": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "mergedAt": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "sourceBranch": {
+            "type": "string"
+          },
+          "targetBranch": {
+            "type": "string"
+          },
+          "diffHeadSha": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "fullPath": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "webUrl": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "fullPath", "name"]
+          },
+          "author": {
+            "type": "object",
+            "properties": {
+              "username": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": ["username", "name"]
+          },
+          "headPipeline": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "iid": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "CREATED",
+                  "WAITING_FOR_RESOURCE",
+                  "PREPARING",
+                  "WAITING_FOR_CALLBACK",
+                  "PENDING",
+                  "RUNNING",
+                  "FAILED",
+                  "SUCCESS",
+                  "CANCELING",
+                  "CANCELED",
+                  "SKIPPED",
+                  "MANUAL",
+                  "SCHEDULED"
+                ]
+              },
+              "ref": {
+                "type": "string"
+              },
+              "sha": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "iid", "status", "updatedAt"]
+          }
+        },
+        "required": [
+          "id",
+          "iid",
+          "title",
+          "state",
+          "draft",
+          "mergeable",
+          "approved",
+          "createdAt",
+          "updatedAt",
+          "sourceBranch",
+          "targetBranch",
+          "project"
+        ]
+      }
+    },
+    {
+      "name": "mergeRequestMergeStatusUpdated",
+      "description": "Triggered when the merge status of a merge request is updated.\n\nParams: issuableId (global id, gid://gitlab/MergeRequest/1234).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "issuableId": {
+            "type": "string",
+            "description": "global id, gid://gitlab/MergeRequest/1234"
+          }
+        },
+        "required": ["issuableId"],
+        "additionalProperties": false
+      },
+      "query": "subscription($issuableId: IssuableID!) { mergeRequestMergeStatusUpdated(issuableId: $issuableId) { ... on MergeRequest { id iid name title state draft mergeStatusEnum detailedMergeStatus mergeable approved approvalsLeft approvalsRequired createdAt updatedAt mergedAt closedAt sourceBranch targetBranch diffHeadSha webUrl project { id fullPath name webUrl } author { username name } headPipeline { id iid status ref sha path updatedAt } } } }",
+      "payload": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "iid": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["merged", "opened", "closed", "locked", "all"]
+          },
+          "draft": {
+            "type": "boolean"
+          },
+          "mergeStatusEnum": {
+            "type": "string",
+            "enum": [
+              "UNCHECKED",
+              "CHECKING",
+              "CAN_BE_MERGED",
+              "CANNOT_BE_MERGED",
+              "CANNOT_BE_MERGED_RECHECK"
+            ]
+          },
+          "detailedMergeStatus": {
+            "type": "string",
+            "enum": [
+              "UNCHECKED",
+              "CHECKING",
+              "MERGEABLE",
+              "COMMITS_STATUS",
+              "CI_MUST_PASS",
+              "CI_STILL_RUNNING",
+              "DISCUSSIONS_NOT_RESOLVED",
+              "DRAFT_STATUS",
+              "NOT_OPEN",
+              "NOT_APPROVED",
+              "BLOCKED_STATUS",
+              "EXTERNAL_STATUS_CHECKS",
+              "PREPARING",
+              "JIRA_ASSOCIATION",
+              "CONFLICT",
+              "NEED_REBASE",
+              "APPROVALS_SYNCING",
+              "LOCKED_PATHS",
+              "LOCKED_LFS_FILES",
+              "MERGE_TIME",
+              "SECURITY_POLICIES_VIOLATIONS",
+              "TITLE_NOT_MATCHING",
+              "REQUESTED_CHANGES",
+              "SECURITY_POLICY_PIPELINE_CHECK"
+            ]
+          },
+          "mergeable": {
+            "type": "boolean"
+          },
+          "approved": {
+            "type": "boolean"
+          },
+          "approvalsLeft": {
+            "type": "integer"
+          },
+          "approvalsRequired": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "mergedAt": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "sourceBranch": {
+            "type": "string"
+          },
+          "targetBranch": {
+            "type": "string"
+          },
+          "diffHeadSha": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "fullPath": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "webUrl": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "fullPath", "name"]
+          },
+          "author": {
+            "type": "object",
+            "properties": {
+              "username": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": ["username", "name"]
+          },
+          "headPipeline": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "iid": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "CREATED",
+                  "WAITING_FOR_RESOURCE",
+                  "PREPARING",
+                  "WAITING_FOR_CALLBACK",
+                  "PENDING",
+                  "RUNNING",
+                  "FAILED",
+                  "SUCCESS",
+                  "CANCELING",
+                  "CANCELED",
+                  "SKIPPED",
+                  "MANUAL",
+                  "SCHEDULED"
+                ]
+              },
+              "ref": {
+                "type": "string"
+              },
+              "sha": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "iid", "status", "updatedAt"]
+          }
+        },
+        "required": [
+          "id",
+          "iid",
+          "title",
+          "state",
+          "draft",
+          "mergeable",
+          "approved",
+          "createdAt",
+          "updatedAt",
+          "sourceBranch",
+          "targetBranch",
+          "project"
+        ]
+      }
+    },
+    {
+      "name": "mergeRequestReviewersUpdated",
+      "description": "Triggered when the reviewers of a merge request are updated.\n\nParams: issuableId (global id, gid://gitlab/MergeRequest/1234).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "issuableId": {
+            "type": "string",
+            "description": "global id, gid://gitlab/MergeRequest/1234"
+          }
+        },
+        "required": ["issuableId"],
+        "additionalProperties": false
+      },
+      "query": "subscription($issuableId: IssuableID!) { mergeRequestReviewersUpdated(issuableId: $issuableId) { ... on MergeRequest { id iid name title state draft mergeStatusEnum detailedMergeStatus mergeable approved approvalsLeft approvalsRequired createdAt updatedAt mergedAt closedAt sourceBranch targetBranch diffHeadSha webUrl project { id fullPath name webUrl } author { username name } headPipeline { id iid status ref sha path updatedAt } } } }",
+      "payload": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "iid": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["merged", "opened", "closed", "locked", "all"]
+          },
+          "draft": {
+            "type": "boolean"
+          },
+          "mergeStatusEnum": {
+            "type": "string",
+            "enum": [
+              "UNCHECKED",
+              "CHECKING",
+              "CAN_BE_MERGED",
+              "CANNOT_BE_MERGED",
+              "CANNOT_BE_MERGED_RECHECK"
+            ]
+          },
+          "detailedMergeStatus": {
+            "type": "string",
+            "enum": [
+              "UNCHECKED",
+              "CHECKING",
+              "MERGEABLE",
+              "COMMITS_STATUS",
+              "CI_MUST_PASS",
+              "CI_STILL_RUNNING",
+              "DISCUSSIONS_NOT_RESOLVED",
+              "DRAFT_STATUS",
+              "NOT_OPEN",
+              "NOT_APPROVED",
+              "BLOCKED_STATUS",
+              "EXTERNAL_STATUS_CHECKS",
+              "PREPARING",
+              "JIRA_ASSOCIATION",
+              "CONFLICT",
+              "NEED_REBASE",
+              "APPROVALS_SYNCING",
+              "LOCKED_PATHS",
+              "LOCKED_LFS_FILES",
+              "MERGE_TIME",
+              "SECURITY_POLICIES_VIOLATIONS",
+              "TITLE_NOT_MATCHING",
+              "REQUESTED_CHANGES",
+              "SECURITY_POLICY_PIPELINE_CHECK"
+            ]
+          },
+          "mergeable": {
+            "type": "boolean"
+          },
+          "approved": {
+            "type": "boolean"
+          },
+          "approvalsLeft": {
+            "type": "integer"
+          },
+          "approvalsRequired": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "mergedAt": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "sourceBranch": {
+            "type": "string"
+          },
+          "targetBranch": {
+            "type": "string"
+          },
+          "diffHeadSha": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "fullPath": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "webUrl": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "fullPath", "name"]
+          },
+          "author": {
+            "type": "object",
+            "properties": {
+              "username": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": ["username", "name"]
+          },
+          "headPipeline": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "iid": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "CREATED",
+                  "WAITING_FOR_RESOURCE",
+                  "PREPARING",
+                  "WAITING_FOR_CALLBACK",
+                  "PENDING",
+                  "RUNNING",
+                  "FAILED",
+                  "SUCCESS",
+                  "CANCELING",
+                  "CANCELED",
+                  "SKIPPED",
+                  "MANUAL",
+                  "SCHEDULED"
+                ]
+              },
+              "ref": {
+                "type": "string"
+              },
+              "sha": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "iid", "status", "updatedAt"]
+          }
+        },
+        "required": [
+          "id",
+          "iid",
+          "title",
+          "state",
+          "draft",
+          "mergeable",
+          "approved",
+          "createdAt",
+          "updatedAt",
+          "sourceBranch",
+          "targetBranch",
+          "project"
+        ]
+      }
+    },
+    {
+      "name": "mergeRequestApprovalStateUpdated",
+      "description": "Triggered when approval state of a merge request is updated.\n\nParams: issuableId (global id, gid://gitlab/MergeRequest/1234).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "issuableId": {
+            "type": "string",
+            "description": "global id, gid://gitlab/MergeRequest/1234"
+          }
+        },
+        "required": ["issuableId"],
+        "additionalProperties": false
+      },
+      "query": "subscription($issuableId: IssuableID!) { mergeRequestApprovalStateUpdated(issuableId: $issuableId) { ... on MergeRequest { id iid name title state draft mergeStatusEnum detailedMergeStatus mergeable approved approvalsLeft approvalsRequired createdAt updatedAt mergedAt closedAt sourceBranch targetBranch diffHeadSha webUrl project { id fullPath name webUrl } author { username name } headPipeline { id iid status ref sha path updatedAt } } } }",
+      "payload": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "iid": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["merged", "opened", "closed", "locked", "all"]
+          },
+          "draft": {
+            "type": "boolean"
+          },
+          "mergeStatusEnum": {
+            "type": "string",
+            "enum": [
+              "UNCHECKED",
+              "CHECKING",
+              "CAN_BE_MERGED",
+              "CANNOT_BE_MERGED",
+              "CANNOT_BE_MERGED_RECHECK"
+            ]
+          },
+          "detailedMergeStatus": {
+            "type": "string",
+            "enum": [
+              "UNCHECKED",
+              "CHECKING",
+              "MERGEABLE",
+              "COMMITS_STATUS",
+              "CI_MUST_PASS",
+              "CI_STILL_RUNNING",
+              "DISCUSSIONS_NOT_RESOLVED",
+              "DRAFT_STATUS",
+              "NOT_OPEN",
+              "NOT_APPROVED",
+              "BLOCKED_STATUS",
+              "EXTERNAL_STATUS_CHECKS",
+              "PREPARING",
+              "JIRA_ASSOCIATION",
+              "CONFLICT",
+              "NEED_REBASE",
+              "APPROVALS_SYNCING",
+              "LOCKED_PATHS",
+              "LOCKED_LFS_FILES",
+              "MERGE_TIME",
+              "SECURITY_POLICIES_VIOLATIONS",
+              "TITLE_NOT_MATCHING",
+              "REQUESTED_CHANGES",
+              "SECURITY_POLICY_PIPELINE_CHECK"
+            ]
+          },
+          "mergeable": {
+            "type": "boolean"
+          },
+          "approved": {
+            "type": "boolean"
+          },
+          "approvalsLeft": {
+            "type": "integer"
+          },
+          "approvalsRequired": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "mergedAt": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "sourceBranch": {
+            "type": "string"
+          },
+          "targetBranch": {
+            "type": "string"
+          },
+          "diffHeadSha": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "fullPath": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "webUrl": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "fullPath", "name"]
+          },
+          "author": {
+            "type": "object",
+            "properties": {
+              "username": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": ["username", "name"]
+          },
+          "headPipeline": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "iid": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "CREATED",
+                  "WAITING_FOR_RESOURCE",
+                  "PREPARING",
+                  "WAITING_FOR_CALLBACK",
+                  "PENDING",
+                  "RUNNING",
+                  "FAILED",
+                  "SUCCESS",
+                  "CANCELING",
+                  "CANCELED",
+                  "SKIPPED",
+                  "MANUAL",
+                  "SCHEDULED"
+                ]
+              },
+              "ref": {
+                "type": "string"
+              },
+              "sha": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "iid", "status", "updatedAt"]
+          }
+        },
+        "required": [
+          "id",
+          "iid",
+          "title",
+          "state",
+          "draft",
+          "mergeable",
+          "approved",
+          "createdAt",
+          "updatedAt",
+          "sourceBranch",
+          "targetBranch",
+          "project"
+        ]
+      }
+    }
+  ]
+}

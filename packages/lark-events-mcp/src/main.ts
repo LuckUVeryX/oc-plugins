@@ -5,6 +5,7 @@ import { Cause, ConfigProvider, Effect, Exit, Logger, Runtime } from "effect";
 import { makeCatalog } from "./catalog.ts";
 import { decisionModel, stepTimeoutSeconds, watchDefaultSeconds } from "./config.ts";
 import { makeDecisions } from "./decisions.ts";
+import { makeGitlabSource } from "./gitlab/source.ts";
 import { makeLarkSource } from "./lark/source.ts";
 import { makeServer } from "./server.ts";
 import { sdkLogger } from "./stderr-logger.ts";
@@ -12,7 +13,8 @@ import { makeUpstream } from "./upstream.ts";
 
 const program = Effect.gen(function* () {
   const lark = yield* makeLarkSource();
-  const catalog = yield* makeCatalog([lark]);
+  const gitlab = yield* makeGitlabSource();
+  const catalog = yield* makeCatalog([lark, gitlab]);
   const upstream = yield* makeUpstream(catalog);
   const defaultExpiresInSeconds = yield* watchDefaultSeconds;
   const eventTimeoutSeconds = yield* stepTimeoutSeconds;
