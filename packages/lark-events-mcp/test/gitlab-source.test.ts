@@ -228,6 +228,89 @@ test("rejects a watch with no token without touching GitLab", async () => {
   expect(fake.identifiers).toHaveLength(0);
 });
 
+test("subscribes to a merge request's notes and maps an updated signal", async () => {
+  const fake = makeFakeCable();
+  const client = makeFakeClient();
+  const values = await runSource({ client: client.client, cable: fake.cable }, (source) =>
+    Effect.gen(function* () {
+      const event = eventNamed(source, "noteable.notes_changed");
+      const subscription = yield* event.subscribe({
+        projectId: 599,
+        noteableType: "merge_request",
+        noteableId: 48090,
+      });
+      const fiber = yield* subscription.occurrences.pipe(
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      yield* Queue.offer(onlyQueue(fake), { event: "updated" });
+      return yield* Fiber.join(fiber);
+    }),
+  );
+  expect(fake.identifiers).toEqual([
+    {
+      channel: "Noteable::NotesChannel",
+      project_id: 599,
+      group_id: null,
+      noteable_type: "merge_request",
+      noteable_id: 48090,
+    },
+  ]);
+  expect(client.graphqls[0]?.variables).toEqual({ id: "gid://gitlab/MergeRequest/48090" });
+  const occurrence = values[0];
+  if (occurrence === undefined) throw new Error("missing occurrence");
+  expect(occurrence.id).toBeUndefined();
+  expect(occurrence.occurredAt).toBeUndefined();
+  expect(occurrence.payload).toEqual({
+    event: "updated",
+    projectId: 599,
+    noteableType: "merge_request",
+    noteableId: 48090,
+    noteableIid: 32,
+  });
+});
+
+test("subscribes to an issue by its own database id", async () => {
+  const fake = makeFakeCable();
+  const client = makeFakeClient();
+  await runSource({ client: client.client, cable: fake.cable }, (source) =>
+    Effect.gen(function* () {
+      const event = eventNamed(source, "noteable.notes_changed");
+      yield* Effect.scoped(
+        event.subscribe({ projectId: 18, noteableType: "issue", noteableId: 1183 }),
+      );
+    }),
+  );
+  expect(fake.identifiers).toEqual([
+    {
+      channel: "Noteable::NotesChannel",
+      project_id: 18,
+      group_id: null,
+      noteable_type: "issue",
+      noteable_id: 1183,
+    },
+  ]);
+  expect(client.graphqls[0]?.variables).toEqual({ id: "gid://gitlab/Issue/1183" });
+  expect(client.graphqls[0]?.query).toContain("issue(id: $id)");
+});
+
+test("rejects an inaccessible noteable before any subscribe frame", async () => {
+  const fake = makeFakeCable();
+  const client = makeFakeClient({ graphql: () => ({ mergeRequest: null }) });
+  const error = await runSource({ client: client.client, cable: fake.cable }, (source) =>
+    Effect.gen(function* () {
+      const event = eventNamed(source, "noteable.notes_changed");
+      return yield* Effect.scoped(
+        event.subscribe({ projectId: 599, noteableType: "merge_request", noteableId: 48090 }),
+      ).pipe(Effect.flip);
+    }),
+  );
+  expect(error._tag).toBe("Rejected");
+  expect(error.message).toContain("not found or is not accessible");
+  expect(fake.identifiers).toHaveLength(0);
+});
+
 test("a transient token check is retried instead of cached", async () => {
   let attempts = 0;
   const fake = makeFakeCable();

@@ -17,6 +17,7 @@ import {
   makeGitlabClient,
 } from "./client.ts";
 import { globalIdHint, mergeRequestGlobalId, readNoteable } from "./noteable.ts";
+import { makeNotesEvent } from "./notes.ts";
 import { subscribeToChannel } from "./subscription.ts";
 import { type GitlabIdentity, resolveIdentity } from "./token.ts";
 
@@ -201,14 +202,17 @@ export const makeGitlabSource = (
     return {
       name: Schema.decodeUnknownSync(SourceName)("gitlab"),
       tools: { get: makeGetTool(client) },
-      events: catalog.events.map((event) =>
-        graphqlEvent({
-          event,
-          cable: cableEffect,
-          checkAccess,
-        }),
-      ),
+      events: [
+        ...catalog.events.map((event) =>
+          graphqlEvent({
+            event,
+            cable: cableEffect,
+            checkAccess,
+          }),
+        ),
+        makeNotesEvent({ client, cable: cableEffect }),
+      ],
       instructions:
-        "GitLab: read with gitlab_get. IDs are global (gid://gitlab/MergeRequest/1234).",
+        "GitLab: read with gitlab_get. IDs are global (gid://gitlab/MergeRequest/1234); notes_changed takes database ids.",
     };
   });
