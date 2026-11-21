@@ -3,11 +3,11 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { JsonSchema, Schema } from "effect";
-import { decodeGitlabCatalog } from "../../packages/lark-events-mcp/src/gitlab/catalog.ts";
+import { decodeGitlabCatalog } from "../../packages/events-mcp/src/gitlab/catalog.ts";
 
 const host = process.env["GITLAB_HOST"]?.trim() || "gitlab.glints.com";
 const output = fileURLToPath(
-  new URL("../../packages/lark-events-mcp/src/generated/gitlab-events.json", import.meta.url),
+  new URL("../../packages/events-mcp/src/generated/gitlab-events.json", import.meta.url),
 );
 const check = process.argv.includes("--check");
 

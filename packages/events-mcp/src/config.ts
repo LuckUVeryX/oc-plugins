@@ -5,13 +5,13 @@ const seconds = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0));
 
 export const decisionModel = Config.schema(
   Schema.fromJsonString(Generate.DecisionRequest.fields.model),
-  "LARK_DECISIONS_MODEL",
+  "EVENTS_DECISIONS_MODEL",
 ).pipe(Config.option);
 
-export const watchDefaultSeconds = Config.schema(seconds, "LARK_WATCH_DEFAULT_SECONDS").pipe(
+export const watchDefaultSeconds = Config.schema(seconds, "EVENTS_WATCH_DEFAULT_SECONDS").pipe(
   Config.withDefault(3600),
 );
 
-export const stepTimeoutSeconds = Config.schema(seconds, "LARK_STEP_TIMEOUT_SECONDS").pipe(
+export const stepTimeoutSeconds = Config.schema(seconds, "EVENTS_STEP_TIMEOUT_SECONDS").pipe(
   Config.withDefault(120),
 );

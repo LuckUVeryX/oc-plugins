@@ -1,22 +1,22 @@
 {
-  "name": "lark-events-mcp",
+  "name": "events-mcp",
   "version": "0.0.0",
   "private": true,
-  "description": "Standalone Lark SDK MCP events server over stdio",
+  "description": "Standalone MCP events server for Lark and GitLab over stdio",
   "bin": {
-    "lark-events-mcp": "./src/main.ts"
+    "events-mcp": "./src/main.ts"
   },
   "files": [
     "src"
   ],
   "type": "module",
   "scripts": {
-    "generate": "bun ../../scripts/lark-events-mcp/generate-sdk-events.ts",
-    "generate:check": "bun ../../scripts/lark-events-mcp/generate-sdk-events.ts --check && bun ../../scripts/lark-events-mcp/generate-gitlab-events.ts --check",
+    "generate": "bun ../../scripts/events-mcp/generate-sdk-events.ts",
+    "generate:gitlab": "bun ../../scripts/events-mcp/generate-gitlab-events.ts",
+    "generate:check": "bun ../../scripts/events-mcp/generate-sdk-events.ts --check && bun ../../scripts/events-mcp/generate-gitlab-events.ts --check",
     "typecheck": "bun --bun tsc -p tsconfig.json",
     "test": "bun --bun vitest run --passWithNoTests",
-    "check": "bun run generate:check && bun run typecheck && bun run test",
-    "generate:gitlab": "bun ../../scripts/lark-events-mcp/generate-gitlab-events.ts"
+    "check": "bun run generate:check && bun run typecheck && bun run test"
   },
   "dependencies": {
     "@effect/platform-bun": "4.1.0",
