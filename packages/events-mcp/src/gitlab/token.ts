@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Config, Effect, Option, Redacted, Schema } from "effect";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
-import { Rejected, type SourceError, Unavailable } from "../core/source.ts";
+import { Rejected, type IntegrationError, Unavailable } from "../core/integration.ts";
 
 export interface GitlabIdentity {
   readonly token: Redacted.Redacted<string>;
@@ -10,14 +10,14 @@ export interface GitlabIdentity {
   readonly username: string;
 }
 
-const missing = (host: string): SourceError =>
+const missing = (host: string): IntegrationError =>
   new Rejected({
     message: `No GitLab token for ${host}. Set GITLAB_TOKEN, or authenticate glab so \`glab config get token --host ${host}\` returns one.`,
   });
 
 const exec = promisify(execFile);
 
-const fromGlab = (host: string): Effect.Effect<Redacted.Redacted<string>, SourceError> =>
+const fromGlab = (host: string): Effect.Effect<Redacted.Redacted<string>, IntegrationError> =>
   Effect.tryPromise({
     try: async () => {
       const { stdout } = await exec("glab", ["config", "get", "token", "--host", host], {
@@ -91,4 +91,5 @@ const resolve = Effect.fn("GitlabToken.resolve")(function* (host: string) {
 
 export const resolveIdentity: (
   host: string,
-) => Effect.Effect<GitlabIdentity, SourceError, HttpClient.HttpClient> = (host) => resolve(host);
+) => Effect.Effect<GitlabIdentity, IntegrationError, HttpClient.HttpClient> = (host) =>
+  resolve(host);

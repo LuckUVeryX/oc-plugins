@@ -1,6 +1,6 @@
 import { Client, Domain } from "@larksuiteoapi/node-sdk";
 import { Config, Context, Effect, Layer, Redacted } from "effect";
-import { Rejected, type SourceError } from "../core/source.ts";
+import { Rejected, type IntegrationError } from "../core/integration.ts";
 import type { GetInput } from "../core/tool.ts";
 import type { LarkRequester } from "./get.ts";
 import { sdkLogger } from "./sdk-logger.ts";
@@ -12,17 +12,17 @@ export interface Credentials {
 }
 
 export interface Interface {
-  readonly credentials: () => Effect.Effect<Credentials, SourceError>;
+  readonly credentials: () => Effect.Effect<Credentials, IntegrationError>;
 }
 
-export class Service extends Context.Service<Service, Interface>()("@events-mcp/LarkApi") {}
+export class Service extends Context.Service<Service, Interface>()("@events-mcp/LarkAuth") {}
 
 const credentialMessage =
   "No Lark app credentials. Set LARK_APP_ID to cli_ followed by 16 hex characters, and LARK_APP_SECRET to the app secret.";
 
 const rejected = new Rejected({ message: credentialMessage });
 
-const credentials = Effect.fn("LarkApi.credentials")(function* () {
+const credentials = Effect.fn("LarkAuth.credentials")(function* () {
   const appId = yield* Config.String("LARK_APP_ID").pipe(Effect.mapError(() => rejected));
   const secret = yield* Config.Redacted("LARK_APP_SECRET").pipe(Effect.mapError(() => rejected));
   const id = appId.trim();
@@ -49,4 +49,4 @@ const credentials = Effect.fn("LarkApi.credentials")(function* () {
 
 export const layer = Layer.succeed(Service, Service.of({ credentials }));
 
-export * as LarkApi from "./api.ts";
+export * as LarkAuth from "./auth.ts";

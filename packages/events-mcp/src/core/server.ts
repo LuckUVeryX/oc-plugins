@@ -21,15 +21,15 @@ import {
 import type { JsonSchema } from "effect";
 import { isObject } from "effect/Predicate";
 import { decodeArguments, inputSchemaDocument } from "./arguments.ts";
-import { Catalog, type RegisteredEvent } from "./catalog.ts";
+import { Registry, type RegisteredEventKind } from "./registry.ts";
 import { stepTimeoutSeconds, watchDefaultSeconds } from "./config.ts";
-import { Decisions, type Decide } from "./decisions.ts";
+import { DecisionModel, type Decide } from "./decision-model.ts";
 import { bytes, MAX_SCRIPT_BYTES } from "./limits.ts";
 import { makePrepare, makeWatchState } from "./prepare.ts";
-import type { SourceError } from "./source.ts";
+import type { IntegrationError } from "./integration.ts";
 import { inputJsonSchema } from "./tool.ts";
 import { makeTransform } from "./transform.ts";
-import { Upstream } from "./upstream.ts";
+import { Feeds } from "./feeds.ts";
 import { runWatch, type NotificationType } from "./watch.ts";
 
 const EVENTS_EXTENSION = "io.modelcontextprotocol/events";
@@ -37,8 +37,8 @@ const EVENTS_EXTENSION = "io.modelcontextprotocol/events";
 const CLIENT_WATCH_TOOL = "watch_mcp_event";
 
 interface ServerOptions {
-  readonly catalog: Catalog.Interface;
-  readonly upstream: Upstream.Interface;
+  readonly registry: Registry.Interface;
+  readonly feeds: Feeds.Interface;
   readonly decide: Option.Option<Decide>;
   readonly defaultExpiresInSeconds: number;
   readonly eventTimeoutSeconds: number;
@@ -69,7 +69,7 @@ const patternedParamHint = (params: JsonSchema.JsonSchema, name: string): string
 };
 
 const paramsError = (
-  event: RegisteredEvent,
+  event: RegisteredEventKind,
   error: Schema.SchemaError,
   args: Schema.JsonObject,
 ): string => {
@@ -121,8 +121,8 @@ interface Watch {
 const buildServer = (options: ServerOptions): McpServer => {
   const transformEvent = makeTransform();
   const watches = new Map<string, Watch>();
-  const toolPaths = options.catalog.sources.flatMap((source) =>
-    Object.keys(source.tools).map((name) => `tools.${source.name}.${name}`),
+  const toolPaths = options.registry.integrations.flatMap((integration) =>
+    Object.keys(integration.tools).map((name) => `tools.${integration.name}.${name}`),
   );
   const server = new McpServer(
     { name: "events-mcp", version: "0.0.0" },
@@ -130,18 +130,18 @@ const buildServer = (options: ServerOptions): McpServer => {
       capabilities: { extensions: { [EVENTS_EXTENSION]: {} } },
       instructions: [
         `Arm watches with ${CLIENT_WATCH_TOOL}; pass only server to list events. A watch runs filter → prepare → transform, and the transform string is delivered to the session.`,
-        ...options.catalog.sources.flatMap((source) =>
-          source.instructions === undefined ? [] : [source.instructions],
+        ...options.registry.integrations.flatMap((integration) =>
+          integration.instructions === undefined ? [] : [integration.instructions],
         ),
         'On "<step> failed", fix that step and arm again.',
       ].join("\n\n"),
     },
   );
 
-  for (const source of options.catalog.sources)
-    for (const [name, tool] of Object.entries(source.tools))
+  for (const integration of options.registry.integrations)
+    for (const [name, tool] of Object.entries(integration.tools))
       server.registerTool(
-        `${source.name}_${name}`,
+        `${integration.name}_${name}`,
         {
           description: tool.description,
           inputSchema: fromJsonSchema({
@@ -202,7 +202,7 @@ const buildServer = (options: ServerOptions): McpServer => {
     "events/list",
     { params: Schema.toStandardSchemaV1(Schema.Struct({})) },
     () => ({
-      events: options.catalog.events.map((event) => ({
+      events: options.registry.events.map((event) => ({
         name: event.name,
         description: event.description || event.name,
         delivery: ["push"],
@@ -236,7 +236,7 @@ const buildServer = (options: ServerOptions): McpServer => {
           return yield* Effect.fail(
             invalidParams("Events are live-only; omit cursor or set it to null"),
           );
-        const event = options.catalog.get(params.name);
+        const event = options.registry.get(params.name);
         if (!event)
           return yield* Effect.fail(
             invalidParams(`Unknown event: ${params.name}; choose a listed event`),
@@ -245,11 +245,11 @@ const buildServer = (options: ServerOptions): McpServer => {
           filter: event.filter,
           value: params.arguments ?? {},
         }).pipe(Effect.mapError((error) => invalidParams(error.message)));
-        for (const [name, source] of [
+        for (const [name, code] of [
           ["Transform", decoded.transform],
           ["Prepare", decoded.prepare],
         ] as const) {
-          if (bytes(source) > MAX_SCRIPT_BYTES)
+          if (bytes(code) > MAX_SCRIPT_BYTES)
             return yield* Effect.fail(
               invalidParams(`${name} source exceeds ${MAX_SCRIPT_BYTES} bytes; shorten it`),
             );
@@ -289,25 +289,25 @@ const buildServer = (options: ServerOptions): McpServer => {
         );
         const state = yield* makeWatchState;
         const prepare = makePrepare({
-          sources: options.catalog.sources,
+          integrations: options.registry.integrations,
           state,
           decide: options.decide,
         });
         yield* runWatch({
           watchId: decoded.watchId,
-          eventType: event,
+          eventKind: event,
           params: eventParams,
           filter: decoded.filter,
           expiresInSeconds,
           eventTimeoutSeconds: options.eventTimeoutSeconds,
           ended,
-          prepare: (occurrence) => prepare(decoded.prepare, occurrence),
+          prepare: (event) => prepare(decoded.prepare, event),
           transform: (input) => transformEvent(decoded.transform, input),
           notify,
         }).pipe(
-          Effect.provideService(Upstream.Service, options.upstream),
-          Effect.mapError((error: SourceError) => {
-            const code = error._tag === "Source.Rejected" ? -32024 : -32603;
+          Effect.provideService(Feeds.Service, options.feeds),
+          Effect.mapError((error: IntegrationError) => {
+            const code = error._tag === "Integration.Rejected" ? -32024 : -32603;
             return new ProtocolError(code, error.message);
           }),
         );
@@ -329,17 +329,17 @@ export class Service extends Context.Service<Service, Interface>()("@events-mcp/
 export const make: Effect.Effect<
   McpServer,
   Config.ConfigError,
-  Catalog.Service | Upstream.Service | Decisions.Service
+  Registry.Service | Feeds.Service | DecisionModel.Service
 > = Effect.gen(function* () {
-  const catalog = yield* Catalog.Service;
-  const upstream = yield* Upstream.Service;
-  const decisions = yield* Decisions.Service;
+  const registry = yield* Registry.Service;
+  const feeds = yield* Feeds.Service;
+  const decisionModel = yield* DecisionModel.Service;
   const defaultExpiresInSeconds = yield* watchDefaultSeconds;
   const eventTimeoutSeconds = yield* stepTimeoutSeconds;
   return buildServer({
-    catalog,
-    upstream,
-    decide: decisions.decide,
+    registry,
+    feeds,
+    decide: decisionModel.decide,
     defaultExpiresInSeconds,
     eventTimeoutSeconds,
   });
@@ -353,7 +353,7 @@ const logError = (error: unknown): void => {
 export const layer: Layer.Layer<
   Service,
   Config.ConfigError,
-  Catalog.Service | Upstream.Service | Decisions.Service
+  Registry.Service | Feeds.Service | DecisionModel.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {

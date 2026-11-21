@@ -17,12 +17,12 @@ import {
 } from "effect";
 import {
   Health,
-  type Occurrence,
-  type SourceError,
-  type Subscription,
+  type Event,
+  type IntegrationError,
+  type Feed,
   Unavailable,
-} from "../core/source.ts";
-import { LarkApi } from "./api.ts";
+} from "../core/integration.ts";
+import { LarkAuth } from "./auth.ts";
 import { getLark, type LarkRequester } from "./get.ts";
 import { sdkLogger } from "./sdk-logger.ts";
 
@@ -63,9 +63,9 @@ const EventEnvelope = Schema.Struct({
   create_time: Schema.optionalKey(Schema.String),
 });
 
-const toOccurrence = Effect.fn("Lark.toOccurrence")(function* (
+const toEvent = Effect.fn("Lark.toEvent")(function* (
   payload: unknown,
-): Effect.fn.Return<Option.Option<Occurrence>> {
+): Effect.fn.Return<Option.Option<Event>> {
   const json = Schema.decodeUnknownOption(Schema.JsonObject)(payload);
   if (Option.isNone(json)) return Option.none();
   const envelope = Schema.decodeUnknownOption(EventEnvelope)(json.value);
@@ -85,12 +85,12 @@ const toOccurrence = Effect.fn("Lark.toOccurrence")(function* (
 });
 
 const forward =
-  (channel: PubSub.PubSub<Occurrence>) =>
+  (channel: PubSub.PubSub<Event>) =>
   (payload: unknown): void => {
     Effect.runFork(
       Effect.gen(function* () {
-        const occurrence = yield* toOccurrence(payload);
-        if (Option.isSome(occurrence)) yield* PubSub.publish(channel, occurrence.value);
+        const event = yield* toEvent(payload);
+        if (Option.isSome(event)) yield* PubSub.publish(channel, event.value);
       }),
     );
   };
@@ -98,36 +98,36 @@ const forward =
 export interface Interface {
   readonly subscribe: (options: {
     readonly event: string;
-  }) => Effect.Effect<Subscription, SourceError, Scope.Scope>;
+  }) => Effect.Effect<Feed, IntegrationError, Scope.Scope>;
 }
 
-export class Service extends Context.Service<Service, Interface>()("@events-mcp/LarkConnection") {}
+export class Service extends Context.Service<Service, Interface>()("@events-mcp/LarkSocket") {}
 
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const api = yield* LarkApi.Service;
+    const api = yield* LarkAuth.Service;
     const connection = yield* RcRef.make({
       acquire: Effect.gen(function* () {
         const credentials = yield* api.credentials();
         yield* assertSoleConnection(credentials.request);
         const health = yield* SubscriptionRef.make<Health>(Health.Live());
         const publishHealth = (next: Health) => Effect.runFork(SubscriptionRef.set(health, next));
-        const terminal = yield* Deferred.make<never, SourceError>();
+        const terminal = yield* Deferred.make<never, IntegrationError>();
         const dispatcher = new EventDispatcher({ logger: sdkLogger });
         const channels = yield* RcMap.make({
           lookup: (event: string) =>
             Effect.gen(function* () {
               const channel = yield* Effect.acquireRelease(
-                PubSub.unbounded<Occurrence>(),
+                PubSub.unbounded<Event>(),
                 PubSub.shutdown,
               );
               dispatcher.register({ [event]: forward(channel) });
               return channel;
             }),
         });
-        const ready = yield* Deferred.make<void, SourceError>();
-        const abort = (error: SourceError) => {
+        const ready = yield* Deferred.make<void, IntegrationError>();
+        const abort = (error: IntegrationError) => {
           Effect.runFork(Deferred.fail(terminal, error));
           Effect.runFork(Deferred.fail(ready, error));
         };
@@ -162,13 +162,13 @@ export const layer = Layer.effect(
         return { channels, health, terminal };
       }),
     });
-    const subscribe: Interface["subscribe"] = Effect.fn("LarkConnection.subscribe")(
+    const subscribe: Interface["subscribe"] = Effect.fn("LarkSocket.subscribe")(
       function* (request: { readonly event: string }) {
         const { channels, health, terminal } = yield* RcRef.get(connection);
         const channel = yield* RcMap.get(channels, request.event);
-        const subscription = yield* PubSub.subscribe(channel);
+        const feed = yield* PubSub.subscribe(channel);
         return {
-          occurrences: Stream.fromSubscription(subscription).pipe(
+          events: Stream.fromSubscription(feed).pipe(
             Stream.merge(Stream.fromEffect(Deferred.await(terminal))),
           ),
           health: SubscriptionRef.changes(health),
@@ -179,4 +179,4 @@ export const layer = Layer.effect(
   }),
 );
 
-export * as LarkConnection from "./connection.ts";
+export * as LarkSocket from "./socket.ts";

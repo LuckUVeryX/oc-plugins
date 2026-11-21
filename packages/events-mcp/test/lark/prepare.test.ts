@@ -1,9 +1,9 @@
 import { Effect, Option, Schema } from "effect";
 import { expect, test, vi } from "vitest";
-import { Decisions } from "../../src/core/decisions.ts";
+import { DecisionModel } from "../../src/core/decision-model.ts";
 import { makeGetTool } from "../../src/lark/get.ts";
 import { makePrepare, makeWatchState } from "../../src/core/prepare.ts";
-import { SourceName } from "../../src/core/source.ts";
+import { IntegrationName } from "../../src/core/integration.ts";
 import { connect } from "../harness.ts";
 
 const questions = [
@@ -28,7 +28,7 @@ async function terminated(h: Awaited<ReturnType<typeof connect>>) {
 }
 
 test("decide answers reach transform through input.prepared", async () => {
-  const calls: Array<Decisions.DecideInput> = [];
+  const calls: Array<DecisionModel.DecideInput> = [];
   const h = await connect({
     decide: (input) => {
       calls.push(input);
@@ -139,9 +139,9 @@ test("timeout aborts an in-flight Lark request", async () => {
 test("Lark GET rejects unsafe paths", async () => {
   const request = vi.fn(async () => ({ code: 0, msg: "ok", data: { parent: "memes" } }));
   const prepare = makePrepare({
-    sources: [
+    integrations: [
       {
-        name: Schema.decodeUnknownSync(SourceName)("lark"),
+        name: Schema.decodeUnknownSync(IntegrationName)("lark"),
         tools: {
           get: makeGetTool({
             credentials: () =>

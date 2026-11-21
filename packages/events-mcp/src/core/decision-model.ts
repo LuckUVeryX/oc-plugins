@@ -12,7 +12,7 @@ export const DecideInput = Schema.Struct({
 export type DecideInput = typeof DecideInput.Type;
 type DecisionModel = typeof Generate.DecisionRequest.fields.model.Type;
 
-export class Failed extends Schema.TaggedError<Failed>()("Decisions.Failed", {
+export class Failed extends Schema.TaggedError<Failed>()("DecisionModel.Failed", {
   message: Schema.String,
 }) {}
 
@@ -38,10 +38,7 @@ export const makeDecisions = (
   model: DecisionModel,
   discover = OpenCodeService.discover,
 ): Decide => {
-  const request = Effect.fn("EventsDecisions.decide")(function* ({
-    questions,
-    input,
-  }: DecideInput) {
+  const request = Effect.fn("DecisionModel.decide")(function* ({ questions, input }: DecideInput) {
     const endpoint = yield* Effect.tryPromise({
       try: () => discover(),
       catch: (error) => new Failed({ message: String(error) }),
@@ -69,7 +66,7 @@ export interface Interface {
   readonly decide: Option.Option<Decide>;
 }
 
-export class Service extends Context.Service<Service, Interface>()("@events-mcp/Decisions") {}
+export class Service extends Context.Service<Service, Interface>()("@events-mcp/DecisionModel") {}
 
 export const layer = Layer.effect(
   Service,
@@ -79,4 +76,4 @@ export const layer = Layer.effect(
   }),
 );
 
-export * as Decisions from "./decisions.ts";
+export * as DecisionModel from "./decision-model.ts";

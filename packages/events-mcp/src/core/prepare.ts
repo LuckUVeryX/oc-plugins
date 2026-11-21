@@ -1,9 +1,9 @@
 import { Tool } from "@opencode/codemode";
 import { Effect, Option, Record, Ref, Schema } from "effect";
-import { type Decide, DecideInput } from "./decisions.ts";
+import { type Decide, DecideInput } from "./decision-model.ts";
 import { bytes, MAX_PREPARE_OUTPUT_BYTES, MAX_STATE_BYTES } from "./limits.ts";
 import { Failed, makeScript } from "./script.ts";
-import type { Source, Tool as SourceTool } from "./source.ts";
+import type { Integration, Tool as IntegrationTool } from "./integration.ts";
 import { inputJsonSchema } from "./tool.ts";
 import type { WatchEvent } from "./watch.ts";
 
@@ -37,7 +37,7 @@ export const makeWatchState: Effect.Effect<WatchState> = Effect.gen(function* ()
 
 // Code Mode renders the signature from JSON Schema and passes the raw value to run,
 // so a provider decodes its input once whether the call comes from a script or MCP.
-const codeModeTool = (tool: SourceTool) =>
+const codeModeTool = (tool: IntegrationTool) =>
   Tool.make({
     description: tool.description,
     input: inputJsonSchema(tool),
@@ -71,7 +71,7 @@ const decideTool = (decide: Decide) =>
   });
 
 export const makePrepare = (options: {
-  readonly sources: ReadonlyArray<Source>;
+  readonly integrations: ReadonlyArray<Integration>;
   readonly state: WatchState;
   readonly decide: Option.Option<Decide>;
 }) => {
@@ -84,7 +84,10 @@ export const makePrepare = (options: {
         },
       },
       ...Object.fromEntries(
-        options.sources.map((source) => [source.name, Record.map(source.tools, codeModeTool)]),
+        options.integrations.map((integration) => [
+          integration.name,
+          Record.map(integration.tools, codeModeTool),
+        ]),
       ),
       ...(Option.isNone(options.decide)
         ? {}
@@ -92,6 +95,6 @@ export const makePrepare = (options: {
     },
     limits: { maxOutputBytes: MAX_PREPARE_OUTPUT_BYTES },
   });
-  return (source: string, event: WatchEvent): Effect.Effect<Schema.Json, Failed> =>
-    script(source, { event });
+  return (code: string, event: WatchEvent): Effect.Effect<Schema.Json, Failed> =>
+    script(code, { event });
 };

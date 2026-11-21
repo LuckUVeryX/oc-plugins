@@ -1,7 +1,7 @@
 import { Generate } from "@opencode/schema/generate";
 import { Effect, Schema } from "effect";
 import { expect, test, vi } from "vitest";
-import { makeDecisions, type DecideInput } from "../../src/core/decisions.ts";
+import { makeDecisions, type DecideInput } from "../../src/core/decision-model.ts";
 import { connect } from "../harness.ts";
 
 const questions: DecideInput["questions"] = [

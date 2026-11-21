@@ -1,9 +1,9 @@
 import { Effect, Option, Schema } from "effect";
-import { type EventType, type Occurrence, Rejected } from "../core/source.ts";
-import { Cable, type CableIdentifier } from "./cable.ts";
+import { type EventKind, type Event, Rejected } from "../core/integration.ts";
+import { GitlabSocket, type ChannelIdentifier } from "./socket.ts";
 import { GitlabClient } from "./client.ts";
 import { databaseIdHint, globalIdFor, NoteableType, readNoteable } from "./noteable.ts";
-import { subscribeToChannel } from "./subscription.ts";
+import { subscribeToChannel } from "./channel.ts";
 
 const NotesParams = Schema.Struct({
   projectId: Schema.Int,
@@ -45,7 +45,7 @@ Prepare recipe. Set \`START\` to the newest non-system note id from the request 
 
 ${notesRecipe}`;
 
-const identifier = (params: NotesParams): CableIdentifier => ({
+const identifier = (params: NotesParams): ChannelIdentifier => ({
   channel: "Noteable::NotesChannel",
   project_id: params.projectId,
   group_id: null,
@@ -53,11 +53,11 @@ const identifier = (params: NotesParams): CableIdentifier => ({
   noteable_id: params.noteableId,
 });
 
-const toOccurrence = (
+const toEvent = (
   params: NotesParams,
   noteableIid: number,
   message: Schema.Json,
-): Effect.Effect<Option.Option<Occurrence>> =>
+): Effect.Effect<Option.Option<Event>> =>
   Effect.gen(function* () {
     const decoded = Schema.decodeUnknownOption(NotesMessage)(message);
     if (Option.isNone(decoded)) {
@@ -79,10 +79,10 @@ const params = Schema.toJsonSchemaDocument(NotesParams, { onExcessProperty: "err
 
 export interface NotesEventOptions {
   readonly client: GitlabClient.Interface;
-  readonly cable: Cable.Interface;
+  readonly socket: GitlabSocket.Interface;
 }
 
-export const makeNotesEvent = (options: NotesEventOptions): EventType => ({
+export const makeNotesEvent = (options: NotesEventOptions): EventKind => ({
   name: "noteable.notes_changed",
   description,
   params,
@@ -105,9 +105,9 @@ export const makeNotesEvent = (options: NotesEventOptions): EventType => ({
           }),
         );
       return yield* subscribeToChannel({
-        cable: options.cable,
+        socket: options.socket,
         identifier: identifier(decoded),
-        toOccurrence: (message) => toOccurrence(decoded, noteable.iid, message),
+        toEvent: (message) => toEvent(decoded, noteable.iid, message),
       });
     }),
 });

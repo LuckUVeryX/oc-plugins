@@ -1,20 +1,20 @@
 import { Effect, Option, Schema } from "effect";
 import {
-  type EventType,
-  type Occurrence,
+  type EventKind,
+  type Event,
   Rejected,
-  type Source,
-  type SourceError,
-  SourceName,
-} from "../core/source.ts";
+  type Integration,
+  type IntegrationError,
+  IntegrationName,
+} from "../core/integration.ts";
 import generated from "./events.json";
-import { Cable, type CableIdentifier } from "./cable.ts";
+import { GitlabSocket, type ChannelIdentifier } from "./socket.ts";
 import { type GitlabEvent, decodeGitlabCatalog } from "./catalog.ts";
 import { GitlabClient, GraphqlResult, graphqlFailure, makeGetTool } from "./client.ts";
-import { GitlabIdentity } from "./identity.ts";
+import { GitlabAuth } from "./auth.ts";
 import { globalIdHint, readNoteable } from "./noteable.ts";
 import { makeNotesEvent } from "./notes.ts";
-import { subscribeToChannel } from "./subscription.ts";
+import { subscribeToChannel } from "./channel.ts";
 import type { GitlabIdentity as TokenIdentity } from "./token.ts";
 
 const catalog = decodeGitlabCatalog(generated);
@@ -23,10 +23,10 @@ const GraphqlMessage = Schema.Struct({
   result: Schema.optionalKey(Schema.NullOr(GraphqlResult)),
 });
 
-const toOccurrence = (
+const toEvent = (
   event: GitlabEvent,
   message: Schema.Json,
-): Effect.Effect<Option.Option<Occurrence>, SourceError> =>
+): Effect.Effect<Option.Option<Event>, IntegrationError> =>
   Effect.gen(function* () {
     const decoded = Schema.decodeUnknownOption(GraphqlMessage)(message);
     if (Option.isNone(decoded)) {
@@ -49,7 +49,7 @@ const toOccurrence = (
     return Option.some({ payload: object.value });
   });
 
-const identifierFor = (event: GitlabEvent, params: Schema.JsonObject): CableIdentifier => ({
+const identifierFor = (event: GitlabEvent, params: Schema.JsonObject): ChannelIdentifier => ({
   channel: "GraphqlChannel",
   query: event.query,
   variables: params,
@@ -69,14 +69,14 @@ const AccessParams = Schema.Struct({
 const checkProject = (
   client: GitlabClient.Interface,
   project: { readonly fullPath: string } | { readonly id: string },
-): Effect.Effect<void, SourceError> => {
+): Effect.Effect<void, IntegrationError> => {
   const label = "fullPath" in project ? project.fullPath : project.id;
   const path =
     "fullPath" in project
       ? `/projects/${encodeURIComponent(project.fullPath)}`
       : `/projects/${databaseId(project.id)}`;
   return client.get({ path }).pipe(
-    Effect.catchTag("Source.Rejected", (error) =>
+    Effect.catchTag("Integration.Rejected", (error) =>
       Effect.fail(
         new Rejected({
           message: `Project ${label} is not accessible with this GitLab token: ${error.message}`,
@@ -86,7 +86,10 @@ const checkProject = (
   );
 };
 
-const checkUser = (identity: TokenIdentity, userId: string): Effect.Effect<void, SourceError> => {
+const checkUser = (
+  identity: TokenIdentity,
+  userId: string,
+): Effect.Effect<void, IntegrationError> => {
   if (databaseId(userId) === String(identity.userId)) return Effect.void;
   return Effect.fail(
     new Rejected({
@@ -97,9 +100,9 @@ const checkUser = (identity: TokenIdentity, userId: string): Effect.Effect<void,
 
 const graphqlEvent = (options: {
   readonly event: GitlabEvent;
-  readonly cable: Cable.Interface;
-  readonly checkAccess: (params: Schema.JsonObject) => Effect.Effect<void, SourceError>;
-}): EventType => ({
+  readonly socket: GitlabSocket.Interface;
+  readonly checkAccess: (params: Schema.JsonObject) => Effect.Effect<void, IntegrationError>;
+}): EventKind => ({
   name: options.event.name,
   description: options.event.description,
   params: options.event.params,
@@ -108,21 +111,21 @@ const graphqlEvent = (options: {
     Effect.gen(function* () {
       yield* options.checkAccess(params);
       return yield* subscribeToChannel({
-        cable: options.cable,
+        socket: options.socket,
         identifier: identifierFor(options.event, params),
-        toOccurrence: (message) => toOccurrence(options.event, message),
+        toEvent: (message) => toEvent(options.event, message),
       });
     }),
 });
 
-export const source: Effect.Effect<
-  Source,
+export const integration: Effect.Effect<
+  Integration,
   never,
-  GitlabIdentity.Service | GitlabClient.Service | Cable.Service
+  GitlabAuth.Service | GitlabClient.Service | GitlabSocket.Service
 > = Effect.gen(function* () {
-  const identity = yield* GitlabIdentity.Service;
+  const identity = yield* GitlabAuth.Service;
   const client = yield* GitlabClient.Service;
-  const cable = yield* Cable.Service;
+  const socket = yield* GitlabSocket.Service;
   const checkAccess = Effect.fn("Gitlab.checkAccess")(function* (params: Schema.JsonObject) {
     const access = yield* Schema.decodeUnknownEffect(AccessParams)(params).pipe(
       Effect.mapError((error) => new Rejected({ message: error.message })),
@@ -142,21 +145,21 @@ export const source: Effect.Effect<
       ).pipe(Effect.asVoid);
   });
   return {
-    name: Schema.decodeUnknownSync(SourceName)("gitlab"),
+    name: Schema.decodeUnknownSync(IntegrationName)("gitlab"),
     tools: { get: makeGetTool(client) },
     events: [
       ...catalog.events.map((event) =>
         graphqlEvent({
           event,
-          cable,
+          socket,
           checkAccess,
         }),
       ),
-      makeNotesEvent({ client, cable }),
+      makeNotesEvent({ client, socket }),
     ],
     instructions:
       "GitLab: read with gitlab_get. IDs are global (gid://gitlab/MergeRequest/1234); notes_changed takes database ids.",
   };
 });
 
-export * as Gitlab from "./source.ts";
+export * as Gitlab from "./integration.ts";

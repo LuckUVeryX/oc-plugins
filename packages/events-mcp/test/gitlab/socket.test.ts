@@ -1,7 +1,12 @@
 import { expect, test } from "vitest";
 import { Effect, Fiber, Option, Queue, Schedule, Schema, Stream } from "effect";
-import { Cable, type CableIdentifier, type Json, makeCable } from "../../src/gitlab/cable.ts";
-import { Health, type SourceError } from "../../src/core/source.ts";
+import {
+  GitlabSocket,
+  type ChannelIdentifier,
+  type Json,
+  makeGitlabSocket,
+} from "../../src/gitlab/socket.ts";
+import { Health, type IntegrationError } from "../../src/core/integration.ts";
 
 const WireFrame = Schema.Record(Schema.String, Schema.Unknown);
 
@@ -116,30 +121,30 @@ const startCable = async (
   url: string,
   options: { readonly pingTimeout?: number; readonly backoff?: Schedule.Schedule<unknown> } = {},
 ) => {
-  const ready = Promise.withResolvers<Cable.Interface>();
+  const ready = Promise.withResolvers<GitlabSocket.Interface>();
   const fiber = Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
-        const cable = yield* makeCable({
+        const socket = yield* makeGitlabSocket({
           url,
           headers: Effect.succeed({}),
           pingTimeout: options.pingTimeout,
           backoff: options.backoff ?? Schedule.spaced("10 millis"),
         });
-        ready.resolve(cable);
+        ready.resolve(socket);
         yield* Effect.never;
       }),
     ),
   );
-  return { cable: await ready.promise, stop: () => Effect.runPromise(Fiber.interrupt(fiber)) };
+  return { socket: await ready.promise, stop: () => Effect.runPromise(Fiber.interrupt(fiber)) };
 };
 
-const hold = async (cable: Cable.Interface, identifier: CableIdentifier) => {
+const hold = async (socket: GitlabSocket.Interface, identifier: ChannelIdentifier) => {
   const messages = await Effect.runPromise(Queue.unbounded<Json>());
   const fiber = Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
-        const stream = yield* cable.subscribeUnique(identifier);
+        const stream = yield* socket.subscribe(identifier);
         yield* stream.pipe(
           Stream.runForEach((message) => Queue.offer(messages, message)),
           Effect.forkScoped,
@@ -151,11 +156,11 @@ const hold = async (cable: Cable.Interface, identifier: CableIdentifier) => {
   return { messages, release: () => Effect.runPromise(Fiber.interrupt(fiber)) };
 };
 
-const healthLog = (cable: Cable.Interface) => {
+const healthLog = (socket: GitlabSocket.Interface) => {
   const values = Effect.runSync(Queue.unbounded<Health>());
   const tags: Array<string> = [];
   const fiber = Effect.runFork(
-    cable.health.pipe(
+    socket.health.pipe(
       Stream.runForEach((value) =>
         Effect.sync(() => tags.push(value._tag)).pipe(Effect.andThen(Queue.offer(values, value))),
       ),
@@ -184,14 +189,14 @@ const identifier = (nonce: string) => ({
   nonce,
 });
 
-test("fails the subscription when the server rejects it", async () => {
+test("fails the feed when the server rejects it", async () => {
   const server = startServer({ respond: "reject" });
-  const { cable, stop } = await startCable(server.url);
+  const { socket, stop } = await startCable(server.url);
   try {
     const failure = await Effect.runPromise(
-      Effect.scoped(cable.subscribeUnique(identifier("rejected"))).pipe(Effect.flip),
+      Effect.scoped(socket.subscribe(identifier("rejected"))).pipe(Effect.flip),
     );
-    expect(failure._tag).toBe("Source.Rejected");
+    expect(failure._tag).toBe("Integration.Rejected");
   } finally {
     await stop();
     server.stop();
@@ -200,9 +205,9 @@ test("fails the subscription when the server rejects it", async () => {
 
 test("resubscribes and returns to Live after a dropped connection", async () => {
   const server = startServer();
-  const { cable, stop } = await startCable(server.url);
-  const held = await hold(cable, identifier("drop"));
-  const log = healthLog(cable);
+  const { socket, stop } = await startCable(server.url);
+  const held = await hold(socket, identifier("drop"));
+  const log = healthLog(socket);
   try {
     await server.waitFor(() => server.subscribes().length === 1);
     await log.next((value) => value._tag === "Live");
@@ -223,17 +228,19 @@ test("resubscribes and returns to Live after a dropped connection", async () => 
   }
 });
 
-test("fails every subscription when the server refuses to reconnect", async () => {
+test("fails every feed when the server refuses to reconnect", async () => {
   const server = startServer();
-  const { cable, stop } = await startCable(server.url);
-  const failed = Promise.withResolvers<SourceError>();
+  const { socket, stop } = await startCable(server.url);
+  const failed = Promise.withResolvers<IntegrationError>();
   const fiber = Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
-        const stream = yield* cable.subscribeUnique(identifier("unauthorized"));
+        const stream = yield* socket.subscribe(identifier("unauthorized"));
         yield* stream.pipe(
           Stream.runDrain,
-          Effect.catchTag("Source.Rejected", (error) => Effect.sync(() => failed.resolve(error))),
+          Effect.catchTag("Integration.Rejected", (error) =>
+            Effect.sync(() => failed.resolve(error)),
+          ),
         );
       }),
     ),
@@ -241,7 +248,7 @@ test("fails every subscription when the server refuses to reconnect", async () =
   try {
     await server.waitFor(() => server.subscribes().length === 1);
     server.disconnect(false, "unauthorized");
-    expect((await failed.promise)._tag).toBe("Source.Rejected");
+    expect((await failed.promise)._tag).toBe("Integration.Rejected");
   } finally {
     await Effect.runPromise(Fiber.interrupt(fiber));
     await stop();
@@ -251,12 +258,12 @@ test("fails every subscription when the server refuses to reconnect", async () =
 
 test("reconnects after missed pings", async () => {
   const server = startServer({ ping: 5, pingFrom: 2 });
-  const { cable, stop } = await startCable(server.url, { pingTimeout: 25 });
-  const held = await hold(cable, identifier("ping"));
+  const { socket, stop } = await startCable(server.url, { pingTimeout: 25 });
+  const held = await hold(socket, identifier("ping"));
   try {
     await server.waitFor(() => server.connections() >= 2 && server.subscribes().length >= 2);
     await Effect.runPromise(
-      cable.health.pipe(
+      socket.health.pipe(
         Stream.filter((value) => value._tag === "Live"),
         Stream.take(1),
         Stream.runDrain,
@@ -273,16 +280,14 @@ test("reconnects after missed pings", async () => {
   }
 });
 
-test("fails the subscription when the server refuses the token before welcoming", async () => {
+test("fails the feed when the server refuses the token before welcoming", async () => {
   const server = startServer({ welcome: "disconnect" });
-  const { cable, stop } = await startCable(server.url);
+  const { socket, stop } = await startCable(server.url);
   try {
     const failure = await Effect.runPromise(
-      Effect.scoped(cable.subscribeUnique(identifier("unauthorized-before-welcome"))).pipe(
-        Effect.flip,
-      ),
+      Effect.scoped(socket.subscribe(identifier("unauthorized-before-welcome"))).pipe(Effect.flip),
     );
-    expect(failure._tag).toBe("Source.Rejected");
+    expect(failure._tag).toBe("Integration.Rejected");
     expect(server.connections()).toBe(1);
   } finally {
     await stop();

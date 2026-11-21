@@ -2,16 +2,16 @@ import { it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
-import { Health, type EventType } from "../../src/core/source.ts";
-import { Upstream } from "../../src/core/upstream.ts";
+import { Health, type EventKind } from "../../src/core/integration.ts";
+import { Feeds } from "../../src/core/feeds.ts";
 import { runWatch } from "../../src/core/watch.ts";
 
-const tick: EventType = {
+const tick: EventKind = {
   name: "tick",
   description: "A tick.",
   params: {},
   payload: {},
-  subscribe: () => Effect.die(new Error("The test upstream never subscribes")),
+  subscribe: () => Effect.die(new Error("The test feeds are never used")),
 };
 
 it.effect("keeps a watch for its chosen expiry", () =>
@@ -23,7 +23,7 @@ it.effect("keeps a watch for its chosen expiry", () =>
         const seen = yield* Ref.make<ReadonlyArray<string>>([]);
         const fiber = yield* runWatch({
           watchId: "watch",
-          eventType: tick,
+          eventKind: tick,
           params: {},
           filter: [],
           expiresInSeconds,
@@ -34,9 +34,9 @@ it.effect("keeps a watch for its chosen expiry", () =>
           notify: (type) => Ref.update(seen, (all) => [...all, type]),
         }).pipe(
           Effect.provideService(
-            Upstream.Service,
-            Upstream.Service.of({
-              acquire: () => Effect.succeed({ occurrences: Stream.never, health }),
+            Feeds.Service,
+            Feeds.Service.of({
+              acquire: () => Effect.succeed({ events: Stream.never, health }),
             }),
           ),
           Effect.forkScoped,
@@ -58,7 +58,7 @@ it.effect("keeps a watch for its chosen expiry", () =>
   }),
 );
 
-it.effect("stop and expiry end a watch whose upstream never becomes ready", () =>
+it.effect("stop and expiry end a watch whose feed never becomes ready", () =>
   Effect.gen(function* () {
     const start = (expiresInSeconds: number) =>
       Effect.gen(function* () {
@@ -66,7 +66,7 @@ it.effect("stop and expiry end a watch whose upstream never becomes ready", () =
         const seen = yield* Ref.make<ReadonlyArray<string>>([]);
         const fiber = yield* runWatch({
           watchId: "never-ready",
-          eventType: tick,
+          eventKind: tick,
           params: {},
           filter: [],
           expiresInSeconds,
@@ -76,10 +76,7 @@ it.effect("stop and expiry end a watch whose upstream never becomes ready", () =
           transform: () => Effect.succeed(null),
           notify: (type) => Ref.update(seen, (all) => [...all, type]),
         }).pipe(
-          Effect.provideService(
-            Upstream.Service,
-            Upstream.Service.of({ acquire: () => Effect.never }),
-          ),
+          Effect.provideService(Feeds.Service, Feeds.Service.of({ acquire: () => Effect.never })),
           Effect.forkScoped,
         );
         return { ended, seen, fiber };

@@ -1,11 +1,11 @@
 import { Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
 import { expect, test } from "vitest";
-import { Cable } from "../../src/gitlab/cable.ts";
+import { GitlabSocket } from "../../src/gitlab/socket.ts";
 import { GitlabClient } from "../../src/gitlab/client.ts";
-import { GitlabIdentity } from "../../src/gitlab/identity.ts";
-import { Gitlab } from "../../src/gitlab/source.ts";
+import { GitlabAuth } from "../../src/gitlab/auth.ts";
+import { Gitlab } from "../../src/gitlab/integration.ts";
 import type { GitlabIdentity as TokenIdentity } from "../../src/gitlab/token.ts";
-import { Health, type SourceError } from "../../src/core/source.ts";
+import { Health, type IntegrationError } from "../../src/core/integration.ts";
 import { connect } from "../harness.ts";
 
 const identity: TokenIdentity = {
@@ -22,10 +22,10 @@ const client: GitlabClient.Interface = {
     }),
 };
 
-const cable: Cable.Interface = {
-  subscribeUnique: () =>
+const socket: GitlabSocket.Interface = {
+  subscribe: () =>
     Effect.gen(function* () {
-      const queue = yield* Queue.unbounded<Schema.Json, SourceError>();
+      const queue = yield* Queue.unbounded<Schema.Json, IntegrationError>();
       return Stream.fromQueue(queue);
     }),
   health: Stream.succeed(Health.Live()),
@@ -47,21 +47,21 @@ const Events = Schema.Struct({
 });
 
 test("advertises a param that a real watch accepts", async () => {
-  const source = await Effect.runPromise(
-    Gitlab.source.pipe(
+  const integration = await Effect.runPromise(
+    Gitlab.integration.pipe(
       Effect.provide(
         Layer.mergeAll(
           Layer.succeed(
-            GitlabIdentity.Service,
-            GitlabIdentity.Service.of({ host: "gitlab.test", identity: Effect.succeed(identity) }),
+            GitlabAuth.Service,
+            GitlabAuth.Service.of({ host: "gitlab.test", identity: Effect.succeed(identity) }),
           ),
           Layer.succeed(GitlabClient.Service, GitlabClient.Service.of(client)),
-          Layer.succeed(Cable.Service, Cable.Service.of(cable)),
+          Layer.succeed(GitlabSocket.Service, GitlabSocket.Service.of(socket)),
         ),
       ),
     ),
   );
-  const h = await connect({ sources: [source] });
+  const h = await connect({ integrations: [integration] });
   try {
     const listed = await h.client.request(
       { method: "events/list", params: {} },

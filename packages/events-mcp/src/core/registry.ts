@@ -8,23 +8,23 @@ import {
   type Scope,
 } from "effect";
 import { compileFilter, type CompiledFilter } from "./arguments.ts";
-import type { EventType, Source } from "./source.ts";
+import type { EventKind, Integration } from "./integration.ts";
 
-export interface RegisteredEvent extends EventType {
+export interface RegisteredEventKind extends EventKind {
   readonly name: string;
   readonly paramsSchema: ReturnType<typeof compileParams>;
   readonly filter: CompiledFilter;
 }
 
 export interface Interface {
-  readonly sources: ReadonlyArray<Source>;
-  readonly events: ReadonlyArray<RegisteredEvent>;
-  readonly get: (name: string) => RegisteredEvent | undefined;
+  readonly integrations: ReadonlyArray<Integration>;
+  readonly events: ReadonlyArray<RegisteredEventKind>;
+  readonly get: (name: string) => RegisteredEventKind | undefined;
 }
 
-export class Service extends Context.Service<Service, Interface>()("@events-mcp/Catalog") {}
+export class Service extends Context.Service<Service, Interface>()("@events-mcp/Registry") {}
 
-const compileParams = (event: EventType, name: string) => {
+const compileParams = (event: EventKind, name: string) => {
   try {
     const document = JsonSchema.fromSchemaDraft2020_12(event.params);
     const schema: Schema.Codec<unknown> = Schema.make(
@@ -38,16 +38,16 @@ const compileParams = (event: EventType, name: string) => {
 };
 
 export const layer = <R>(
-  sources: Effect.Effect<ReadonlyArray<Source>, never, R>,
+  integrations: Effect.Effect<ReadonlyArray<Integration>, never, R>,
 ): Layer.Layer<Service, never, Exclude<R, Scope.Scope>> =>
   Layer.effect(
     Service,
     Effect.gen(function* () {
-      const built = yield* sources;
-      const byName = new Map<string, RegisteredEvent>();
-      for (const source of built)
-        for (const event of source.events) {
-          const name = `${source.name}.${event.name}`;
+      const built = yield* integrations;
+      const byName = new Map<string, RegisteredEventKind>();
+      for (const integration of built)
+        for (const event of integration.events) {
+          const name = `${integration.name}.${event.name}`;
           if (byName.has(name))
             return yield* Effect.die(new Error(`Duplicate event names: ${name}`));
           byName.set(name, {
@@ -58,11 +58,11 @@ export const layer = <R>(
           });
         }
       return Service.of({
-        sources: built,
+        integrations: built,
         events: [...byName.values()],
         get: (name) => byName.get(name),
       });
     }),
   );
 
-export * as Catalog from "./catalog.ts";
+export * as Registry from "./registry.ts";

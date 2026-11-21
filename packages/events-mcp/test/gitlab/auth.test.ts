@@ -1,9 +1,9 @@
 import { ConfigProvider, Context, Effect, Layer } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { expect, test } from "vitest";
-import { GitlabIdentity } from "../../src/gitlab/identity.ts";
+import { GitlabAuth } from "../../src/gitlab/auth.ts";
 
-test("the identity layer retries a failed token check and caches the success", async () => {
+test("the auth layer retries a failed token check and caches the success", async () => {
   let attempts = 0;
   const http = HttpClient.make((request) =>
     Effect.sync(() => {
@@ -22,18 +22,18 @@ test("the identity layer retries a failed token check and caches the success", a
   const context = await Effect.runPromise(
     Effect.scoped(
       Layer.build(
-        GitlabIdentity.layer.pipe(
+        GitlabAuth.layer.pipe(
           Layer.provide(Layer.succeed(HttpClient.HttpClient, http)),
           Layer.provide(config),
         ),
       ),
     ),
   );
-  const identity = Context.get(context, GitlabIdentity.Service);
+  const identity = Context.get(context, GitlabAuth.Service);
   const failure = await Effect.runPromise(
     Effect.flip(identity.identity).pipe(Effect.provide(config)),
   );
-  expect(failure._tag).toBe("Source.Unavailable");
+  expect(failure._tag).toBe("Integration.Unavailable");
   const first = await Effect.runPromise(identity.identity.pipe(Effect.provide(config)));
   expect(first.username).toBe("tester");
   const second = await Effect.runPromise(identity.identity.pipe(Effect.provide(config)));

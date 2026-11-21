@@ -5,9 +5,15 @@ import {
   HttpClientRequest,
   type HttpClientResponse,
 } from "effect/http";
-import { Rejected, type SourceError, ToolError, type Tool, Unavailable } from "../core/source.ts";
+import {
+  Rejected,
+  type IntegrationError,
+  ToolError,
+  type Tool,
+  Unavailable,
+} from "../core/integration.ts";
 import { GetInput, makeTool } from "../core/tool.ts";
-import { GitlabIdentity } from "./identity.ts";
+import { GitlabAuth } from "./auth.ts";
 import type { GitlabIdentity as TokenIdentity } from "./token.ts";
 
 export interface GraphqlRequest {
@@ -16,15 +22,15 @@ export interface GraphqlRequest {
 }
 
 export interface Interface {
-  readonly get: (input: GetInput) => Effect.Effect<Schema.Json, SourceError>;
-  readonly graphql: (request: GraphqlRequest) => Effect.Effect<Schema.JsonObject, SourceError>;
+  readonly get: (input: GetInput) => Effect.Effect<Schema.Json, IntegrationError>;
+  readonly graphql: (request: GraphqlRequest) => Effect.Effect<Schema.JsonObject, IntegrationError>;
 }
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/GitlabClient") {}
 
 export interface GitlabClientOptions {
   readonly host: string;
-  readonly identity: Effect.Effect<TokenIdentity, SourceError>;
+  readonly identity: Effect.Effect<TokenIdentity, IntegrationError>;
   readonly http?: HttpClient.HttpClient | undefined;
 }
 
@@ -40,10 +46,11 @@ export const GraphqlResult = Schema.Struct({
   ),
 });
 
-export const graphqlFailure = (errors: ReadonlyArray<{ readonly message: string }>): SourceError =>
-  new Rejected({ message: errors.map((error) => error.message).join("; ") });
+export const graphqlFailure = (
+  errors: ReadonlyArray<{ readonly message: string }>,
+): IntegrationError => new Rejected({ message: errors.map((error) => error.message).join("; ") });
 
-const invalidPath = (reason: string): SourceError =>
+const invalidPath = (reason: string): IntegrationError =>
   new Rejected({ message: `Invalid GitLab REST path. ${reason}` });
 
 const validPath = (path: string): boolean =>
@@ -58,7 +65,7 @@ const errorBody = (body: string): string => {
   });
 };
 
-const statusError = (status: number, label: string, body: string): SourceError => {
+const statusError = (status: number, label: string, body: string): IntegrationError => {
   const detail = errorBody(body);
   const message = `GitLab HTTP ${status} on ${label}${detail === "" ? "" : `: ${detail}`}`;
   return status === 408 || status === 429 || status >= 500
@@ -97,7 +104,7 @@ export const makeGitlabClient = (options: GitlabClientOptions): Effect.Effect<In
     const run = (
       request: HttpClientRequest.HttpClientRequest,
       label: string,
-    ): Effect.Effect<Schema.Json, SourceError> =>
+    ): Effect.Effect<Schema.Json, IntegrationError> =>
       Effect.gen(function* () {
         const response = yield* http
           .execute(request)
@@ -167,7 +174,7 @@ export const makeGitlabClient = (options: GitlabClientOptions): Effect.Effect<In
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const identity = yield* GitlabIdentity.Service;
+    const identity = yield* GitlabAuth.Service;
     return Service.of(
       yield* makeGitlabClient({ host: identity.host, identity: identity.identity }),
     );

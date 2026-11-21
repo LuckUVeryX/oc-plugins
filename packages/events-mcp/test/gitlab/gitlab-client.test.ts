@@ -3,7 +3,7 @@ import { Effect, Redacted, Schema } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { makeGetTool, makeGitlabClient } from "../../src/gitlab/client.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
-import { SourceName } from "../../src/core/source.ts";
+import { IntegrationName } from "../../src/core/integration.ts";
 import { connect } from "../harness.ts";
 
 const identity: GitlabIdentity = {
@@ -39,7 +39,7 @@ test("the REST client rejects a percent-encoded path traversal", async () => {
   const error = await Effect.runPromise(
     client.get({ path: "/projects/%2e%2e/%2e%2e/admin" }).pipe(Effect.flip),
   );
-  expect(error._tag).toBe("Source.Rejected");
+  expect(error._tag).toBe("Integration.Rejected");
   expect(error.message).toContain("/api/v4");
   expect(fake.urls).toEqual([]);
 });
@@ -50,7 +50,7 @@ test("the REST client treats a redirect as an error rather than following it", a
   );
   const client = await clientWith(fake.http);
   const error = await Effect.runPromise(client.get({ path: "/user" }).pipe(Effect.flip));
-  expect(error._tag).toBe("Source.Rejected");
+  expect(error._tag).toBe("Integration.Rejected");
   expect(error.message).toContain("HTTP 302");
   expect(fake.urls).toEqual(["https://gitlab.test/api/v4/user"]);
 });
@@ -65,9 +65,9 @@ test("gitlab_get reports an HTTP body that is not valid JSON", async () => {
   );
   const client = await clientWith(fake.http);
   const h = await connect({
-    sources: [
+    integrations: [
       {
-        name: Schema.decodeUnknownSync(SourceName)("gitlab"),
+        name: Schema.decodeUnknownSync(IntegrationName)("gitlab"),
         tools: { get: makeGetTool(client) },
         events: [],
       },

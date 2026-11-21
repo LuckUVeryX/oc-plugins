@@ -1,13 +1,13 @@
 import { expect, test, vi } from "vitest";
 import { Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
 import type { GetInput } from "../../src/core/tool.ts";
-import { Cable } from "../../src/gitlab/cable.ts";
+import { GitlabSocket } from "../../src/gitlab/socket.ts";
 import { GitlabClient } from "../../src/gitlab/client.ts";
-import { GitlabIdentity } from "../../src/gitlab/identity.ts";
+import { GitlabAuth } from "../../src/gitlab/auth.ts";
 import { notesRecipe } from "../../src/gitlab/notes.ts";
-import { Gitlab } from "../../src/gitlab/source.ts";
+import { Gitlab } from "../../src/gitlab/integration.ts";
 import type { GitlabIdentity as TokenIdentity } from "../../src/gitlab/token.ts";
-import { Health, type SourceError } from "../../src/core/source.ts";
+import { Health, type IntegrationError } from "../../src/core/integration.ts";
 import { connect } from "../harness.ts";
 
 const identity: TokenIdentity = {
@@ -40,7 +40,7 @@ test("the notes recipe delivers the first new comment after START and nothing el
     ],
   ];
   const responseCount = responses.length;
-  const queuePromise = Promise.withResolvers<Queue.Queue<Schema.Json, SourceError>>();
+  const queuePromise = Promise.withResolvers<Queue.Queue<Schema.Json, IntegrationError>>();
   const gets: Array<GetInput> = [];
   const client: GitlabClient.Interface = {
     get: (input) => {
@@ -56,30 +56,30 @@ test("the notes recipe delivers the first new comment after START and nothing el
         },
       }),
   };
-  const cable: Cable.Interface = {
-    subscribeUnique: () =>
+  const socket: GitlabSocket.Interface = {
+    subscribe: () =>
       Effect.gen(function* () {
-        const queue = yield* Queue.unbounded<Schema.Json, SourceError>();
+        const queue = yield* Queue.unbounded<Schema.Json, IntegrationError>();
         queuePromise.resolve(queue);
         return Stream.fromQueue(queue);
       }),
     health: Stream.succeed(Health.Live()),
   };
-  const source = await Effect.runPromise(
-    Gitlab.source.pipe(
+  const integration = await Effect.runPromise(
+    Gitlab.integration.pipe(
       Effect.provide(
         Layer.mergeAll(
           Layer.succeed(
-            GitlabIdentity.Service,
-            GitlabIdentity.Service.of({ host: "gitlab.test", identity: Effect.succeed(identity) }),
+            GitlabAuth.Service,
+            GitlabAuth.Service.of({ host: "gitlab.test", identity: Effect.succeed(identity) }),
           ),
           Layer.succeed(GitlabClient.Service, GitlabClient.Service.of(client)),
-          Layer.succeed(Cable.Service, Cable.Service.of(cable)),
+          Layer.succeed(GitlabSocket.Service, GitlabSocket.Service.of(socket)),
         ),
       ),
     ),
   );
-  const h = await connect({ sources: [source] });
+  const h = await connect({ integrations: [integration] });
   try {
     h.stream(
       {

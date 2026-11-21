@@ -2,13 +2,13 @@ import { DateTime, Deferred, Effect, Stream } from "effect";
 import { expect, test, vi } from "vitest";
 import {
   Health,
-  type EventType,
-  type Occurrence,
+  type EventKind,
+  type Event,
   Rejected,
-  type SourceError,
+  type IntegrationError,
   Unavailable,
-} from "../../src/core/source.ts";
-import { Upstream } from "../../src/core/upstream.ts";
+} from "../../src/core/integration.ts";
+import { Feeds } from "../../src/core/feeds.ts";
 import { runWatch } from "../../src/core/watch.ts";
 import { connect } from "../harness.ts";
 
@@ -17,7 +17,7 @@ const pass = {
   transform: "return JSON.stringify(input.prepared)",
 };
 
-test("each subscription receives an occurrence the other subscription also saw", async () => {
+test("each feed receives an event the other feed also saw", async () => {
   const h = await connect();
   const events = () => h.notifications.filter((notification) => notification.type === "event");
   const active = () => h.notifications.filter((notification) => notification.type === "active");
@@ -57,7 +57,7 @@ test("list_watches exposes each watch's public view without its handles", async 
 });
 
 // OpenCode treats -32024 as a permanent rejection and retries -32603 as a transient failure.
-const subscribeOnce = async (error: SourceError) => {
+const subscribeOnce = async (error: IntegrationError) => {
   const h = await connect({ otherSubscribeError: error });
   try {
     return await h.stream({ watchId: "subscribe", ...pass }, "other.ping").done;
@@ -66,7 +66,7 @@ const subscribeOnce = async (error: SourceError) => {
   }
 };
 
-test("a rejected upstream answers with the permanent code", async () => {
+test("a rejected feed answers with the permanent code", async () => {
   expect(
     await subscribeOnce(new Rejected({ message: "The token cannot read that project" })),
   ).toMatchObject({
@@ -75,7 +75,7 @@ test("a rejected upstream answers with the permanent code", async () => {
   });
 });
 
-test("an unavailable upstream answers with the transient code", async () => {
+test("an unavailable feed answers with the transient code", async () => {
   expect(await subscribeOnce(new Unavailable({ message: "GitLab is restarting" }))).toMatchObject({
     code: -32603,
   });
@@ -83,7 +83,7 @@ test("an unavailable upstream answers with the transient code", async () => {
 
 test("announces active before delivering the first event of a short stream", async () => {
   const health = Stream.succeed<Health>(Health.Live());
-  const occurrences = Stream.fromIterable<Occurrence>([
+  const events = Stream.fromIterable<Event>([
     { id: "one", occurredAt: DateTime.makeUnsafe(0), payload: { ok: true } },
   ]);
   const event = {
@@ -91,15 +91,15 @@ test("announces active before delivering the first event of a short stream", asy
     description: "A tick.",
     params: {},
     payload: { type: "object" },
-    subscribe: () => Effect.succeed({ occurrences, health }),
-  } satisfies EventType;
+    subscribe: () => Effect.succeed({ events, health }),
+  } satisfies EventKind;
   const types: Array<string> = [];
   const reason = await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
         return yield* runWatch({
           watchId: "short",
-          eventType: event,
+          eventKind: event,
           params: {},
           filter: [],
           expiresInSeconds: 60,
@@ -110,8 +110,8 @@ test("announces active before delivering the first event of a short stream", asy
           notify: (type) => Effect.sync(() => types.push(type)),
         }).pipe(
           Effect.provideService(
-            Upstream.Service,
-            Upstream.Service.of({ acquire: () => Effect.succeed({ occurrences, health }) }),
+            Feeds.Service,
+            Feeds.Service.of({ acquire: () => Effect.succeed({ events, health }) }),
           ),
         );
       }),

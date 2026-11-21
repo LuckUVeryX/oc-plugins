@@ -1,14 +1,14 @@
 import { Config, Context, Duration, Effect, Exit, Layer } from "effect";
 import { HttpClient } from "effect/http";
-import { type SourceError } from "../core/source.ts";
+import { type IntegrationError } from "../core/integration.ts";
 import { resolveIdentity, type GitlabIdentity } from "./token.ts";
 
 export interface Interface {
   readonly host: string;
-  readonly identity: Effect.Effect<GitlabIdentity, SourceError>;
+  readonly identity: Effect.Effect<GitlabIdentity, IntegrationError>;
 }
 
-export class Service extends Context.Service<Service, Interface>()("@events-mcp/GitlabIdentity") {}
+export class Service extends Context.Service<Service, Interface>()("@events-mcp/GitlabAuth") {}
 
 const cached = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
@@ -33,4 +33,4 @@ export const layer = Layer.effect(
   }),
 );
 
-export * as GitlabIdentity from "./identity.ts";
+export * as GitlabAuth from "./auth.ts";

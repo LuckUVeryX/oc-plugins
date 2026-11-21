@@ -2,29 +2,29 @@
 import { BunRuntime } from "@effect/platform-bun";
 import { Cause, ConfigProvider, Effect, Exit, Layer, Logger, Runtime } from "effect";
 import { FetchHttpClient } from "effect/http";
-import { Catalog } from "./core/catalog.ts";
-import { Decisions } from "./core/decisions.ts";
+import { Registry } from "./core/registry.ts";
+import { DecisionModel } from "./core/decision-model.ts";
 import { Server } from "./core/server.ts";
-import { Upstream } from "./core/upstream.ts";
-import { Cable } from "./gitlab/cable.ts";
+import { Feeds } from "./core/feeds.ts";
+import { GitlabSocket } from "./gitlab/socket.ts";
 import { GitlabClient } from "./gitlab/client.ts";
-import { GitlabIdentity } from "./gitlab/identity.ts";
-import { Gitlab } from "./gitlab/source.ts";
-import { LarkApi } from "./lark/api.ts";
-import { LarkConnection } from "./lark/connection.ts";
-import { Lark } from "./lark/source.ts";
+import { GitlabAuth } from "./gitlab/auth.ts";
+import { Gitlab } from "./gitlab/integration.ts";
+import { LarkAuth } from "./lark/auth.ts";
+import { LarkSocket } from "./lark/socket.ts";
+import { Lark } from "./lark/integration.ts";
 
-const LarkLayers = LarkConnection.layer.pipe(Layer.provideMerge(LarkApi.layer));
-const GitlabLayers = Layer.merge(Cable.layer, GitlabClient.layer).pipe(
-  Layer.provideMerge(GitlabIdentity.layer),
+const LarkLayers = LarkSocket.layer.pipe(Layer.provideMerge(LarkAuth.layer));
+const GitlabLayers = Layer.merge(GitlabSocket.layer, GitlabClient.layer).pipe(
+  Layer.provideMerge(GitlabAuth.layer),
 );
-const SourceLayers = Layer.merge(LarkLayers, GitlabLayers).pipe(
+const IntegrationLayers = Layer.merge(LarkLayers, GitlabLayers).pipe(
   Layer.provide(FetchHttpClient.layer),
 );
-const CatalogLayer = Catalog.layer(Effect.all([Lark.source, Gitlab.source])).pipe(
-  Layer.provide(SourceLayers),
+const RegistryLayer = Registry.layer(Effect.all([Lark.integration, Gitlab.integration])).pipe(
+  Layer.provide(IntegrationLayers),
 );
-const CoreLayer = Layer.mergeAll(Upstream.layer, Decisions.layer, CatalogLayer);
+const CoreLayer = Layer.mergeAll(Feeds.layer, DecisionModel.layer, RegistryLayer);
 const AppLayer = Server.layer.pipe(Layer.provide(CoreLayer));
 
 const program = Effect.gen(function* () {

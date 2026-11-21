@@ -1,10 +1,10 @@
 import { ConfigProvider, Effect, Fiber, Layer, Schema, type Scope } from "effect";
 import { expect, test, vi } from "vitest";
-import { LarkApi } from "../../src/lark/api.ts";
-import { LarkConnection } from "../../src/lark/connection.ts";
-import { Lark } from "../../src/lark/source.ts";
+import { LarkAuth } from "../../src/lark/auth.ts";
+import { LarkSocket } from "../../src/lark/socket.ts";
+import { Lark } from "../../src/lark/integration.ts";
 import type { LarkRequester } from "../../src/lark/get.ts";
-import type { Source } from "../../src/core/source.ts";
+import type { Integration } from "../../src/core/integration.ts";
 import { connect } from "../harness.ts";
 
 const sdk = vi.hoisted(() => ({
@@ -36,8 +36,8 @@ const request = async () => ({ code: 0, msg: "", data: { online_instance_cnt: 0 
 
 const fakeApi = (requester: LarkRequester) =>
   Layer.succeed(
-    LarkApi.Service,
-    LarkApi.Service.of({
+    LarkAuth.Service,
+    LarkAuth.Service.of({
       credentials: () =>
         Effect.succeed({
           appId: "cli_0123456789abcdef",
@@ -47,29 +47,31 @@ const fakeApi = (requester: LarkRequester) =>
     }),
   );
 
-const sourceWith = (requester: LarkRequester): Effect.Effect<Source, never, Scope.Scope> =>
+const integrationWith = (
+  requester: LarkRequester,
+): Effect.Effect<Integration, never, Scope.Scope> =>
   Effect.gen(function* () {
     const context = yield* Layer.build(
-      LarkConnection.layer.pipe(Layer.provideMerge(fakeApi(requester))),
+      LarkSocket.layer.pipe(Layer.provideMerge(fakeApi(requester))),
     );
-    return yield* Lark.source.pipe(Effect.provide(context));
+    return yield* Lark.integration.pipe(Effect.provide(context));
   });
 
 const withLark = <A, E>(
-  body: (source: Source) => Effect.Effect<A, E, Scope.Scope>,
+  body: (integration: Integration) => Effect.Effect<A, E, Scope.Scope>,
   options: { readonly request?: LarkRequester } = {},
 ): Promise<A> =>
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const source = yield* sourceWith(options.request ?? request);
-        return yield* body(source);
+        const integration = yield* integrationWith(options.request ?? request);
+        return yield* body(integration);
       }),
     ),
   );
 
-const messageEvent = (source: Source) => {
-  const event = source.events.find((item) => item.name === "im.message.receive_v1");
+const messageEvent = (integration: Integration) => {
+  const event = integration.events.find((item) => item.name === "im.message.receive_v1");
   if (event === undefined) throw new Error("Lark message event is missing");
   return event;
 };
@@ -80,9 +82,9 @@ const Events = Schema.Struct({
 
 test("delivers fresh events once and drops stale events", async () => {
   sdk.silent = false;
-  await withLark((source) =>
+  await withLark((integration) =>
     Effect.promise(async () => {
-      const h = await connect({ sources: [source] });
+      const h = await connect({ integrations: [integration] });
       try {
         const listing = await h.client.request(
           { method: "events/list", params: {} },
@@ -163,8 +165,8 @@ test("closes the socket when an interrupted watch is still waiting for readiness
   const fiber = Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
-        const source = yield* sourceWith(request);
-        yield* messageEvent(source).subscribe({});
+        const integration = yield* integrationWith(request);
+        yield* messageEvent(integration).subscribe({});
       }),
     ),
   );
@@ -182,14 +184,14 @@ test("refuses to connect while another app connection is online", async () => {
   sdk.starts = 0;
   sdk.silent = false;
   await withLark(
-    (source) =>
-      messageEvent(source)
+    (integration) =>
+      messageEvent(integration)
         .subscribe({})
         .pipe(
           Effect.flip,
           Effect.tap((error) =>
             Effect.sync(() => {
-              expect(error).toMatchObject({ _tag: "Source.Unavailable" });
+              expect(error).toMatchObject({ _tag: "Integration.Unavailable" });
               expect(error.message).toContain("Another connection for this Lark app is online (1)");
               expect(error.message).toContain("Lark delivers each event to only one connection");
               expect(sdk.starts).toBe(0);
@@ -205,11 +207,11 @@ test("a watch without Lark credentials is rejected and names both variables", as
     Effect.scoped(
       Effect.gen(function* () {
         const context = yield* Layer.build(
-          LarkConnection.layer.pipe(Layer.provideMerge(LarkApi.layer)),
+          LarkSocket.layer.pipe(Layer.provideMerge(LarkAuth.layer)),
         );
-        const source = yield* Lark.source.pipe(Effect.provide(context));
-        const error = yield* messageEvent(source).subscribe({}).pipe(Effect.flip);
-        expect(error).toMatchObject({ _tag: "Source.Rejected" });
+        const integration = yield* Lark.integration.pipe(Effect.provide(context));
+        const error = yield* messageEvent(integration).subscribe({}).pipe(Effect.flip);
+        expect(error).toMatchObject({ _tag: "Integration.Rejected" });
         expect(error.message).toContain("LARK_APP_ID");
         expect(error.message).toContain("LARK_APP_SECRET");
       }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({})))),

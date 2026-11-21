@@ -1,8 +1,8 @@
 import { Effect, Layer, Option } from "effect";
 import { expect, test } from "vitest";
-import { LarkApi } from "../../src/lark/api.ts";
-import { LarkConnection } from "../../src/lark/connection.ts";
-import { Lark } from "../../src/lark/source.ts";
+import { LarkAuth } from "../../src/lark/auth.ts";
+import { LarkSocket } from "../../src/lark/socket.ts";
+import { Lark } from "../../src/lark/integration.ts";
 import { makePrepare, makeWatchState } from "../../src/core/prepare.ts";
 import { connect } from "../harness.ts";
 
@@ -12,13 +12,13 @@ delete process.env["LARK_APP_ID"];
 delete process.env["LARK_APP_SECRET"];
 
 const larkSource = await Effect.runPromise(
-  Lark.source.pipe(
+  Lark.integration.pipe(
     Effect.provide(
       Layer.merge(
-        LarkApi.layer,
+        LarkAuth.layer,
         Layer.succeed(
-          LarkConnection.Service,
-          LarkConnection.Service.of({
+          LarkSocket.Service,
+          LarkSocket.Service.of({
             subscribe: () => Effect.die(new Error("The tool test never subscribes")),
           }),
         ),
@@ -28,7 +28,7 @@ const larkSource = await Effect.runPromise(
 );
 
 test("a Lark credential failure reaches the MCP tool result", async () => {
-  const h = await connect({ sources: [larkSource] });
+  const h = await connect({ integrations: [larkSource] });
   try {
     const result = await h.callRaw("lark_get", { path: "/im/v1/messages" });
     expect(result.isError).toBe(true);
@@ -40,7 +40,7 @@ test("a Lark credential failure reaches the MCP tool result", async () => {
 
 test("a Lark credential failure reaches a prepare failure", async () => {
   const prepare = makePrepare({
-    sources: [larkSource],
+    integrations: [larkSource],
     state: await Effect.runPromise(makeWatchState),
     decide: Option.none(),
   });

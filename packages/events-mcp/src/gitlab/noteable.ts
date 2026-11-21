@@ -1,11 +1,11 @@
 import { Effect, Option, Schema } from "effect";
-import { Rejected, type SourceError, Unavailable } from "../core/source.ts";
+import { Rejected, type IntegrationError, Unavailable } from "../core/integration.ts";
 import { GitlabClient } from "./client.ts";
 
 export const NoteableType = Schema.Literals(["merge_request", "issue"]);
 export type NoteableType = typeof NoteableType.Type;
 
-/** The MergeRequest global ID prefix, shared by the noteable kinds and the source's param checks. */
+/** The MergeRequest global ID prefix, shared by the noteable kinds and the integration's param checks. */
 export const mergeRequestGlobalId = "gid://gitlab/MergeRequest/";
 
 interface NoteableKind {
@@ -66,11 +66,11 @@ export const readNoteable = (
   type: NoteableType,
   globalId: string,
   hint: string,
-): Effect.Effect<ResolvedNoteable, SourceError> =>
+): Effect.Effect<ResolvedNoteable, IntegrationError> =>
   Effect.gen(function* () {
     const kind = kinds[type];
     const data = yield* client.graphql({ query: kind.query, variables: { id: globalId } }).pipe(
-      Effect.catchTag("Source.Rejected", (error) =>
+      Effect.catchTag("Integration.Rejected", (error) =>
         Effect.fail(
           new Rejected({
             message: `Could not read ${kind.label.toLowerCase()} ${globalId}: ${error.message}`,

@@ -1,11 +1,11 @@
 import { Cause, Clock, DateTime, Deferred, Effect, Schema, type Scope, Stream } from "effect";
 import { matchesFilter, type Filter } from "./arguments.ts";
 import { bytes, MAX_EVENT_BYTES } from "./limits.ts";
-import { Health, type EventType, type Occurrence, type SourceError } from "./source.ts";
+import { Health, type EventKind, type Event, type IntegrationError } from "./integration.ts";
 import { Failed } from "./script.ts";
-import { Upstream } from "./upstream.ts";
+import { Feeds } from "./feeds.ts";
 
-// OpenCode cancels event subscriptions after 60 seconds without a notification.
+// OpenCode cancels event feeds after 60 seconds without a notification.
 const HEARTBEAT_INTERVAL = "20 seconds";
 
 export type WatchEvent = {
@@ -31,7 +31,7 @@ class StepFailed extends Schema.TaggedError<StepFailed>()("Watch.StepFailed", {
 
 interface WatchRunOptions {
   readonly watchId: string;
-  readonly eventType: EventType;
+  readonly eventKind: EventKind;
   readonly params: Schema.JsonObject;
   readonly filter: Filter;
   readonly expiresInSeconds: number;
@@ -51,22 +51,22 @@ const messageOf = (cause: Cause.Cause<unknown>): string => {
 
 export const runWatch = Effect.fn("Watch.run")(function* (
   options: WatchRunOptions,
-): Effect.fn.Return<string, SourceError, Upstream.Service | Scope.Scope> {
-  const upstream = yield* Upstream.Service;
+): Effect.fn.Return<string, IntegrationError, Feeds.Service | Scope.Scope> {
+  const feeds = yield* Feeds.Service;
   const announce = Health.$match({
     Live: () => options.notify("active"),
     Degraded: ({ reason }) => options.notify("error", errorBody(reason)),
   });
-  const deliver = (occurrence: Occurrence) =>
+  const deliver = (input: Event) =>
     Effect.gen(function* () {
-      if (!matchesFilter(options.filter, occurrence.payload)) return;
+      if (!matchesFilter(options.filter, input.payload)) return;
       const now = yield* Clock.currentTimeMillis;
-      const occurredAt = occurrence.occurredAt ?? DateTime.makeUnsafe(now);
-      const eventId = occurrence.id ?? `local-${crypto.randomUUID()}`;
+      const occurredAt = input.occurredAt ?? DateTime.makeUnsafe(now);
+      const eventId = input.id ?? `local-${crypto.randomUUID()}`;
       const delivered = {
         eventId,
         timestamp: DateTime.formatIso(occurredAt),
-        data: occurrence.payload,
+        data: input.payload,
       };
       let step: "prepare" | "transform" = "prepare";
       const pipeline = Effect.gen(function* () {
@@ -103,26 +103,26 @@ export const runWatch = Effect.fn("Watch.run")(function* (
         );
       yield* options.notify("event", {
         eventId,
-        name: options.eventType.name,
+        name: options.eventKind.name,
         timestamp: delivered.timestamp,
         data: result,
       });
     });
   const session = Effect.gen(function* () {
-    const subscription = yield* upstream.acquire({
-      event: options.eventType,
+    const feed = yield* feeds.acquire({
+      eventKind: options.eventKind,
       params: options.params,
     });
     const firstHealthAnnounced = yield* Deferred.make<void>();
     return yield* Effect.raceFirst(
-      subscription.occurrences.pipe(
-        Stream.runForEach((occurrence) =>
-          Deferred.await(firstHealthAnnounced).pipe(Effect.andThen(deliver(occurrence))),
+      feed.events.pipe(
+        Stream.runForEach((event) =>
+          Deferred.await(firstHealthAnnounced).pipe(Effect.andThen(deliver(event))),
         ),
         Effect.as("Event source ended"),
-        Effect.catch((failure: SourceError | StepFailed) => Effect.succeed(failure.message)),
+        Effect.catch((failure: IntegrationError | StepFailed) => Effect.succeed(failure.message)),
       ),
-      subscription.health.pipe(
+      feed.health.pipe(
         Stream.runForEach((value) =>
           announce(value).pipe(Effect.andThen(Deferred.succeed(firstHealthAnnounced, undefined))),
         ),

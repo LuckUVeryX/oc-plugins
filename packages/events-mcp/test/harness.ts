@@ -13,23 +13,23 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import { Catalog } from "../src/core/catalog.ts";
-import { Decisions } from "../src/core/decisions.ts";
+import { Registry } from "../src/core/registry.ts";
+import { DecisionModel } from "../src/core/decision-model.ts";
 import { Server } from "../src/core/server.ts";
 import {
   Health,
-  SourceName,
-  type EventType,
-  type Occurrence,
-  type Source,
-  type SourceError,
-} from "../src/core/source.ts";
-import { Upstream } from "../src/core/upstream.ts";
+  IntegrationName,
+  type EventKind,
+  type Event,
+  type Integration,
+  type IntegrationError,
+} from "../src/core/integration.ts";
+import { Feeds } from "../src/core/feeds.ts";
 import { makeGetTool, type LarkRequester } from "../src/lark/get.ts";
 
 const larkApp = { appId: "cli_0123456789abcdef", appSecret: "offline" };
-const lark = Schema.decodeUnknownSync(SourceName)("lark");
-const other = Schema.decodeUnknownSync(SourceName)("other");
+const lark = Schema.decodeUnknownSync(IntegrationName)("lark");
+const other = Schema.decodeUnknownSync(IntegrationName)("other");
 const larkMessage = "lark.im.message.receive_v1";
 const larkParams: Schema.JsonObject = {
   type: "object",
@@ -51,20 +51,20 @@ interface Publish {
 export async function connect(
   options: {
     defaultExpiresInSeconds?: number;
-    decide?: Decisions.Decide | undefined;
+    decide?: DecisionModel.Decide | undefined;
     eventTimeoutSeconds?: number;
     request?: LarkRequester;
-    otherSubscribeError?: SourceError | undefined;
-    sources?: ReadonlyArray<Source>;
+    otherSubscribeError?: IntegrationError | undefined;
+    integrations?: ReadonlyArray<Integration>;
     transport?: (transport: ReturnType<typeof InMemoryTransport.createLinkedPair>[1]) => void;
   } = {},
 ) {
   const request: LarkRequester =
     options.request ?? (async () => ({ code: 0, msg: "ok", data: null }));
-  const larkChannel = await Effect.runPromise(PubSub.unbounded<Occurrence>());
-  const otherChannel = await Effect.runPromise(PubSub.unbounded<Occurrence>());
+  const larkChannel = await Effect.runPromise(PubSub.unbounded<Event>());
+  const otherChannel = await Effect.runPromise(PubSub.unbounded<Event>());
   const health = await Effect.runPromise(SubscriptionRef.make<Health>(Health.Live()));
-  const sources: ReadonlyArray<Source> = options.sources ?? [
+  const integrations: ReadonlyArray<Integration> = options.integrations ?? [
     {
       name: lark,
       tools: {
@@ -84,14 +84,14 @@ export async function connect(
           },
           subscribe: () =>
             Effect.gen(function* () {
-              const subscription = yield* PubSub.subscribe(larkChannel);
+              const pubsub = yield* PubSub.subscribe(larkChannel);
               return {
-                occurrences: Stream.fromSubscription(subscription),
+                events: Stream.fromSubscription(pubsub),
                 health: SubscriptionRef.changes(health),
               };
             }),
         },
-      ] satisfies ReadonlyArray<EventType>,
+      ] satisfies ReadonlyArray<EventKind>,
     },
     {
       name: other,
@@ -106,21 +106,21 @@ export async function connect(
           subscribe: () =>
             options.otherSubscribeError === undefined
               ? Effect.gen(function* () {
-                  const subscription = yield* PubSub.subscribe(otherChannel);
+                  const pubsub = yield* PubSub.subscribe(otherChannel);
                   return {
-                    occurrences: Stream.fromSubscription(subscription),
+                    events: Stream.fromSubscription(pubsub),
                     health: SubscriptionRef.changes(health),
                   };
                 })
               : Effect.fail(options.otherSubscribeError),
         },
-      ] satisfies ReadonlyArray<EventType>,
+      ] satisfies ReadonlyArray<EventKind>,
     },
   ];
-  const catalogLayer = Catalog.layer(Effect.succeed(sources));
-  const decisionsLayer = Layer.succeed(
-    Decisions.Service,
-    Decisions.Service.of({
+  const registryLayer = Registry.layer(Effect.succeed(integrations));
+  const decisionModelLayer = Layer.succeed(
+    DecisionModel.Service,
+    DecisionModel.Service.of({
       decide: options.decide === undefined ? Option.none() : Option.some(options.decide),
     }),
   );
@@ -133,7 +133,7 @@ export async function connect(
   const scope = await Effect.runPromise(Scope.make());
   const context = await Effect.runPromise(
     Layer.build(
-      Layer.merge(Upstream.layer.pipe(Layer.provideMerge(catalogLayer)), decisionsLayer),
+      Layer.merge(Feeds.layer.pipe(Layer.provideMerge(registryLayer)), decisionModelLayer),
     ).pipe(Effect.provideService(Scope.Scope, scope)),
   );
   const server = await Effect.runPromise(
@@ -198,9 +198,9 @@ export async function connect(
       requests.push(done);
       return { done, abort: () => controller.abort() };
     },
-    publish(event: Publish, source: keyof typeof channels = "lark") {
+    publish(event: Publish, integration: keyof typeof channels = "lark") {
       Effect.runSync(
-        PubSub.publish(channels[source], {
+        PubSub.publish(channels[integration], {
           ...(event.eventId === undefined ? {} : { id: event.eventId }),
           occurredAt: DateTime.makeUnsafe(event.occurredAt ?? new Date().toISOString()),
           payload: event.payload,
