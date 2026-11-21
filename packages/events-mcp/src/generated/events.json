@@ -1,0 +1,1449 @@
+{
+  "sdk": "@larksuiteoapi/node-sdk",
+  "sdkVersion": "1.76.0",
+  "source": "EventHandles direct callback first argument",
+  "schemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "events": [
+    {
+      "name": "application.bot.menu_v6",
+      "description": "机器人自定义菜单事件\n\n当用户点击类型为事件的机器人菜单时触发",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "operator": {
+            "type": "object",
+            "properties": {
+              "operator_name": {
+                "type": "string"
+              },
+              "operator_id": {
+                "type": "object",
+                "properties": {
+                  "union_id": {
+                    "type": "string"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "open_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "event_key": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    {
+      "name": "drive.notice.comment_add_v1",
+      "description": "添加评论、回复通知事件\n\n当用户有新文档评论或回复通知会触发此事件。",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "notice_meta": {
+            "type": "object",
+            "properties": {
+              "file_type": {
+                "type": "string",
+                "enum": [
+                  "doc",
+                  "docx",
+                  "sheet",
+                  "bitable",
+                  "slides",
+                  "file"
+                ]
+              },
+              "file_token": {
+                "type": "string"
+              },
+              "from_user_id": {
+                "type": "object",
+                "properties": {
+                  "union_id": {
+                    "type": "string"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "open_id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "to_user_id": {
+                "type": "object",
+                "properties": {
+                  "union_id": {
+                    "type": "string"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "open_id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "notice_type": {
+                "type": "string",
+                "enum": [
+                  "add_comment",
+                  "add_reply"
+                ]
+              }
+            }
+          },
+          "comment_id": {
+            "type": "string"
+          },
+          "reply_id": {
+            "type": "string"
+          },
+          "is_mentioned": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "im.chat.disbanded_v1",
+      "description": "群解散\n\n群组被解散后触发此事件，在该群组内的、已订阅当前事件的应用机器人将会收到事件通知。",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "chat_id": {
+            "type": "string"
+          },
+          "operator_id": {
+            "type": "object",
+            "properties": {
+              "union_id": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              },
+              "open_id": {
+                "type": "string"
+              }
+            }
+          },
+          "external": {
+            "type": "boolean"
+          },
+          "operator_tenant_key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "i18n_names": {
+            "type": "object",
+            "properties": {
+              "zh_cn": {
+                "type": "string"
+              },
+              "en_us": {
+                "type": "string"
+              },
+              "ja_jp": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "im.chat.member.bot.added_v1",
+      "description": "机器人进群\n\n机器人被用户添加至群聊时触发此事件，在群组内的、已订阅该事件的机器人会收到事件消息。",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "chat_id": {
+            "type": "string"
+          },
+          "operator_id": {
+            "type": "object",
+            "properties": {
+              "union_id": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              },
+              "open_id": {
+                "type": "string"
+              }
+            }
+          },
+          "external": {
+            "type": "boolean"
+          },
+          "operator_tenant_key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "i18n_names": {
+            "type": "object",
+            "properties": {
+              "zh_cn": {
+                "type": "string"
+              },
+              "en_us": {
+                "type": "string"
+              },
+              "ja_jp": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "im.chat.member.bot.deleted_v1",
+      "description": "机器人被移出群\n\n机器人被移出群聊后触发此事件，仅被移除群组且订阅该事件的机器人会收到事件数据。",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "chat_id": {
+            "type": "string"
+          },
+          "operator_id": {
+            "type": "object",
+            "properties": {
+              "union_id": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              },
+              "open_id": {
+                "type": "string"
+              }
+            }
+          },
+          "external": {
+            "type": "boolean"
+          },
+          "operator_tenant_key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "i18n_names": {
+            "type": "object",
+            "properties": {
+              "zh_cn": {
+                "type": "string"
+              },
+              "en_us": {
+                "type": "string"
+              },
+              "ja_jp": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "im.chat.member.user.added_v1",
+      "description": "用户进群\n\n新用户进群（包含话题群）时触发此事件，在群组内的、已订阅该事件的机器人会收到事件数据。",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "chat_id": {
+            "type": "string"
+          },
+          "operator_id": {
+            "type": "object",
+            "properties": {
+              "union_id": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              },
+              "open_id": {
+                "type": "string"
+              }
+            }
+          },
+          "external": {
+            "type": "boolean"
+          },
+          "operator_tenant_key": {
+            "type": "string"
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "tenant_key": {
+                  "type": "string"
+                },
+                "user_id": {
+                  "type": "object",
+                  "properties": {
+                    "union_id": {
+                      "type": "string"
+                    },
+                    "user_id": {
+                      "type": "string"
+                    },
+                    "open_id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "i18n_names": {
+            "type": "object",
+            "properties": {
+              "zh_cn": {
+                "type": "string"
+              },
+              "en_us": {
+                "type": "string"
+              },
+              "ja_jp": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "im.chat.member.user.deleted_v1",
+      "description": "用户出群\n\n用户主动退出群聊或被移出群聊时推触发此事件，在群组内的、已订阅该事件的机器人会收到事件数据。",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "chat_id": {
+            "type": "string"
+          },
+          "operator_id": {
+            "type": "object",
+            "properties": {
+              "union_id": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              },
+              "open_id": {
+                "type": "string"
+              }
+            }
+          },
+          "external": {
+            "type": "boolean"
+          },
+          "operator_tenant_key": {
+            "type": "string"
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "tenant_key": {
+                  "type": "string"
+                },
+                "user_id": {
+                  "type": "object",
+                  "properties": {
+                    "union_id": {
+                      "type": "string"
+                    },
+                    "user_id": {
+                      "type": "string"
+                    },
+                    "open_id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "i18n_names": {
+            "type": "object",
+            "properties": {
+              "zh_cn": {
+                "type": "string"
+              },
+              "en_us": {
+                "type": "string"
+              },
+              "ja_jp": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "im.chat.member.user.withdrawn_v1",
+      "description": "撤销拉用户进群\n\n撤销拉用户进群后触发此事件，在群组内的、已订阅该事件的机器人会收到事件消息。撤销操作是指如下图所示的群内 **撤销邀请**。;;![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/2faba42d3e4203e1dd899931da6dbfc8_DFXlHNscdw.png?height=278&maxWidth=550&width=1383)",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "chat_id": {
+            "type": "string"
+          },
+          "operator_id": {
+            "type": "object",
+            "properties": {
+              "union_id": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              },
+              "open_id": {
+                "type": "string"
+              }
+            }
+          },
+          "external": {
+            "type": "boolean"
+          },
+          "operator_tenant_key": {
+            "type": "string"
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "tenant_key": {
+                  "type": "string"
+                },
+                "user_id": {
+                  "type": "object",
+                  "properties": {
+                    "union_id": {
+                      "type": "string"
+                    },
+                    "user_id": {
+                      "type": "string"
+                    },
+                    "open_id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "i18n_names": {
+            "type": "object",
+            "properties": {
+              "zh_cn": {
+                "type": "string"
+              },
+              "en_us": {
+                "type": "string"
+              },
+              "ja_jp": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "im.chat.updated_v1",
+      "description": "群配置修改\n\n群组配置被修改后触发此事件，在该群组内的、已订阅当前事件的应用机器人将会收到事件通知。修改操作包含：;;- 转移群主;- 修改群基本信息，包括：群头像、群名称、群描述、群国际化名称;- 修改群权限，包括：加人入群权限、群编辑权限、at 所有人权限、群分享权限等",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "chat_id": {
+            "type": "string"
+          },
+          "operator_id": {
+            "type": "object",
+            "properties": {
+              "union_id": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              },
+              "open_id": {
+                "type": "string"
+              }
+            }
+          },
+          "external": {
+            "type": "boolean"
+          },
+          "operator_tenant_key": {
+            "type": "string"
+          },
+          "after_change": {
+            "type": "object",
+            "properties": {
+              "avatar": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "i18n_names": {
+                "type": "object",
+                "properties": {
+                  "zh_cn": {
+                    "type": "string"
+                  },
+                  "en_us": {
+                    "type": "string"
+                  },
+                  "ja_jp": {
+                    "type": "string"
+                  }
+                }
+              },
+              "add_member_permission": {
+                "type": "string"
+              },
+              "share_card_permission": {
+                "type": "string"
+              },
+              "at_all_permission": {
+                "type": "string"
+              },
+              "edit_permission": {
+                "type": "string"
+              },
+              "membership_approval": {
+                "type": "string"
+              },
+              "join_message_visibility": {
+                "type": "string"
+              },
+              "leave_message_visibility": {
+                "type": "string"
+              },
+              "moderation_permission": {
+                "type": "string"
+              },
+              "owner_id": {
+                "type": "object",
+                "properties": {
+                  "union_id": {
+                    "type": "string"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "open_id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "restricted_mode_setting": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "boolean"
+                  },
+                  "screenshot_has_permission_setting": {
+                    "type": "string",
+                    "enum": [
+                      "all_members",
+                      "not_anyone"
+                    ]
+                  },
+                  "download_has_permission_setting": {
+                    "type": "string",
+                    "enum": [
+                      "all_members",
+                      "not_anyone"
+                    ]
+                  },
+                  "message_has_permission_setting": {
+                    "type": "string",
+                    "enum": [
+                      "all_members",
+                      "not_anyone"
+                    ]
+                  }
+                }
+              },
+              "group_message_type": {
+                "type": "string"
+              }
+            }
+          },
+          "before_change": {
+            "type": "object",
+            "properties": {
+              "avatar": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "i18n_names": {
+                "type": "object",
+                "properties": {
+                  "zh_cn": {
+                    "type": "string"
+                  },
+                  "en_us": {
+                    "type": "string"
+                  },
+                  "ja_jp": {
+                    "type": "string"
+                  }
+                }
+              },
+              "add_member_permission": {
+                "type": "string"
+              },
+              "share_card_permission": {
+                "type": "string"
+              },
+              "at_all_permission": {
+                "type": "string"
+              },
+              "edit_permission": {
+                "type": "string"
+              },
+              "membership_approval": {
+                "type": "string"
+              },
+              "join_message_visibility": {
+                "type": "string"
+              },
+              "leave_message_visibility": {
+                "type": "string"
+              },
+              "moderation_permission": {
+                "type": "string"
+              },
+              "owner_id": {
+                "type": "object",
+                "properties": {
+                  "union_id": {
+                    "type": "string"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "open_id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "restricted_mode_setting": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "boolean"
+                  },
+                  "screenshot_has_permission_setting": {
+                    "type": "string",
+                    "enum": [
+                      "all_members",
+                      "not_anyone"
+                    ]
+                  },
+                  "download_has_permission_setting": {
+                    "type": "string",
+                    "enum": [
+                      "all_members",
+                      "not_anyone"
+                    ]
+                  },
+                  "message_has_permission_setting": {
+                    "type": "string",
+                    "enum": [
+                      "all_members",
+                      "not_anyone"
+                    ]
+                  }
+                }
+              },
+              "group_message_type": {
+                "type": "string"
+              }
+            }
+          },
+          "moderator_list": {
+            "type": "object",
+            "properties": {
+              "added_member_list": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "tenant_key": {
+                      "type": "string"
+                    },
+                    "user_id": {
+                      "type": "object",
+                      "properties": {
+                        "union_id": {
+                          "type": "string"
+                        },
+                        "user_id": {
+                          "type": "string"
+                        },
+                        "open_id": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "removed_member_list": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "tenant_key": {
+                      "type": "string"
+                    },
+                    "user_id": {
+                      "type": "object",
+                      "properties": {
+                        "union_id": {
+                          "type": "string"
+                        },
+                        "user_id": {
+                          "type": "string"
+                        },
+                        "open_id": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "im.message.message_read_v1",
+      "description": "消息已读\n\n用户阅读机器人发送的单聊消息后触发此事件。",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "reader": {
+            "type": "object",
+            "properties": {
+              "reader_id": {
+                "type": "object",
+                "properties": {
+                  "union_id": {
+                    "type": "string"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "open_id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "read_time": {
+                "type": "string"
+              },
+              "tenant_key": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "read_time"
+            ]
+          },
+          "message_id_list": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "im.message.reaction.created_v1",
+      "description": "新增消息表情回复\n\n应用订阅该事件后，消息被添加表情回复时会触发此事件。事件体包含被添加表情回复的消息 message_id、添加表情回复的操作人 ID、表情类型、添加时间等信息。",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "reaction_type": {
+            "type": "object",
+            "properties": {
+              "emoji_type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "emoji_type"
+            ]
+          },
+          "operator_type": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "object",
+            "properties": {
+              "union_id": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              },
+              "open_id": {
+                "type": "string"
+              }
+            }
+          },
+          "action_time": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "im.message.reaction.deleted_v1",
+      "description": "删除消息表情回复\n\n应用订阅该事件后，消息被删除表情回复时会触发此事件。事件体包含被删除表情回复的消息 message_id、删除表情回复的操作人 ID、表情类型、添加时间等信息。",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "reaction_type": {
+            "type": "object",
+            "properties": {
+              "emoji_type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "emoji_type"
+            ]
+          },
+          "operator_type": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "object",
+            "properties": {
+              "union_id": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              },
+              "open_id": {
+                "type": "string"
+              }
+            }
+          },
+          "action_time": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "im.message.receive_v1",
+      "description": "接收消息\n\n机器人接收到用户/机器人发送的消息后触发此事件。",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "sender": {
+            "type": "object",
+            "properties": {
+              "sender_id": {
+                "type": "object",
+                "properties": {
+                  "union_id": {
+                    "type": "string"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "open_id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "sender_type": {
+                "type": "string"
+              },
+              "tenant_key": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sender_type"
+            ]
+          },
+          "message": {
+            "type": "object",
+            "properties": {
+              "message_id": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "parent_id": {
+                "type": "string"
+              },
+              "create_time": {
+                "type": "string"
+              },
+              "update_time": {
+                "type": "string"
+              },
+              "chat_id": {
+                "type": "string"
+              },
+              "thread_id": {
+                "type": "string"
+              },
+              "chat_type": {
+                "type": "string"
+              },
+              "message_type": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              },
+              "mentions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "object",
+                      "properties": {
+                        "union_id": {
+                          "type": "string"
+                        },
+                        "user_id": {
+                          "type": "string"
+                        },
+                        "open_id": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "mentioned_type": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "tenant_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "id",
+                    "name"
+                  ]
+                }
+              },
+              "user_agent": {
+                "type": "string"
+              },
+              "lark_agent_context": {
+                "type": "object",
+                "properties": {
+                  "active_chat_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "required": [
+              "message_id",
+              "create_time",
+              "chat_id",
+              "chat_type",
+              "message_type",
+              "content"
+            ]
+          }
+        },
+        "required": [
+          "sender",
+          "message"
+        ]
+      }
+    },
+    {
+      "name": "task.task.update_user_access_v2",
+      "description": "任务事件\n\n任务事件，事件类型包括： 任务创建、任务删除、任务标题变更、任务负责人变更、任务完整状态变更、任务描述变更、任务关注人变更、任务提醒事件变更、任务开始和截止时间变更",
+      "payloadSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "tenant_key": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "event_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "task_guid": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ]
+}

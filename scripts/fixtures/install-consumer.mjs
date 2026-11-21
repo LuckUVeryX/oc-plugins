@@ -73,7 +73,11 @@ async function verifyExecutable(name) {
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
-  assert.equal(responses.find((response) => response.id === 2)?.result?.events?.length, 203);
+  const events = responses.find((response) => response.id === 2)?.result?.events ?? [];
+  assert.equal(events.length, 22);
+  assert(events.some((event) => event.name === "lark.im.message.receive_v1"));
+  assert(events.some((event) => event.name === "gitlab.ciPipelineStatusesUpdated"));
+  assert(events.some((event) => event.name === "gitlab.noteable.notes_changed"));
   child.stdin.end();
   const exited = await child.exited;
   assert(!signal.aborted, `${name}: executable did not stop after stdin EOF`);
