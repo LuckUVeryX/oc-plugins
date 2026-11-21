@@ -53,7 +53,7 @@ test("advertises a param that a real watch accepts", async () => {
         host: "gitlab.test",
         identity: Effect.succeed(identity),
         client,
-        cable: Effect.succeed(cable),
+        cable,
       }).pipe(Effect.provideService(Scope.Scope, scope)),
     );
     const h = await connect({ sources: [source] });

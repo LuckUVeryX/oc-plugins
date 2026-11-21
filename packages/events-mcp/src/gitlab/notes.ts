@@ -1,4 +1,4 @@
-import { Effect, Option, Schema, type Scope } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { type EventType, type Occurrence, SourceError } from "../source.ts";
 import { type Cable, type CableIdentifier } from "./cable.ts";
 import type { GitlabClient } from "./client.ts";
@@ -79,7 +79,7 @@ const params = Schema.toJsonSchemaDocument(NotesParams, { onExcessProperty: "err
 
 export interface NotesEventOptions {
   readonly client: GitlabClient;
-  readonly cable: Effect.Effect<Cable, SourceError, Scope.Scope>;
+  readonly cable: Cable;
 }
 
 export const makeNotesEvent = (options: NotesEventOptions): EventType => ({
