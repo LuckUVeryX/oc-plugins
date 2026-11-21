@@ -15,7 +15,7 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import { Health, SourceError } from "../source.ts";
+import { Health, SourceError } from "../core/source.ts";
 import type { GitlabIdentity } from "./token.ts";
 
 export type Json = Schema.Json;

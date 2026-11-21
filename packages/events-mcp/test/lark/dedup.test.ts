@@ -1,9 +1,9 @@
 import { ConfigProvider, Effect, Fiber, Schema, type Scope } from "effect";
 import { expect, test, vi } from "vitest";
-import { makeLarkSource } from "../src/lark/source.ts";
-import type { LarkRequester } from "../src/lark/get.ts";
-import type { Source } from "../src/source.ts";
-import { connect } from "./harness.ts";
+import { makeLarkSource } from "../../src/lark/source.ts";
+import type { LarkRequester } from "../../src/lark/get.ts";
+import type { Source } from "../../src/core/source.ts";
+import { connect } from "../harness.ts";
 
 const sdk = vi.hoisted(() => ({
   dispatcher: undefined as undefined | import("@larksuiteoapi/node-sdk").EventDispatcher,

@@ -1,8 +1,8 @@
 import { DateTime, Deferred, Effect, Stream } from "effect";
 import { expect, test, vi } from "vitest";
-import { Health, SourceError, type EventType, type Occurrence } from "../src/source.ts";
-import { runWatch } from "../src/watch.ts";
-import { connect } from "./harness.ts";
+import { Health, SourceError, type EventType, type Occurrence } from "../../src/core/source.ts";
+import { runWatch } from "../../src/core/watch.ts";
+import { connect } from "../harness.ts";
 
 const pass = {
   prepare: "return input.event.data",

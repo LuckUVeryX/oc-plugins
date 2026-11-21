@@ -1,8 +1,8 @@
 import { Client, Domain } from "@larksuiteoapi/node-sdk";
 import { Config, Effect, Redacted, Schema, type Scope } from "effect";
-import generated from "../generated/events.json";
-import { type EventType, type Source, SourceError, SourceName } from "../source.ts";
-import { sdkLogger } from "../stderr-logger.ts";
+import generated from "./events.json";
+import { type EventType, type Source, SourceError, SourceName } from "../core/source.ts";
+import { sdkLogger } from "./sdk-logger.ts";
 import { makeGetTool, type LarkRequester } from "./get.ts";
 import { makeConnection } from "./producers.ts";
 

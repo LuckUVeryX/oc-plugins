@@ -1,10 +1,10 @@
 import { expect, test } from "vitest";
 import { Effect, Redacted, Schema } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
-import { makeGetTool, makeGitlabClient } from "../src/gitlab/client.ts";
-import type { GitlabIdentity } from "../src/gitlab/token.ts";
-import { SourceName } from "../src/source.ts";
-import { connect } from "./harness.ts";
+import { makeGetTool, makeGitlabClient } from "../../src/gitlab/client.ts";
+import type { GitlabIdentity } from "../../src/gitlab/token.ts";
+import { SourceName } from "../../src/core/source.ts";
+import { connect } from "../harness.ts";
 
 const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),

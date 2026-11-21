@@ -1,12 +1,12 @@
 import { Config, Duration, Effect, Exit, Option, Schema, Scope } from "effect";
-import generated from "../generated/gitlab-events.json";
+import generated from "./events.json";
 import {
   type EventType,
   type Occurrence,
   type Source,
   SourceError,
   SourceName,
-} from "../source.ts";
+} from "../core/source.ts";
 import { type Cable, type CableIdentifier, gitlabCable } from "./cable.ts";
 import { type GitlabEvent, decodeGitlabCatalog } from "./catalog.ts";
 import {

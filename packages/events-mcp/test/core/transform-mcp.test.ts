@@ -1,6 +1,6 @@
 import { Cause, Effect, Exit } from "effect";
 import { expect, onTestFinished, test, vi } from "vitest";
-import { connect } from "./harness.ts";
+import { connect } from "../harness.ts";
 
 const observed = vi.hoisted(() => ({
   entered: Promise.withResolvers<void>(),

@@ -1,9 +1,9 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, SUBSCRIPTION_ID_META_KEY } from "@modelcontextprotocol/server";
 import { DateTime, Effect, Exit, PubSub, Schema, Scope, Stream, SubscriptionRef } from "effect";
-import { type Catalog, makeCatalog } from "../src/catalog.ts";
+import { type Catalog, makeCatalog } from "../src/core/catalog.ts";
 import { makeGetTool, type LarkRequester } from "../src/lark/get.ts";
-import { makeServer } from "../src/server.ts";
+import { makeServer } from "../src/core/server.ts";
 import {
   Health,
   SourceName,
@@ -11,8 +11,8 @@ import {
   type Occurrence,
   type Source,
   type SourceError,
-} from "../src/source.ts";
-import { makeUpstream, type Upstream } from "../src/upstream.ts";
+} from "../src/core/source.ts";
+import { makeUpstream, type Upstream } from "../src/core/upstream.ts";
 
 type Options = Parameters<typeof makeServer>[0];
 

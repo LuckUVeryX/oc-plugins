@@ -1,6 +1,14 @@
 import { Effect, type JsonSchema, Schema } from "effect";
 import type { Tool } from "./source.ts";
 
+const QueryValue = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean]);
+
+export const GetInput = Schema.Struct({
+  path: Schema.String,
+  query: Schema.optionalKey(Schema.Record(Schema.String, QueryValue)),
+});
+export type GetInput = typeof GetInput.Type;
+
 export const makeTool = <Input>(options: {
   readonly description: string;
   readonly input: Schema.Decoder<Input>;

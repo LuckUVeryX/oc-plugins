@@ -1,8 +1,8 @@
 import { Effect, Schema } from "effect";
 import { expect, test } from "vitest";
-import { SourceName, type Source } from "../src/source.ts";
-import { makeTool } from "../src/tool.ts";
-import { connect } from "./harness.ts";
+import { SourceName, type Source } from "../../src/core/source.ts";
+import { makeTool } from "../../src/core/tool.ts";
+import { connect } from "../harness.ts";
 
 const Label = Schema.String.annotate({ identifier: "Label" });
 

@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { Effect, Fiber, Option, Queue, Schedule, Schema, Stream } from "effect";
-import { type Cable, type CableIdentifier, type Json, makeCable } from "../src/gitlab/cable.ts";
-import { Health, SourceError } from "../src/source.ts";
+import { type Cable, type CableIdentifier, type Json, makeCable } from "../../src/gitlab/cable.ts";
+import { Health, SourceError } from "../../src/core/source.ts";
 
 const WireFrame = Schema.Record(Schema.String, Schema.Unknown);
 

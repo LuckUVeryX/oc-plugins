@@ -1,12 +1,12 @@
 import { expect, test } from "vitest";
 import { Effect, Exit, Fiber, Queue, Redacted, Schema, Scope, Stream } from "effect";
-import type { Cable } from "../src/gitlab/cable.ts";
-import type { GetInput } from "../src/get.ts";
-import { type GitlabClient, type GraphqlRequest } from "../src/gitlab/client.ts";
-import { makeGitlabSource, type GitlabOptions } from "../src/gitlab/source.ts";
-import type { GitlabIdentity } from "../src/gitlab/token.ts";
-import { Health, SourceError, type Source } from "../src/source.ts";
-import { connect } from "./harness.ts";
+import type { Cable } from "../../src/gitlab/cable.ts";
+import type { GetInput } from "../../src/core/tool.ts";
+import { type GitlabClient, type GraphqlRequest } from "../../src/gitlab/client.ts";
+import { makeGitlabSource, type GitlabOptions } from "../../src/gitlab/source.ts";
+import type { GitlabIdentity } from "../../src/gitlab/token.ts";
+import { Health, SourceError, type Source } from "../../src/core/source.ts";
+import { connect } from "../harness.ts";
 
 const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),

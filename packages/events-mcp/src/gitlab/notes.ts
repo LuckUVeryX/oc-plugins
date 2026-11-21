@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import { type EventType, type Occurrence, SourceError } from "../source.ts";
+import { type EventType, type Occurrence, SourceError } from "../core/source.ts";
 import { type Cable, type CableIdentifier } from "./cable.ts";
 import type { GitlabClient } from "./client.ts";
 import { databaseIdHint, globalIdFor, NoteableType, readNoteable } from "./noteable.ts";

@@ -2,8 +2,8 @@ import { it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
-import { Health, type EventType } from "../src/source.ts";
-import { runWatch } from "../src/watch.ts";
+import { Health, type EventType } from "../../src/core/source.ts";
+import { runWatch } from "../../src/core/watch.ts";
 
 const tick: EventType = {
   name: "tick",

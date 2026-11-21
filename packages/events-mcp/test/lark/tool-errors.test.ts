@@ -1,8 +1,8 @@
 import { Effect } from "effect";
 import { expect, test } from "vitest";
-import { makeLarkSource } from "../src/lark/source.ts";
-import { makePrepare, makeWatchState } from "../src/prepare.ts";
-import { connect } from "./harness.ts";
+import { makeLarkSource } from "../../src/lark/source.ts";
+import { makePrepare, makeWatchState } from "../../src/core/prepare.ts";
+import { connect } from "../harness.ts";
 
 const credentialMessage = "No Lark app credentials";
 

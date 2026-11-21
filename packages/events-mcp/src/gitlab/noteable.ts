@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import { SourceError } from "../source.ts";
+import { SourceError } from "../core/source.ts";
 import type { GitlabClient } from "./client.ts";
 
 export const NoteableType = Schema.Literals(["merge_request", "issue"]);

@@ -5,9 +5,9 @@ import {
   HttpClientRequest,
   type HttpClientResponse,
 } from "effect/http";
-import { GetInput } from "../get.ts";
-import { SourceError, type Tool } from "../source.ts";
-import { makeTool } from "../tool.ts";
+import { GetInput } from "../core/tool.ts";
+import { SourceError, type Tool } from "../core/source.ts";
+import { makeTool } from "../core/tool.ts";
 import type { GitlabIdentity } from "./token.ts";
 
 export interface GraphqlRequest {

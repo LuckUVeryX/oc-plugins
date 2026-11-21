@@ -13,8 +13,8 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import { Health, type Occurrence, SourceError, type Subscription } from "../source.ts";
-import { sdkLogger } from "../stderr-logger.ts";
+import { Health, type Occurrence, SourceError, type Subscription } from "../core/source.ts";
+import { sdkLogger } from "./sdk-logger.ts";
 import { getLark, type LarkRequester } from "./get.ts";
 
 const STALE_EVENT_CUTOFF_MS = 60 * 60 * 1000;

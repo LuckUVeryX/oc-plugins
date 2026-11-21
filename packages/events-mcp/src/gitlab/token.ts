@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Config, Effect, Option, Redacted, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
-import { SourceError } from "../source.ts";
+import { SourceError } from "../core/source.ts";
 
 export interface GitlabIdentity {
   readonly token: Redacted.Redacted<string>;

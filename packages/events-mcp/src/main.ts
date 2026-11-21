@@ -2,14 +2,18 @@
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { BunRuntime } from "@effect/platform-bun";
 import { Cause, ConfigProvider, Effect, Exit, Logger, Runtime } from "effect";
-import { makeCatalog } from "./catalog.ts";
-import { decisionModel, stepTimeoutSeconds, watchDefaultSeconds } from "./config.ts";
-import { makeDecisions } from "./decisions.ts";
+import { makeCatalog } from "./core/catalog.ts";
+import { decisionModel, stepTimeoutSeconds, watchDefaultSeconds } from "./core/config.ts";
+import { makeDecisions } from "./core/decisions.ts";
 import { makeGitlabSource } from "./gitlab/source.ts";
 import { makeLarkSource } from "./lark/source.ts";
-import { makeServer } from "./server.ts";
-import { sdkLogger } from "./stderr-logger.ts";
-import { makeUpstream } from "./upstream.ts";
+import { makeServer } from "./core/server.ts";
+import { makeUpstream } from "./core/upstream.ts";
+
+// Stdout carries MCP messages, so transport errors go to stderr.
+const logError = (error: unknown): void => {
+  Effect.runSync(Effect.logError(error).pipe(Effect.provideService(Logger.LogToStderr, true)));
+};
 
 const program = Effect.gen(function* () {
   const lark = yield* makeLarkSource();
@@ -32,7 +36,7 @@ const program = Effect.gen(function* () {
           }),
         {
           legacy: "reject",
-          onerror: (error) => sdkLogger.error(error),
+          onerror: logError,
         },
       ),
     ),

@@ -1,5 +1,5 @@
 import { Effect, JsonSchema, Schema, SchemaRepresentation } from "effect";
-import { compileFilter, type CompiledFilter } from "./contract.ts";
+import { compileFilter, type CompiledFilter } from "./arguments.ts";
 import type { EventType, Source } from "./source.ts";
 
 export interface RegisteredEvent extends EventType {

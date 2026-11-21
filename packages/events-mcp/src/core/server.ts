@@ -9,7 +9,7 @@ import { Clock, Deferred, Effect, Logger, Schema, SchemaIssue } from "effect";
 import type { JsonSchema } from "effect";
 import { isObject } from "effect/Predicate";
 import type { Catalog, RegisteredEvent } from "./catalog.ts";
-import { decodeArguments, inputSchemaDocument } from "./contract.ts";
+import { decodeArguments, inputSchemaDocument } from "./arguments.ts";
 import { bytes, MAX_SCRIPT_BYTES } from "./limits.ts";
 import type { DecisionsRequester } from "./prepare.ts";
 import { makePrepare, makeWatchState } from "./prepare.ts";

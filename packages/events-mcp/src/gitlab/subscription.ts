@@ -1,5 +1,5 @@
 import { Effect, type Option, Result, type Schema, type Scope, Stream } from "effect";
-import type { Occurrence, SourceError, Subscription } from "../source.ts";
+import type { Occurrence, SourceError, Subscription } from "../core/source.ts";
 import type { Cable, CableIdentifier } from "./cable.ts";
 
 /** Turns one cable channel's frames into a source subscription, dropping frames that map to none. */

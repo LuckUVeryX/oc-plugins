@@ -1,10 +1,10 @@
 import { Effect, Schema } from "effect";
 import { expect, test, vi } from "vitest";
-import type { DecideInput } from "../src/decisions.ts";
-import { makeGetTool } from "../src/lark/get.ts";
-import { makePrepare, makeWatchState } from "../src/prepare.ts";
-import { SourceName } from "../src/source.ts";
-import { connect } from "./harness.ts";
+import type { DecideInput } from "../../src/core/decisions.ts";
+import { makeGetTool } from "../../src/lark/get.ts";
+import { makePrepare, makeWatchState } from "../../src/core/prepare.ts";
+import { SourceName } from "../../src/core/source.ts";
+import { connect } from "../harness.ts";
 
 const questions = [
   { type: "predicate", name: "p", instructions: "test", criteria: { true: "yes" } },

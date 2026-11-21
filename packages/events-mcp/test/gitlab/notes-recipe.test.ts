@@ -1,17 +1,17 @@
 import { expect, test, vi } from "vitest";
 import { Deferred, Effect, Fiber, Queue, Redacted, Schema, Stream } from "effect";
-import type { Cable } from "../src/gitlab/cable.ts";
-import type { GetInput } from "../src/get.ts";
-import type { GitlabClient } from "../src/gitlab/client.ts";
-import { notesRecipe } from "../src/gitlab/notes.ts";
-import { makeGitlabSource } from "../src/gitlab/source.ts";
-import type { GitlabIdentity } from "../src/gitlab/token.ts";
-import { makeCatalog } from "../src/catalog.ts";
-import { makePrepare, makeWatchState } from "../src/prepare.ts";
-import { makeTransform } from "../src/transform.ts";
-import { makeUpstream } from "../src/upstream.ts";
-import { Health, SourceError } from "../src/source.ts";
-import { runWatch } from "../src/watch.ts";
+import type { Cable } from "../../src/gitlab/cable.ts";
+import type { GetInput } from "../../src/core/tool.ts";
+import type { GitlabClient } from "../../src/gitlab/client.ts";
+import { notesRecipe } from "../../src/gitlab/notes.ts";
+import { makeGitlabSource } from "../../src/gitlab/source.ts";
+import type { GitlabIdentity } from "../../src/gitlab/token.ts";
+import { makeCatalog } from "../../src/core/catalog.ts";
+import { makePrepare, makeWatchState } from "../../src/core/prepare.ts";
+import { makeTransform } from "../../src/core/transform.ts";
+import { makeUpstream } from "../../src/core/upstream.ts";
+import { Health, SourceError } from "../../src/core/source.ts";
+import { runWatch } from "../../src/core/watch.ts";
 
 const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),

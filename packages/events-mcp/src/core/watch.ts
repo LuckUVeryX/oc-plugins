@@ -1,5 +1,5 @@
 import { Cause, Clock, DateTime, Deferred, Effect, type Schema, type Scope, Stream } from "effect";
-import { matchesFilter, type Filter } from "./contract.ts";
+import { matchesFilter, type Filter } from "./arguments.ts";
 import { bytes, MAX_EVENT_BYTES } from "./limits.ts";
 import { Health, type EventType, type Occurrence, type SourceError } from "./source.ts";
 import type { Upstream } from "./upstream.ts";

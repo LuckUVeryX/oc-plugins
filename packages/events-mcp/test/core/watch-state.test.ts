@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { connect } from "./harness.ts";
+import { connect } from "../harness.ts";
 
 const active = async (h: Awaited<ReturnType<typeof connect>>, count = 1) => {
   await vi.waitFor(() =>
