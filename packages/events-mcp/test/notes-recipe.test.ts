@@ -76,7 +76,7 @@ test("the notes recipe delivers the first new comment after START and nothing el
           host: "gitlab.test",
           identity: Effect.succeed(identity),
           client,
-          cable: Effect.succeed(cable),
+          cable,
         });
         const catalog = yield* makeCatalog([source]);
         const event = catalog.get("gitlab.noteable.notes_changed");

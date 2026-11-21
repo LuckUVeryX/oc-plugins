@@ -5,8 +5,10 @@ import {
   SUBSCRIPTION_ID_META_KEY,
   McpServer,
 } from "@modelcontextprotocol/server";
-import { Clock, Deferred, Effect, Logger, Schema } from "effect";
-import type { Catalog } from "./catalog.ts";
+import { Clock, Deferred, Effect, Logger, Schema, SchemaIssue } from "effect";
+import type { JsonSchema } from "effect";
+import { isObject } from "effect/Predicate";
+import type { Catalog, RegisteredEvent } from "./catalog.ts";
 import { decodeArguments, inputSchemaDocument } from "./contract.ts";
 import { bytes, MAX_SCRIPT_BYTES } from "./limits.ts";
 import type { DecisionsRequester } from "./prepare.ts";
@@ -42,6 +44,49 @@ const run = <A, E>(effect: Effect.Effect<A, E>, options?: Effect.RunOptions) =>
   Effect.runPromise(effect.pipe(Effect.provideService(Logger.LogToStderr, true)), options);
 
 const invalidParams = (message: string) => new ProtocolError(INVALID_PARAMS, message);
+
+const patternedParamHint = (params: JsonSchema.JsonSchema, name: string): string | undefined => {
+  if (!isObject(params)) return undefined;
+  const properties = params["properties"];
+  if (!isObject(properties)) return undefined;
+  const property = properties[name];
+  if (!isObject(property) || typeof property["pattern"] !== "string") return undefined;
+  const description = property["description"];
+  return typeof description === "string" ? `${name}: ${description}` : undefined;
+};
+
+const paramsError = (
+  event: RegisteredEvent,
+  error: Schema.SchemaError,
+  args: Schema.JsonObject,
+): string => {
+  const issues = SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues;
+  const paramName = (issue: (typeof issues)[number]): string | undefined => {
+    const path = issue.path ?? [];
+    return path.length === 1 && typeof path[0] === "string" ? path[0] : undefined;
+  };
+  // A union of required params also reports branches the caller did not choose,
+  // so prefer a supplied param that failed over a missing one.
+  const supplied = Object.keys(args);
+  const failed = issues.filter((issue) => {
+    const name = paramName(issue);
+    return name !== undefined && supplied.includes(name);
+  });
+  const details = new Set(
+    (failed.length === 0 ? issues : failed).map((issue) => {
+      const name = paramName(issue);
+      const hint =
+        name === undefined || !supplied.includes(name)
+          ? undefined
+          : patternedParamHint(event.params, name);
+      if (hint !== undefined) return `${hint} (${issue.message})`;
+      const path = issue.path ?? [];
+      const where = path.length === 0 ? "" : `\n  at ${JSON.stringify(path)}`;
+      return `${issue.message}${where}`;
+    }),
+  );
+  return `Invalid params for ${event.name}: ${[...details].join("\n")}`;
+};
 
 const text = (value: unknown) => ({
   content: [
@@ -199,9 +244,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
         const eventParams = yield* Schema.decodeUnknownEffect(event.paramsSchema)(decoded.params, {
           onExcessProperty: "error",
         }).pipe(
-          Effect.mapError((issue) =>
-            invalidParams(`Invalid params for ${event.name}: ${issue.message}`),
-          ),
+          Effect.mapError((error) => invalidParams(paramsError(event, error, decoded.params))),
         );
         const expiresInSeconds = decoded.expiresInSeconds ?? options.defaultExpiresInSeconds;
         const ended = yield* Deferred.make<string>();

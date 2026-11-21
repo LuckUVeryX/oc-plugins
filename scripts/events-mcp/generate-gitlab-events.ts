@@ -63,7 +63,6 @@ type JsonObject = Schema.JsonObject;
 interface Selection {
   readonly scalars: ReadonlyArray<string>;
   readonly objects: Readonly<Record<string, ReadonlyArray<string>>>;
-  readonly occurredAtField?: string;
 }
 
 const PROJECT_FIELDS = ["id", "fullPath", "name", "webUrl"];
@@ -92,8 +91,6 @@ const SELECTIONS = {
       mergeRequest: ["id", "iid", "title", "state", "webUrl"],
       user: USER_FIELDS,
     },
-    // A pipeline status change moves updatedAt, so it is the event's time.
-    occurredAtField: "updatedAt",
   },
   CiJob: {
     scalars: [
@@ -148,7 +145,6 @@ const SELECTIONS = {
       author: USER_FIELDS,
       headPipeline: ["id", "iid", "status", "ref", "sha", "path", "updatedAt"],
     },
-    // A merge request update need not advance updatedAt, so the selection carries no event time.
   },
 } as const satisfies Record<string, Selection>;
 
@@ -173,12 +169,18 @@ const EVENTS: ReadonlyArray<EventConfig> = [
   { field: "mergeRequestApprovalStateUpdated", selection: "MergeRequest", fragment: true },
 ];
 
-const SCALAR_NOTES: Readonly<Record<string, string | undefined>> = {
-  ProjectID: "global id, gid://gitlab/Project/599",
-  CiPipelineID: "global id, gid://gitlab/Ci::Pipeline/463669",
-  CiBuildID: "global id, gid://gitlab/Ci::Build/2093168",
-  UserID: "global id, gid://gitlab/User/256, the token's own user",
-  IssuableID: "global id, gid://gitlab/MergeRequest/1234",
+interface GlobalIdKind {
+  readonly prefix: string;
+  readonly example: number;
+  readonly qualifier?: string;
+}
+
+const GLOBAL_ID_KINDS: Readonly<Record<string, GlobalIdKind>> = {
+  ProjectID: { prefix: "gid://gitlab/Project/", example: 599 },
+  CiPipelineID: { prefix: "gid://gitlab/Ci::Pipeline/", example: 463669 },
+  CiBuildID: { prefix: "gid://gitlab/Ci::Build/", example: 2093168 },
+  UserID: { prefix: "gid://gitlab/User/", example: 256, qualifier: "the token's own user" },
+  IssuableID: { prefix: "gid://gitlab/MergeRequest/", example: 1234 },
 };
 
 const child = (ref: TypeRef): TypeRef => {
@@ -200,8 +202,13 @@ const named = (ref: TypeRef): NamedRef => {
 
 const isNonNull = (ref: TypeRef): boolean => ref.kind === "NON_NULL";
 
-const noteFor = (argument: ArgumentDef): string | undefined =>
-  SCALAR_NOTES[named(argument.type).name];
+const globalIdKind = (argument: ArgumentDef) => GLOBAL_ID_KINDS[named(argument.type).name];
+
+const globalIdArgumentNote = ({ prefix, example, qualifier }: GlobalIdKind): string =>
+  `global id, ${prefix}${example}${qualifier === undefined ? "" : `, ${qualifier}`}`;
+
+const globalIdParamDescription = ({ prefix }: GlobalIdKind): string =>
+  `A GitLab global ID such as ${prefix}123, not the number in the web URL.`;
 
 const graphqlType = (ref: TypeRef): string => {
   if (ref.kind === "NON_NULL") return `${graphqlType(child(ref))}!`;
@@ -319,11 +326,16 @@ const paramsSchema = (
   const properties: Record<string, Json> = {};
   const required: Array<string> = [];
   for (const argument of field.args) {
-    const description = noteFor(argument) ?? argument.description ?? "";
-    properties[argument.name] = {
-      type: "string",
-      ...(description === "" ? {} : { description }),
-    };
+    const kind = globalIdKind(argument);
+    const description = argument.description ?? "";
+    properties[argument.name] =
+      kind === undefined
+        ? { type: "string", ...(description === "" ? {} : { description }) }
+        : {
+            type: "string",
+            pattern: `^${kind.prefix}\\d+$`,
+            description: globalIdParamDescription(kind),
+          };
     if (isNonNull(argument.type)) required.push(argument.name);
   }
   return {
@@ -338,8 +350,8 @@ const paramsSchema = (
 const describe = (field: FieldDef, requireOneOf: ReadonlyArray<string> | undefined): string => {
   const what = (field.description ?? field.name).split(" Introduced in ")[0];
   const text = (argument: ArgumentDef) => {
-    const note = noteFor(argument);
-    return note === undefined ? argument.name : `${argument.name} (${note})`;
+    const kind = globalIdKind(argument);
+    return kind === undefined ? argument.name : `${argument.name} (${globalIdArgumentNote(kind)})`;
   };
   const options = requireOneOf ?? [];
   const chosen = field.args.filter((argument) => options.includes(argument.name));
@@ -421,9 +433,6 @@ const generate = (raw: unknown) => {
       params,
       query: queryFor(field, selectionSet),
       payload,
-      ...(selection.occurredAtField === undefined
-        ? {}
-        : { occurredAtField: selection.occurredAtField }),
     };
   });
   return { events };
