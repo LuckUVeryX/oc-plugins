@@ -153,6 +153,7 @@ interface EventConfig {
   readonly selection: keyof typeof SELECTIONS;
   readonly fragment?: boolean;
   readonly requireOneOf?: ReadonlyArray<string>;
+  readonly when: string;
 }
 
 const EVENTS: ReadonlyArray<EventConfig> = [
@@ -160,27 +161,74 @@ const EVENTS: ReadonlyArray<EventConfig> = [
     field: "ciPipelineStatusesUpdated",
     selection: "Pipeline",
     requireOneOf: ["projectId", "projectFullPath"],
+    when: "Watch a project's pipeline status changes. Pass projectFullPath, such as glints/otp, or projectId. Pass sha to follow one commit.",
   },
-  { field: "ciPipelineStatusUpdated", selection: "Pipeline" },
-  { field: "ciJobStatusUpdated", selection: "CiJob" },
-  { field: "userMergeRequestUpdated", selection: "MergeRequest" },
-  { field: "mergeRequestMergeStatusUpdated", selection: "MergeRequest", fragment: true },
-  { field: "mergeRequestReviewersUpdated", selection: "MergeRequest", fragment: true },
-  { field: "mergeRequestApprovalStateUpdated", selection: "MergeRequest", fragment: true },
+  {
+    field: "ciPipelineStatusUpdated",
+    selection: "Pipeline",
+    when: "Follow one pipeline through its status changes. Pass its global id as pipelineId.",
+  },
+  {
+    field: "ciJobStatusUpdated",
+    selection: "CiJob",
+    when: "Follow one job through its status changes, for example while a retry runs. Pass its global id as jobId.",
+  },
+  {
+    field: "userMergeRequestUpdated",
+    selection: "MergeRequest",
+    when: "Watch merge requests whose author, assignee, or reviewer is the token's user. Pass the token user's global id as userId.",
+  },
+  {
+    field: "mergeRequestMergeStatusUpdated",
+    selection: "MergeRequest",
+    fragment: true,
+    when: "Follow one merge request while GitLab recomputes whether it can merge. Pass its global id as issuableId.",
+  },
+  {
+    field: "mergeRequestReviewersUpdated",
+    selection: "MergeRequest",
+    fragment: true,
+    when: "Watch one merge request's reviewers, for example while you wait to be added as a reviewer. Pass its global id as issuableId.",
+  },
+  {
+    field: "mergeRequestApprovalStateUpdated",
+    selection: "MergeRequest",
+    fragment: true,
+    when: "Watch one merge request's approvals, for example while you wait for approval. Pass its global id as issuableId.",
+  },
 ];
 
 interface GlobalIdKind {
   readonly prefix: string;
-  readonly example: number;
-  readonly qualifier?: string;
+  readonly source: string;
 }
 
 const GLOBAL_ID_KINDS: Readonly<Record<string, GlobalIdKind>> = {
-  ProjectID: { prefix: "gid://gitlab/Project/", example: 599 },
-  CiPipelineID: { prefix: "gid://gitlab/Ci::Pipeline/", example: 463669 },
-  CiBuildID: { prefix: "gid://gitlab/Ci::Build/", example: 2093168 },
-  UserID: { prefix: "gid://gitlab/User/", example: 256, qualifier: "the token's own user" },
-  IssuableID: { prefix: "gid://gitlab/MergeRequest/", example: 1234 },
+  ProjectID: {
+    prefix: "gid://gitlab/Project/",
+    source: "the numeric id from GET /projects/:id",
+  },
+  CiPipelineID: {
+    prefix: "gid://gitlab/Ci::Pipeline/",
+    source: "the pipeline's numeric id from GET /projects/:id/pipelines/:pipeline_id",
+  },
+  CiBuildID: {
+    prefix: "gid://gitlab/Ci::Build/",
+    source: "the job's numeric id from GET /projects/:id/jobs/:job_id",
+  },
+  UserID: {
+    prefix: "gid://gitlab/User/",
+    source: "the token user's numeric id from GET /user",
+  },
+  IssuableID: {
+    prefix: "gid://gitlab/MergeRequest/",
+    source:
+      "the merge request's database id from GET /projects/:id/merge_requests/:iid, not the iid",
+  },
+};
+
+const PARAM_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  projectFullPath: "Project path as it appears in the web URL, such as glints/otp.",
 };
 
 const child = (ref: TypeRef): TypeRef => {
@@ -204,11 +252,8 @@ const isNonNull = (ref: TypeRef): boolean => ref.kind === "NON_NULL";
 
 const globalIdKind = (argument: ArgumentDef) => GLOBAL_ID_KINDS[named(argument.type).name];
 
-const globalIdArgumentNote = ({ prefix, example, qualifier }: GlobalIdKind): string =>
-  `global id, ${prefix}${example}${qualifier === undefined ? "" : `, ${qualifier}`}`;
-
-const globalIdParamDescription = ({ prefix }: GlobalIdKind): string =>
-  `A GitLab global ID such as ${prefix}123, not the number in the web URL.`;
+const globalIdParamDescription = ({ prefix, source }: GlobalIdKind): string =>
+  `Use ${prefix}<id>. Replace <id> with ${source}.`;
 
 const graphqlType = (ref: TypeRef): string => {
   if (ref.kind === "NON_NULL") return `${graphqlType(child(ref))}!`;
@@ -327,7 +372,7 @@ const paramsSchema = (
   const required: Array<string> = [];
   for (const argument of field.args) {
     const kind = globalIdKind(argument);
-    const description = argument.description ?? "";
+    const description = PARAM_DESCRIPTIONS[argument.name] ?? argument.description ?? "";
     properties[argument.name] =
       kind === undefined
         ? { type: "string", ...(description === "" ? {} : { description }) }
@@ -345,21 +390,6 @@ const paramsSchema = (
       : { anyOf: requireOneOf.map((name) => ({ required: [name] })) }),
     additionalProperties: false,
   };
-};
-
-const describe = (field: FieldDef, requireOneOf: ReadonlyArray<string> | undefined): string => {
-  const what = (field.description ?? field.name).split(" Introduced in ")[0];
-  const text = (argument: ArgumentDef) => {
-    const kind = globalIdKind(argument);
-    return kind === undefined ? argument.name : `${argument.name} (${globalIdArgumentNote(kind)})`;
-  };
-  const options = requireOneOf ?? [];
-  const chosen = field.args.filter((argument) => options.includes(argument.name));
-  const choice = chosen.map(text).join(" or ");
-  const rest = field.args
-    .filter((argument) => !options.includes(argument.name))
-    .map((argument) => (isNonNull(argument.type) ? text(argument) : `optional ${text(argument)}`));
-  return `${what}\n\nParams: ${[choice, ...rest].filter((part) => part !== "").join(", ")}.`;
 };
 
 const queryFor = (field: FieldDef, selection: string): string => {
@@ -429,7 +459,7 @@ const generate = (raw: unknown) => {
     const payload = payloadSchema(selectionType, selection, types);
     return {
       name: event.field,
-      description: describe(field, event.requireOneOf),
+      description: event.when,
       params,
       query: queryFor(field, selectionSet),
       payload,
