@@ -1,6 +1,6 @@
 # events-mcp
 
-events-mcp is a local MCP server that wakes an OpenCode session when something happens in Lark or GitLab. It connects to each source, delivers the raw events a watch asks for, and gives the watch read tools and memory. The agent chooses what to watch and what deserves a wake-up.
+events-mcp is a local MCP server that wakes an OpenCode session when something happens in Lark or GitLab. It connects to each integration, delivers the raw events a watch asks for, and gives the watch read tools and memory. The agent chooses what to watch and what deserves a wake-up.
 
 ## What you can watch
 
@@ -48,7 +48,7 @@ All 8 events arrive over one Action Cable connection to `/-/cable`.
 - A Lark app in WebSocket event mode, with its app ID (`cli_` followed by 16 hex characters) and app secret.
 - A GitLab personal access token for the host with `read_api` and `read_repository`, or `glab` authenticated for that host.
 
-The server reads events and source data. The agent replies with its own tools, such as `lark-cli` or `glab`.
+The server reads events and integration data. The agent replies with its own tools, such as `lark-cli` or `glab`.
 
 ### Install
 
@@ -110,7 +110,7 @@ Restart the OpenCode service after you change the config or environment.
 
 - Everything is in memory. Watches, per-watch state, and the dedup cache live in the server process. A restart starts fresh.
 - Delivery is live only. Events that arrive while no watch is open, or while a connection reconnects, are dropped. The stream reports `cursor: null`, so there is no replay.
-- Duplicate event IDs are dropped within each shared subscription. Lark drops events older than an hour.
+- Duplicate event IDs are dropped within each shared feed. Lark drops events older than an hour.
 - OpenCode ends every watch without a stop message when it reloads, restarts, or unloads an idle location. Set `location_idle_timeout` to `false` for long watches.
 - Lark delivers each app's events to one WebSocket client. Before connecting, the server reads `/open-apis/event/v1/connection`. If another consumer is online, such as `lark-cli event consume` or this server on another machine, the watch fails with a clear error instead of splitting events.
 - GitLab marks the GraphQL subscription fields Experiment. The notes channel is not part of the GraphQL schema and can also change.
@@ -135,7 +135,7 @@ A watch stops after its first wake unless you pass `"once": false`.
 
 The wake text carries the string transform returned. To stop a watch early, call `stop_watch({ "watchId": "..." })`. `list_watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again. If a watch stops with `<step> failed`, fix that step and arm a new watch.
 
-Each script is at most 64 KB, and both see `input.event = { eventId, timestamp, data }`. The event `data` is the raw upstream payload.
+Each script is at most 64 KB, and both see `input.event = { eventId, timestamp, data }`. The event `data` is the raw integration payload.
 
 A typical watch returns the data unchanged:
 
@@ -309,25 +309,26 @@ return JSON.stringify(input.prepared);
 
 ### Troubleshoot
 
-| Symptom                                                           | Cause                                                                                                                                           |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Server code changes do not take effect after a reload             | With `pool: true`, the server process outlives OpenCode reloads. Stop the `events-mcp` process; OpenCode starts a fresh one on the next reload. |
-| Server fails to start                                             | `GITLAB_HOST` is empty, or the committed event catalog is invalid. Server logs go to stderr.                                                    |
-| A Lark watch stops with "No Lark app credentials"                 | Set `LARK_APP_ID` and `LARK_APP_SECRET` for the OpenCode service and arm a new watch.                                                           |
-| Watch fails with "Another connection for this Lark app is online" | Another consumer of the same app holds a connection, such as `lark-cli event consume` or this server elsewhere. Stop it and arm a new watch.    |
-| Some events arrive, others do not                                 | The app lacks the subscription, or the event arrived while the connection was reconnecting.                                                     |
-| An event never arrives                                            | The app lacks the permission or subscription, or Lark does not deliver that event over WebSocket.                                               |
-| A watch stops with `prepare failed` and `Lark API 99991672`       | The app lacks a read scope for the request.                                                                                                     |
-| A GitLab watch stops with "No GitLab token"                       | Set `GITLAB_TOKEN`, or authenticate `glab` for the host so `glab config get token --host <host>` returns a token.                               |
-| A GitLab watch stops with "is not accessible"                     | The token cannot read that project or merge request, or the global ID is wrong. `gitlab_get` with `/projects/<id>` shows the same result.       |
-| A GitLab pipeline or job watch stays silent                       | The token cannot read that pipeline or job, and GitLab gives no lookup by global ID alone.                                                      |
-| A GitLab watch stops with "Unauthorized subscription"             | `userId` is not the token's user, or the merge request is outside the token's access.                                                           |
-| A notes watch stops with "rejected the subscription"              | `projectId` and `noteableId` do not belong together, or the token cannot read that project or noteable.                                         |
-| A notes watch stops with "exceeds 16384 bytes"                    | Transform returned an event bigger than OpenCode accepts. Return less data.                                                                     |
-| A watch stops with a timeout                                      | The event exceeded `EVENTS_STEP_TIMEOUT_SECONDS`. Inspect the named step or increase the limit.                                                 |
-| A watch stops with "Watch state exceeds 65536 bytes"              | Prepare stores too much in `tools.watch.state`. Keep less, or derive it again on each event.                                                    |
-| A watch disappears without a stop message                         | OpenCode reloaded, restarted, or unloaded the idle location. Set `location_idle_timeout` to `false` and arm a new watch.                        |
-| Memory grows over time                                            | Watches and their buffers live in one long-running server process, and buffers are unbounded. Run `list_watches` and stop unused watches.       |
+| Symptom                                                           | Cause                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server code changes do not take effect after a reload             | With `pool: true`, the server process outlives OpenCode reloads. Stop the `events-mcp` process; OpenCode starts a fresh one on the next reload.                                                                                                               |
+| Server fails to start                                             | `GITLAB_HOST` is empty, or the committed event catalog is invalid. Server logs go to stderr.                                                                                                                                                                  |
+| A Lark watch stops with "No Lark app credentials"                 | Set `LARK_APP_ID` and `LARK_APP_SECRET` for the OpenCode service and arm a new watch.                                                                                                                                                                         |
+| Watch fails with "Another connection for this Lark app is online" | Another consumer of the same app holds a connection, such as `lark-cli event consume` or this server elsewhere. Stop it and arm a new watch.                                                                                                                  |
+| Some events arrive, others do not                                 | The app lacks the subscription, or the event arrived while the connection was reconnecting.                                                                                                                                                                   |
+| An event never arrives                                            | The app lacks the permission or subscription, or Lark does not deliver that event over WebSocket.                                                                                                                                                             |
+| A watch stops with `prepare failed` and `Lark API 99991672`       | The app lacks a read scope for the request.                                                                                                                                                                                                                   |
+| A GitLab watch stops with "No GitLab token"                       | Set `GITLAB_TOKEN`, or authenticate `glab` for the host so `glab config get token --host <host>` returns a token.                                                                                                                                             |
+| A project watch stops with "is not accessible"                    | The token cannot read that project, or the path is wrong. `gitlab_get` with `/projects/<id>` shows the same result.                                                                                                                                           |
+| A GitLab pipeline or job watch stays silent                       | The token cannot read that pipeline or job, and GitLab gives no lookup by global ID alone.                                                                                                                                                                    |
+| A GitLab watch stops with "is not the token's user"               | `userId` is not the token's user. Pass the token user's global ID. GitLab only delivers merge requests assigned to or reviewed by that user.                                                                                                                  |
+| A merge request watch stops with "is not accessible"              | The merge request global ID does not exist, or the token cannot read that merge request. Pass `gid://gitlab/MergeRequest/<database id>`, not the !iid. Confirm with `gitlab_get` on `/projects/<project>/merge_requests/<iid>`; its `.id` is the database id. |
+| A notes watch stops with "rejected the subscription"              | `projectId` and `noteableId` do not belong together, or the token cannot read that project or noteable.                                                                                                                                                       |
+| A notes watch stops with "exceeds 16384 bytes"                    | Transform returned an event bigger than OpenCode accepts. Return less data.                                                                                                                                                                                   |
+| A watch stops with a timeout                                      | The event exceeded `EVENTS_STEP_TIMEOUT_SECONDS`. Inspect the named step or increase the limit.                                                                                                                                                               |
+| A watch stops with "Watch state exceeds 65536 bytes"              | Prepare stores too much in `tools.watch.state`. Keep less, or derive it again on each event.                                                                                                                                                                  |
+| A watch disappears without a stop message                         | OpenCode reloaded, restarted, or unloaded the idle location. Set `location_idle_timeout` to `false` and arm a new watch.                                                                                                                                      |
+| Memory grows over time                                            | Watches and their buffers live in one long-running server process, and buffers are unbounded. Run `list_watches` and stop unused watches.                                                                                                                     |
 
 ### Update
 

@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Config, Effect, Option, Redacted, Schema } from "effect";
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
-import { SourceError } from "../source.ts";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import { Rejected, type IntegrationError, Unavailable } from "../core/integration.ts";
 
 export interface GitlabIdentity {
   readonly token: Redacted.Redacted<string>;
@@ -10,14 +10,14 @@ export interface GitlabIdentity {
   readonly username: string;
 }
 
-const missing = (host: string): SourceError =>
-  SourceError.Rejected({
+const missing = (host: string): IntegrationError =>
+  new Rejected({
     message: `No GitLab token for ${host}. Set GITLAB_TOKEN, or authenticate glab so \`glab config get token --host ${host}\` returns one.`,
   });
 
 const exec = promisify(execFile);
 
-const fromGlab = (host: string): Effect.Effect<Redacted.Redacted<string>, SourceError> =>
+const fromGlab = (host: string): Effect.Effect<Redacted.Redacted<string>, IntegrationError> =>
   Effect.tryPromise({
     try: async () => {
       const { stdout } = await exec("glab", ["config", "get", "token", "--host", host], {
@@ -48,27 +48,29 @@ const validate = Effect.fn("GitlabToken.validate")(function* (input: {
     HttpClientRequest.acceptJson,
   );
   const response = yield* HttpClient.execute(request).pipe(
-    Effect.mapError(() =>
-      SourceError.Unavailable({
-        message: `Could not reach https://${input.host}/api/v4/user to validate the GitLab token`,
-      }),
+    Effect.mapError(
+      () =>
+        new Unavailable({
+          message: `Could not reach https://${input.host}/api/v4/user to validate the GitLab token`,
+        }),
     ),
   );
   if (response.status !== 200)
     return yield* Effect.fail(
       response.status === 401 || response.status === 403
-        ? SourceError.Rejected({
+        ? new Rejected({
             message: `GitLab rejected the token for ${input.host} (HTTP ${response.status})`,
           })
-        : SourceError.Unavailable({
+        : new Unavailable({
             message: `GitLab could not validate the token for ${input.host} (HTTP ${response.status})`,
           }),
     );
   const user = yield* HttpClientResponse.schemaBodyJson(UserResponse)(response).pipe(
-    Effect.mapError(() =>
-      SourceError.Unavailable({
-        message: `GitLab returned an unexpected user response for ${input.host}`,
-      }),
+    Effect.mapError(
+      () =>
+        new Unavailable({
+          message: `GitLab returned an unexpected user response for ${input.host}`,
+        }),
     ),
   );
   return { token: input.token, userId: user.id, username: user.username };
@@ -87,6 +89,7 @@ const resolve = Effect.fn("GitlabToken.resolve")(function* (host: string) {
   return yield* validate({ host, token });
 });
 
-export const resolveIdentity: (host: string) => Effect.Effect<GitlabIdentity, SourceError> = (
-  host,
-) => resolve(host).pipe(Effect.provide(FetchHttpClient.layer));
+export const resolveIdentity: (
+  host: string,
+) => Effect.Effect<GitlabIdentity, IntegrationError, HttpClient.HttpClient> = (host) =>
+  resolve(host);

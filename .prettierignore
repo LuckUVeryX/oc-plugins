@@ -1,1 +1,2 @@
-packages/events-mcp/src/generated/events.json
+packages/events-mcp/src/lark/events.json
+packages/events-mcp/src/gitlab/events.json

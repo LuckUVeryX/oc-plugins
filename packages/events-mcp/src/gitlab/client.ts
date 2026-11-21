@@ -1,28 +1,36 @@
-import { Effect, Option, Redacted, Result, Schema } from "effect";
+import { Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect";
 import {
   FetchHttpClient,
   HttpClient,
   HttpClientRequest,
   type HttpClientResponse,
 } from "effect/http";
-import { GetInput } from "../get.ts";
-import { SourceError, type Tool } from "../source.ts";
-import { makeTool } from "../tool.ts";
-import type { GitlabIdentity } from "./token.ts";
+import {
+  Rejected,
+  type IntegrationError,
+  ToolError,
+  type Tool,
+  Unavailable,
+} from "../core/integration.ts";
+import { GetInput, makeTool } from "../core/tool.ts";
+import { GitlabAuth } from "./auth.ts";
+import type { GitlabIdentity as TokenIdentity } from "./token.ts";
 
 export interface GraphqlRequest {
   readonly query: string;
   readonly variables: Readonly<Record<string, Schema.Json>>;
 }
 
-export interface GitlabClient {
-  readonly get: (input: GetInput) => Effect.Effect<Schema.Json, SourceError>;
-  readonly graphql: (request: GraphqlRequest) => Effect.Effect<Schema.JsonObject, SourceError>;
+export interface Interface {
+  readonly get: (input: GetInput) => Effect.Effect<Schema.Json, IntegrationError>;
+  readonly graphql: (request: GraphqlRequest) => Effect.Effect<Schema.JsonObject, IntegrationError>;
 }
+
+export class Service extends Context.Service<Service, Interface>()("@events-mcp/GitlabClient") {}
 
 export interface GitlabClientOptions {
   readonly host: string;
-  readonly identity: Effect.Effect<GitlabIdentity, SourceError>;
+  readonly identity: Effect.Effect<TokenIdentity, IntegrationError>;
   readonly http?: HttpClient.HttpClient | undefined;
 }
 
@@ -38,11 +46,12 @@ export const GraphqlResult = Schema.Struct({
   ),
 });
 
-export const graphqlFailure = (errors: ReadonlyArray<{ readonly message: string }>): SourceError =>
-  SourceError.Rejected({ message: errors.map((error) => error.message).join("; ") });
+export const graphqlFailure = (
+  errors: ReadonlyArray<{ readonly message: string }>,
+): IntegrationError => new Rejected({ message: errors.map((error) => error.message).join("; ") });
 
-const invalidPath = (reason: string): SourceError =>
-  SourceError.Rejected({ message: `Invalid GitLab REST path. ${reason}` });
+const invalidPath = (reason: string): IntegrationError =>
+  new Rejected({ message: `Invalid GitLab REST path. ${reason}` });
 
 const validPath = (path: string): boolean =>
   path.startsWith("/") && !path.includes("//") && !path.includes("..") && !/[?#\\\s]/.test(path);
@@ -56,30 +65,30 @@ const errorBody = (body: string): string => {
   });
 };
 
-const statusError = (status: number, label: string, body: string): SourceError => {
+const statusError = (status: number, label: string, body: string): IntegrationError => {
   const detail = errorBody(body);
   const message = `GitLab HTTP ${status} on ${label}${detail === "" ? "" : `: ${detail}`}`;
   return status === 408 || status === 429 || status >= 500
-    ? SourceError.Unavailable({ message })
-    : SourceError.Rejected({ message });
+    ? new Unavailable({ message })
+    : new Rejected({ message });
 };
 
 const jsonBody = (response: HttpClientResponse.HttpClientResponse, label: string) =>
   response.json.pipe(
-    Effect.mapError(() =>
-      SourceError.Unavailable({ message: `Could not read the GitLab response from ${label}` }),
+    Effect.mapError(
+      () => new Unavailable({ message: `Could not read the GitLab response from ${label}` }),
     ),
     // response.json parses JSON numbers such as 1e400 to Infinity, which no MCP client can read back.
     Effect.flatMap((value) =>
       Schema.decodeUnknownEffect(Schema.Json)(value).pipe(
-        Effect.mapError(() =>
-          SourceError.Unavailable({ message: `GitLab returned invalid JSON from ${label}` }),
+        Effect.mapError(
+          () => new Unavailable({ message: `GitLab returned invalid JSON from ${label}` }),
         ),
       ),
     ),
   );
 
-export const makeGitlabClient = (options: GitlabClientOptions): Effect.Effect<GitlabClient> =>
+export const makeGitlabClient = (options: GitlabClientOptions): Effect.Effect<Interface> =>
   Effect.gen(function* () {
     const base = new URL(`https://${options.host}`);
     const http =
@@ -95,13 +104,13 @@ export const makeGitlabClient = (options: GitlabClientOptions): Effect.Effect<Gi
     const run = (
       request: HttpClientRequest.HttpClientRequest,
       label: string,
-    ): Effect.Effect<Schema.Json, SourceError> =>
+    ): Effect.Effect<Schema.Json, IntegrationError> =>
       Effect.gen(function* () {
         const response = yield* http
           .execute(request)
           .pipe(
-            Effect.mapError(() =>
-              SourceError.Unavailable({ message: `Could not reach GitLab on ${label}` }),
+            Effect.mapError(
+              () => new Unavailable({ message: `Could not reach GitLab on ${label}` }),
             ),
           );
         if (response.status < 200 || response.status >= 300) {
@@ -148,26 +157,37 @@ export const makeGitlabClient = (options: GitlabClientOptions): Effect.Effect<Gi
       );
       const body = yield* run(httpRequest, "/api/graphql");
       const envelope = yield* Schema.decodeUnknownEffect(GraphqlResult)(body).pipe(
-        Effect.mapError(() =>
-          SourceError.Unavailable({ message: "GitLab returned an unexpected GraphQL response" }),
+        Effect.mapError(
+          () => new Unavailable({ message: "GitLab returned an unexpected GraphQL response" }),
         ),
       );
       const errors = envelope.errors ?? [];
       if (errors.length > 0) return yield* Effect.fail(graphqlFailure(errors));
       if (envelope.data === null || envelope.data === undefined)
-        return yield* Effect.fail(
-          SourceError.Unavailable({ message: "GitLab returned no GraphQL data" }),
-        );
+        return yield* Effect.fail(new Unavailable({ message: "GitLab returned no GraphQL data" }));
       return envelope.data;
     });
 
     return { get, graphql };
   });
 
-export const makeGetTool = (client: GitlabClient): Tool =>
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const identity = yield* GitlabAuth.Service;
+    return Service.of(
+      yield* makeGitlabClient({ host: identity.host, identity: identity.identity }),
+    );
+  }),
+);
+
+export const makeGetTool = (client: Interface): Tool =>
   makeTool({
     description:
       "Read-only GET to the GitLab REST API as the token's user. path is under /api/v4. Returns JSON.",
     input: GetInput,
-    run: (input) => client.get(input).pipe(Effect.mapError((error) => error.message)),
+    run: (input) =>
+      client.get(input).pipe(Effect.mapError((error) => new ToolError({ message: error.message }))),
   });
+
+export * as GitlabClient from "./client.ts";
