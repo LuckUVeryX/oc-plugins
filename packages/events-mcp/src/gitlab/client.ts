@@ -184,7 +184,7 @@ export const layer = Layer.effect(
 export const makeGetTool = (client: Interface): Tool =>
   makeTool({
     description:
-      "Read-only GET to the GitLab REST API as the token's user. path is under /api/v4. Returns JSON.",
+      "Read GitLab REST data with the token's permissions, for example to find the database id behind a merge request or to read notes before arming a watch or from inside prepare. path starts with /, stays under /api/v4, and carries no query string. Pass parameters in query. Percent-encode a project path as /projects/group%2Fproject. Returns the JSON body.",
     input: GetInput,
     run: (input) =>
       client.get(input).pipe(Effect.mapError((error) => new ToolError({ message: error.message }))),

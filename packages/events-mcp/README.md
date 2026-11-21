@@ -29,16 +29,16 @@ All 14 events take `params: {}` and arrive over one shared WebSocket for the app
 
 All 8 events arrive over one Action Cable connection to `/-/cable`.
 
-| Event                                     | Params                                           | Payload                                                      |
-| ----------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------ |
-| `gitlab.ciPipelineStatusesUpdated`        | `projectFullPath` or `projectId`, optional `sha` | Any pipeline in the project, on each status change.          |
-| `gitlab.ciPipelineStatusUpdated`          | `pipelineId`                                     | One pipeline, on each status change.                         |
-| `gitlab.ciJobStatusUpdated`               | `jobId`                                          | One job, on each status change.                              |
-| `gitlab.userMergeRequestUpdated`          | `userId`                                         | A merge request assigned to or reviewed by the token's user. |
-| `gitlab.mergeRequestMergeStatusUpdated`   | `issuableId`                                     | A merge request, when its merge status changes.              |
-| `gitlab.mergeRequestReviewersUpdated`     | `issuableId`                                     | A merge request, when its reviewers change.                  |
-| `gitlab.mergeRequestApprovalStateUpdated` | `issuableId`                                     | A merge request, when its approval state changes.            |
-| `gitlab.noteable.notes_changed`           | `projectId`, `noteableType`, `noteableId`        | A merge request or issue, when any note changes.             |
+| Event                                     | Params                                           | Payload                                                                  |
+| ----------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------ |
+| `gitlab.ciPipelineStatusesUpdated`        | `projectFullPath` or `projectId`, optional `sha` | Any pipeline in the project, on each status change.                      |
+| `gitlab.ciPipelineStatusUpdated`          | `pipelineId`                                     | One pipeline, on each status change.                                     |
+| `gitlab.ciJobStatusUpdated`               | `jobId`                                          | One job, on each status change.                                          |
+| `gitlab.userMergeRequestUpdated`          | `userId`                                         | A merge request whose author, assignee, or reviewer is the token's user. |
+| `gitlab.mergeRequestMergeStatusUpdated`   | `issuableId`                                     | A merge request, when its merge status changes.                          |
+| `gitlab.mergeRequestReviewersUpdated`     | `issuableId`                                     | A merge request, when its reviewers change.                              |
+| `gitlab.mergeRequestApprovalStateUpdated` | `issuableId`                                     | A merge request, when its approval state changes.                        |
+| `gitlab.noteable.notes_changed`           | `projectId`, `noteableType`, `noteableId`        | A merge request or issue, when any note changes.                         |
 
 ## Setup
 
@@ -321,9 +321,9 @@ return JSON.stringify(input.prepared);
 | A GitLab watch stops with "No GitLab token"                       | Set `GITLAB_TOKEN`, or authenticate `glab` for the host so `glab config get token --host <host>` returns a token.                                                                                                                                             |
 | A project watch stops with "is not accessible"                    | The token cannot read that project, or the path is wrong. `gitlab_get` with `/projects/<id>` shows the same result.                                                                                                                                           |
 | A GitLab pipeline or job watch stays silent                       | The token cannot read that pipeline or job, and GitLab gives no lookup by global ID alone.                                                                                                                                                                    |
-| A GitLab watch stops with "is not the token's user"               | `userId` is not the token's user. Pass the token user's global ID. GitLab only delivers merge requests assigned to or reviewed by that user.                                                                                                                  |
+| A GitLab watch stops with "is not the token's user"               | `userId` is not the token's user. Pass the token user's global ID. GitLab delivers this event to the merge request's author, assignees, and reviewers.                                                                                                        |
 | A merge request watch stops with "is not accessible"              | The merge request global ID does not exist, or the token cannot read that merge request. Pass `gid://gitlab/MergeRequest/<database id>`, not the !iid. Confirm with `gitlab_get` on `/projects/<project>/merge_requests/<iid>`; its `.id` is the database id. |
-| A notes watch stops with "rejected the subscription"              | `projectId` and `noteableId` do not belong together, or the token cannot read that project or noteable.                                                                                                                                                       |
+| A notes watch stops with "refused this watch"                     | `projectId` and `noteableId` do not belong together, or the token cannot read that project or noteable.                                                                                                                                                       |
 | A notes watch stops with "exceeds 16384 bytes"                    | Transform returned an event bigger than OpenCode accepts. Return less data.                                                                                                                                                                                   |
 | A watch stops with a timeout                                      | The event exceeded `EVENTS_STEP_TIMEOUT_SECONDS`. Inspect the named step or increase the limit.                                                                                                                                                               |
 | A watch stops with "Watch state exceeds 65536 bytes"              | Prepare stores too much in `tools.watch.state`. Keep less, or derive it again on each event.                                                                                                                                                                  |

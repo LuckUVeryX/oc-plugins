@@ -501,7 +501,7 @@
     },
     {
       "name": "im.chat.member.user.deleted_v1",
-      "description": "用户出群\n\n用户主动退出群聊或被移出群聊时推触发此事件，在群组内的、已订阅该事件的机器人会收到事件数据。",
+      "description": "用户出群\n\n用户主动退出群聊或被移出群聊时触发。只关心某个群时，用 filter 匹配 chat_id。",
       "payloadSchema": {
         "type": "object",
         "properties": {
@@ -605,7 +605,7 @@
     },
     {
       "name": "im.chat.member.user.withdrawn_v1",
-      "description": "撤销拉用户进群\n\n撤销拉用户进群后触发此事件，在群组内的、已订阅该事件的机器人会收到事件消息。撤销操作是指如下图所示的群内 **撤销邀请**。;;![image.png](//sf3-cn.feishucdn.com/obj/open-platform-opendoc/2faba42d3e4203e1dd899931da6dbfc8_DFXlHNscdw.png?height=278&maxWidth=550&width=1383)",
+      "description": "撤销拉用户进群\n\n撤销拉用户进群后触发。撤销操作指群内的「撤销邀请」。只关心某个群时，用 filter 匹配 chat_id。",
       "payloadSchema": {
         "type": "object",
         "properties": {
@@ -709,7 +709,7 @@
     },
     {
       "name": "im.chat.updated_v1",
-      "description": "群配置修改\n\n群组配置被修改后触发此事件，在该群组内的、已订阅当前事件的应用机器人将会收到事件通知。修改操作包含：;;- 转移群主;- 修改群基本信息，包括：群头像、群名称、群描述、群国际化名称;- 修改群权限，包括：加人入群权限、群编辑权限、at 所有人权限、群分享权限等",
+      "description": "群配置修改\n\n群组配置被修改后触发此事件，在该群组内的、已订阅当前事件的应用机器人将会收到事件通知。修改操作包含：\n- 转移群主\n- 修改群基本信息，包括：群头像、群名称、群描述、群国际化名称\n- 修改群权限，包括：加人入群权限、群编辑权限、at 所有人权限、群分享权限等",
       "payloadSchema": {
         "type": "object",
         "properties": {
@@ -1171,7 +1171,7 @@
     },
     {
       "name": "im.message.reaction.deleted_v1",
-      "description": "删除消息表情回复\n\n应用订阅该事件后，消息被删除表情回复时会触发此事件。事件体包含被删除表情回复的消息 message_id、删除表情回复的操作人 ID、表情类型、添加时间等信息。",
+      "description": "监听表情回复被移除的消息。只关心某条消息时，用 filter 匹配 message_id。",
       "payloadSchema": {
         "type": "object",
         "properties": {
@@ -1402,7 +1402,7 @@
     },
     {
       "name": "task.task.update_user_access_v2",
-      "description": "任务事件\n\n任务事件，事件类型包括： 任务创建、任务删除、任务标题变更、任务负责人变更、任务完整状态变更、任务描述变更、任务关注人变更、任务提醒事件变更、任务开始和截止时间变更",
+      "description": "任务事件\n\n监听任务创建、删除或变更。需要区分变更类型时，在 prepare 中读取 input.event.data.event_types。",
       "payloadSchema": {
         "type": "object",
         "properties": {
