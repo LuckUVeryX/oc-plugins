@@ -1,50 +1,37 @@
 #!/usr/bin/env bun
-import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { BunRuntime } from "@effect/platform-bun";
-import { Cause, ConfigProvider, Effect, Exit, Logger, Runtime } from "effect";
-import { makeCatalog } from "./catalog.ts";
-import { decisionModel, stepTimeoutSeconds, watchDefaultSeconds } from "./config.ts";
-import { makeDecisions } from "./decisions.ts";
-import { makeGitlabSource } from "./gitlab/source.ts";
-import { makeLarkSource } from "./lark/source.ts";
-import { makeServer } from "./server.ts";
-import { sdkLogger } from "./stderr-logger.ts";
-import { makeUpstream } from "./upstream.ts";
+import { Cause, ConfigProvider, Effect, Exit, Layer, Logger, Runtime } from "effect";
+import { FetchHttpClient } from "effect/http";
+import { Registry } from "./core/registry.ts";
+import { DecisionModel } from "./core/decision-model.ts";
+import { Server } from "./core/server.ts";
+import { Feeds } from "./core/feeds.ts";
+import { GitlabSocket } from "./gitlab/socket.ts";
+import { GitlabClient } from "./gitlab/client.ts";
+import { GitlabAuth } from "./gitlab/auth.ts";
+import { Gitlab } from "./gitlab/integration.ts";
+import { LarkAuth } from "./lark/auth.ts";
+import { LarkSocket } from "./lark/socket.ts";
+import { Lark } from "./lark/integration.ts";
+
+const LarkLayers = LarkSocket.layer.pipe(Layer.provideMerge(LarkAuth.layer));
+const GitlabLayers = Layer.merge(GitlabSocket.layer, GitlabClient.layer).pipe(
+  Layer.provideMerge(GitlabAuth.layer),
+);
+const IntegrationLayers = Layer.merge(LarkLayers, GitlabLayers).pipe(
+  Layer.provide(FetchHttpClient.layer),
+);
+const RegistryLayer = Registry.layer(Effect.all([Lark.integration, Gitlab.integration])).pipe(
+  Layer.provide(IntegrationLayers),
+);
+const CoreLayer = Layer.mergeAll(Feeds.layer, DecisionModel.layer, RegistryLayer);
+const AppLayer = Server.layer.pipe(Layer.provide(CoreLayer));
 
 const program = Effect.gen(function* () {
-  const lark = yield* makeLarkSource();
-  const gitlab = yield* makeGitlabSource();
-  const catalog = yield* makeCatalog([lark, gitlab]);
-  const upstream = yield* makeUpstream(catalog);
-  const defaultExpiresInSeconds = yield* watchDefaultSeconds;
-  const eventTimeoutSeconds = yield* stepTimeoutSeconds;
-  const model = yield* decisionModel;
-  yield* Effect.acquireRelease(
-    Effect.sync(() =>
-      serveStdio(
-        () =>
-          makeServer({
-            catalog,
-            upstream,
-            defaultExpiresInSeconds,
-            eventTimeoutSeconds,
-            decide: model._tag === "Some" ? makeDecisions(model.value) : undefined,
-          }),
-        {
-          legacy: "reject",
-          onerror: (error) => sdkLogger.error(error),
-        },
-      ),
-    ),
-    (handle) => Effect.promise(() => handle.close()),
-  );
-  // The program's lifetime is the connection's: serve until the client closes stdin.
-  yield* Effect.callback<void>((resume) => {
-    const onEnd = () => resume(Effect.void);
-    process.stdin.once("end", onEnd);
-    return Effect.sync(() => process.stdin.off("end", onEnd));
-  });
+  const server = yield* Server.Service;
+  yield* server.done;
 }).pipe(
+  Effect.provide(AppLayer),
   Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ preserveEmptyStrings: true }))),
   Effect.provideService(Logger.LogToStderr, true),
 );

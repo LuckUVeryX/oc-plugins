@@ -88,6 +88,33 @@ async function verifyExecutable(name) {
     responses.every((response) => response.jsonrpc === "2.0"),
     `${name}: non-MCP stdout`,
   );
+
+  const closedSignal = AbortSignal.timeout(10_000);
+  const closed = Bun.spawn(
+    [process.execPath, "--preload", "./lark-sdk-preload.mjs", join("node_modules", ".bin", name)],
+    {
+      cwd: process.cwd(),
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+      signal: closedSignal,
+      env: { ...process.env, LARK_APP_ID: "cli_0000000000000001", LARK_APP_SECRET: "offline" },
+    },
+  );
+  const closedStderr = new Response(closed.stderr).text();
+  closed.stdin.end();
+  const closedExit = await closed.exited;
+  assert(!closedSignal.aborted, `${name}: executable did not stop when stdin was already closed`);
+  const closedDiagnostics = await closedStderr;
+  assert.equal(
+    closedExit,
+    0,
+    `${name}: executable exited ${closedExit} on an already-closed stdin\n${closedDiagnostics}`,
+  );
+  assert(
+    !closedDiagnostics.includes("offline SDK started"),
+    `${name}: idle server started the SDK on an already-closed stdin`,
+  );
 }
 
 for (const manifest of expected.packages) {

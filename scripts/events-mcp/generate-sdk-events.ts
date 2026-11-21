@@ -10,7 +10,7 @@ import { JsonSchema } from "effect";
 const here = fileURLToPath(new URL(".", import.meta.url));
 const input = fileURLToPath(new URL("./sdk-event-handles.ts", import.meta.url));
 const output = fileURLToPath(
-  new URL("../../packages/events-mcp/src/generated/events.json", import.meta.url),
+  new URL("../../packages/events-mcp/src/lark/events.json", import.meta.url),
 );
 const require = createRequire(import.meta.url);
 const sdkPackage = require("@larksuiteoapi/node-sdk/package.json");

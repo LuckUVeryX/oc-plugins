@@ -1,9 +1,9 @@
 import { Effect, Option, Schema } from "effect";
-import { type EventType, type Occurrence, SourceError } from "../source.ts";
-import { type Cable, type CableIdentifier } from "./cable.ts";
-import type { GitlabClient } from "./client.ts";
+import { type EventKind, type Event, Rejected } from "../core/integration.ts";
+import { GitlabSocket, type ChannelIdentifier } from "./socket.ts";
+import { GitlabClient } from "./client.ts";
 import { databaseIdHint, globalIdFor, NoteableType, readNoteable } from "./noteable.ts";
-import { subscribeToChannel } from "./subscription.ts";
+import { subscribeToChannel } from "./channel.ts";
 
 const NotesParams = Schema.Struct({
   projectId: Schema.Int,
@@ -45,7 +45,7 @@ Prepare recipe. Set \`START\` to the newest non-system note id from the request 
 
 ${notesRecipe}`;
 
-const identifier = (params: NotesParams): CableIdentifier => ({
+const identifier = (params: NotesParams): ChannelIdentifier => ({
   channel: "Noteable::NotesChannel",
   project_id: params.projectId,
   group_id: null,
@@ -53,11 +53,11 @@ const identifier = (params: NotesParams): CableIdentifier => ({
   noteable_id: params.noteableId,
 });
 
-const toOccurrence = (
+const toEvent = (
   params: NotesParams,
   noteableIid: number,
   message: Schema.Json,
-): Effect.Effect<Option.Option<Occurrence>> =>
+): Effect.Effect<Option.Option<Event>> =>
   Effect.gen(function* () {
     const decoded = Schema.decodeUnknownOption(NotesMessage)(message);
     if (Option.isNone(decoded)) {
@@ -78,11 +78,11 @@ const toOccurrence = (
 const params = Schema.toJsonSchemaDocument(NotesParams, { onExcessProperty: "error" }).schema;
 
 export interface NotesEventOptions {
-  readonly client: GitlabClient;
-  readonly cable: Cable;
+  readonly client: GitlabClient.Interface;
+  readonly socket: GitlabSocket.Interface;
 }
 
-export const makeNotesEvent = (options: NotesEventOptions): EventType => ({
+export const makeNotesEvent = (options: NotesEventOptions): EventKind => ({
   name: "noteable.notes_changed",
   description,
   params,
@@ -90,7 +90,7 @@ export const makeNotesEvent = (options: NotesEventOptions): EventType => ({
   subscribe: (input) =>
     Effect.gen(function* () {
       const decoded = yield* Schema.decodeUnknownEffect(NotesParams)(input).pipe(
-        Effect.mapError((issue) => SourceError.Rejected({ message: issue.message })),
+        Effect.mapError((issue) => new Rejected({ message: issue.message })),
       );
       const noteable = yield* readNoteable(
         options.client,
@@ -100,14 +100,14 @@ export const makeNotesEvent = (options: NotesEventOptions): EventType => ({
       );
       if (noteable.projectId !== decoded.projectId)
         return yield* Effect.fail(
-          SourceError.Rejected({
+          new Rejected({
             message: `${noteable.label} ${decoded.noteableId} is in project ${noteable.projectId}, not ${decoded.projectId}. Pass the project database id from GET /projects/:id -> .id.`,
           }),
         );
       return yield* subscribeToChannel({
-        cable: options.cable,
+        socket: options.socket,
         identifier: identifier(decoded),
-        toOccurrence: (message) => toOccurrence(decoded, noteable.iid, message),
+        toEvent: (message) => toEvent(decoded, noteable.iid, message),
       });
     }),
 });

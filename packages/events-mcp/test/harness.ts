@@ -1,23 +1,35 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, SUBSCRIPTION_ID_META_KEY } from "@modelcontextprotocol/server";
-import { DateTime, Effect, Exit, PubSub, Schema, Scope, Stream, SubscriptionRef } from "effect";
-import { type Catalog, makeCatalog } from "../src/catalog.ts";
-import { makeGetTool, type LarkRequester } from "../src/lark/get.ts";
-import { makeServer } from "../src/server.ts";
+import {
+  ConfigProvider,
+  DateTime,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  PubSub,
+  Schema,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "effect";
+import { Registry } from "../src/core/registry.ts";
+import { DecisionModel } from "../src/core/decision-model.ts";
+import { Server } from "../src/core/server.ts";
 import {
   Health,
-  SourceName,
-  type EventType,
-  type Occurrence,
-  type Source,
-  type SourceError,
-} from "../src/source.ts";
-import { makeUpstream, type Upstream } from "../src/upstream.ts";
+  IntegrationName,
+  type EventKind,
+  type Event,
+  type Integration,
+  type IntegrationError,
+} from "../src/core/integration.ts";
+import { Feeds } from "../src/core/feeds.ts";
+import { makeGetTool, type LarkRequester } from "../src/lark/get.ts";
 
-type Options = Parameters<typeof makeServer>[0];
-
-const lark = Schema.decodeUnknownSync(SourceName)("lark");
-const other = Schema.decodeUnknownSync(SourceName)("other");
+const larkApp = { appId: "cli_0123456789abcdef", appSecret: "offline" };
+const lark = Schema.decodeUnknownSync(IntegrationName)("lark");
+const other = Schema.decodeUnknownSync(IntegrationName)("other");
 const larkMessage = "lark.im.message.receive_v1";
 const larkParams: Schema.JsonObject = {
   type: "object",
@@ -39,23 +51,25 @@ interface Publish {
 export async function connect(
   options: {
     defaultExpiresInSeconds?: number;
-    decide?: Options["decide"];
+    decide?: DecisionModel.Decide | undefined;
     eventTimeoutSeconds?: number;
     request?: LarkRequester;
-    otherSubscribeError?: SourceError | undefined;
-    sources?: ReadonlyArray<Source>;
+    otherSubscribeError?: IntegrationError | undefined;
+    integrations?: ReadonlyArray<Integration>;
     transport?: (transport: ReturnType<typeof InMemoryTransport.createLinkedPair>[1]) => void;
   } = {},
 ) {
   const request: LarkRequester =
     options.request ?? (async () => ({ code: 0, msg: "ok", data: null }));
-  const larkChannel = await Effect.runPromise(PubSub.unbounded<Occurrence>());
-  const otherChannel = await Effect.runPromise(PubSub.unbounded<Occurrence>());
+  const larkChannel = await Effect.runPromise(PubSub.unbounded<Event>());
+  const otherChannel = await Effect.runPromise(PubSub.unbounded<Event>());
   const health = await Effect.runPromise(SubscriptionRef.make<Health>(Health.Live()));
-  const sources: ReadonlyArray<Source> = options.sources ?? [
+  const integrations: ReadonlyArray<Integration> = options.integrations ?? [
     {
       name: lark,
-      tools: { get: makeGetTool(Effect.succeed(request)) },
+      tools: {
+        get: makeGetTool({ credentials: () => Effect.succeed({ ...larkApp, request }) }),
+      },
       instructions: "Lark instructions.",
       events: [
         {
@@ -70,14 +84,14 @@ export async function connect(
           },
           subscribe: () =>
             Effect.gen(function* () {
-              const subscription = yield* PubSub.subscribe(larkChannel);
+              const pubsub = yield* PubSub.subscribe(larkChannel);
               return {
-                occurrences: Stream.fromSubscription(subscription),
+                events: Stream.fromSubscription(pubsub),
                 health: SubscriptionRef.changes(health),
               };
             }),
         },
-      ] satisfies ReadonlyArray<EventType>,
+      ] satisfies ReadonlyArray<EventKind>,
     },
     {
       name: other,
@@ -92,29 +106,39 @@ export async function connect(
           subscribe: () =>
             options.otherSubscribeError === undefined
               ? Effect.gen(function* () {
-                  const subscription = yield* PubSub.subscribe(otherChannel);
+                  const pubsub = yield* PubSub.subscribe(otherChannel);
                   return {
-                    occurrences: Stream.fromSubscription(subscription),
+                    events: Stream.fromSubscription(pubsub),
                     health: SubscriptionRef.changes(health),
                   };
                 })
               : Effect.fail(options.otherSubscribeError),
         },
-      ] satisfies ReadonlyArray<EventType>,
+      ] satisfies ReadonlyArray<EventKind>,
     },
   ];
-  const catalog = await Effect.runPromise(makeCatalog(sources));
-  const scope = await Effect.runPromise(Scope.make());
-  const upstream = await Effect.runPromise(
-    makeUpstream(catalog).pipe(Effect.provideService(Scope.Scope, scope)),
+  const registryLayer = Registry.layer(Effect.succeed(integrations));
+  const decisionModelLayer = Layer.succeed(
+    DecisionModel.Service,
+    DecisionModel.Service.of({
+      decide: options.decide === undefined ? Option.none() : Option.some(options.decide),
+    }),
   );
-  const server = makeServer({
-    catalog: catalog satisfies Catalog,
-    upstream: upstream satisfies Upstream,
-    defaultExpiresInSeconds: options.defaultExpiresInSeconds ?? 60,
-    decide: options.decide,
-    eventTimeoutSeconds: options.eventTimeoutSeconds ?? 30,
-  });
+  const config = ConfigProvider.layer(
+    ConfigProvider.fromUnknown({
+      EVENTS_WATCH_DEFAULT_SECONDS: String(options.defaultExpiresInSeconds ?? 60),
+      EVENTS_STEP_TIMEOUT_SECONDS: String(options.eventTimeoutSeconds ?? 30),
+    }),
+  );
+  const scope = await Effect.runPromise(Scope.make());
+  const context = await Effect.runPromise(
+    Layer.build(
+      Layer.merge(Feeds.layer.pipe(Layer.provideMerge(registryLayer)), decisionModelLayer),
+    ).pipe(Effect.provideService(Scope.Scope, scope)),
+  );
+  const server = await Effect.runPromise(
+    Server.make.pipe(Effect.provide(context), Effect.provide(config)),
+  );
   const client = new Client({ name: "test", version: "1" });
   const notifications: Array<{
     type: string;
@@ -174,9 +198,9 @@ export async function connect(
       requests.push(done);
       return { done, abort: () => controller.abort() };
     },
-    publish(event: Publish, source: keyof typeof channels = "lark") {
+    publish(event: Publish, integration: keyof typeof channels = "lark") {
       Effect.runSync(
-        PubSub.publish(channels[source], {
+        PubSub.publish(channels[integration], {
           ...(event.eventId === undefined ? {} : { id: event.eventId }),
           occurredAt: DateTime.makeUnsafe(event.occurredAt ?? new Date().toISOString()),
           payload: event.payload,

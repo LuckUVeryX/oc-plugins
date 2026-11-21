@@ -7,7 +7,7 @@ import { decodeGitlabCatalog } from "../../packages/events-mcp/src/gitlab/catalo
 
 const host = process.env["GITLAB_HOST"]?.trim() || "gitlab.glints.com";
 const output = fileURLToPath(
-  new URL("../../packages/events-mcp/src/generated/gitlab-events.json", import.meta.url),
+  new URL("../../packages/events-mcp/src/gitlab/events.json", import.meta.url),
 );
 const check = process.argv.includes("--check");
 
