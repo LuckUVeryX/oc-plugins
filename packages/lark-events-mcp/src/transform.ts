@@ -9,7 +9,7 @@ export const makeTransform = () => {
   });
   return (
     source: string,
-    inputValue: { readonly event: unknown; readonly prepared?: unknown; readonly result?: unknown },
+    inputValue: { readonly event: unknown; readonly prepared?: unknown },
   ): Effect.Effect<string | null, string> =>
     Effect.gen(function* () {
       const encoded = yield* Effect.try(() => JSON.stringify(inputValue)).pipe(

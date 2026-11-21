@@ -10,8 +10,14 @@ import type { EventDefinition, LarkCatalog } from "./catalog.ts";
 import { decodeArguments, inputSchemaDocument, matchesFilter } from "./contract.ts";
 import type { EventProducers, SourceMessage } from "./producers.ts";
 import { bytes, makeTransform } from "./transform.ts";
-import type { makeDecisions } from "./decisions.ts";
-import { getDescription, getLark, GetInput, makePrepare, type LarkRequester } from "./prepare.ts";
+import {
+  getDescription,
+  getLark,
+  GetInput,
+  makePrepare,
+  type DecisionsRequester,
+  type LarkRequester,
+} from "./prepare.ts";
 
 export const EVENTS_EXTENSION = "io.modelcontextprotocol/events";
 
@@ -22,7 +28,7 @@ interface ServerOptions {
   readonly catalog: Effect.Success<typeof LarkCatalog>;
   readonly producers: Effect.Success<typeof EventProducers>;
   readonly maxSeconds: number;
-  readonly decide?: ReturnType<typeof makeDecisions> | undefined;
+  readonly decide?: DecisionsRequester | undefined;
   readonly eventTimeoutSeconds: number;
   readonly larkRequest: LarkRequester;
 }
@@ -58,13 +64,13 @@ type EventMessage = Extract<SourceMessage, { kind: "event" }>;
 
 export const makeServer = (options: ServerOptions): McpServer => {
   const transformEvent = makeTransform();
-  const prepareEvent = makePrepare(options.larkRequest);
+  const prepareEvent = makePrepare(options.larkRequest, options.decide);
   const server = new McpServer(
     { name: "lark-events-mcp", version: "0.0.0" },
     {
       capabilities: { extensions: { [EVENTS_EXTENSION]: {} } },
       instructions:
-        'Lark events: arm a watch with watch_mcp_event. Before writing prepare, call get on each endpoint it reads to see the real response. When a watch stops with "<step> failed", fix that step and arm a new watch.',
+        'Lark events: arm a watch with watch_mcp_event. Before writing prepare, call get on each endpoint it reads to see the real response. In prepare, gate each event with tools.events.decide when it is available: one decide call is much cheaper than waking the session. When a watch stops with "<step> failed", fix that step and arm a new watch.',
     },
   );
 
@@ -194,17 +200,10 @@ export const makeServer = (options: ServerOptions): McpServer => {
           return yield* Effect.fail(
             invalidParams(`Unknown event: ${params.name}; choose a listed event`),
           );
-        const { filter, watchId, prepare, transform, decisions } = yield* decodeArguments(
+        const { filter, watchId, prepare, transform } = yield* decodeArguments(
           definition.payloadSchema,
           params.arguments ?? {},
         ).pipe(Effect.mapError(invalidParams));
-        const decide = options.decide;
-        if (decisions !== undefined && decide === undefined)
-          return yield* Effect.fail(
-            invalidParams(
-              "Decisions is unavailable because the operator has not configured a model; retry without decisions",
-            ),
-          );
         for (const [name, source] of [
           ["Transform", transform],
           ["Prepare", prepare],
@@ -273,13 +272,8 @@ export const makeServer = (options: ServerOptions): McpServer => {
           const pipeline = Effect.gen(function* () {
             const prepared = yield* prepareEvent(prepare, event);
             if (prepared === null) return null;
-            step = "decisions";
-            const result =
-              decisions === undefined || decide === undefined
-                ? undefined
-                : yield* decide(decisions, prepared);
             step = "transform";
-            return yield* transformEvent(transform, { event, prepared, result });
+            return yield* transformEvent(transform, { event, prepared });
           });
           return pipeline.pipe(
             Effect.timeout(`${options.eventTimeoutSeconds} seconds`),

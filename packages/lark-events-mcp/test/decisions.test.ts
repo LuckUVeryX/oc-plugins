@@ -1,10 +1,10 @@
 import { Generate } from "@opencode/schema/generate";
 import { Effect, Schema } from "effect";
 import { expect, test, vi } from "vitest";
-import { makeDecisions, type Decisions } from "../src/decisions.ts";
+import { makeDecisions, type DecideInput } from "../src/decisions.ts";
 import { connect } from "./harness.ts";
 
-const questions: Decisions["questions"] = [
+const questions: DecideInput["questions"] = [
   { type: "predicate", name: "p", instructions: "test", criteria: { true: "yes" } },
   { type: "choice", name: "c", instructions: "test", choices: [{ value: true }] },
   { type: "score", name: "s", instructions: "test", levels: [{ label: "high" }] },
@@ -37,7 +37,7 @@ const answer = {
   native: { fixture: true },
 };
 
-test("decision client sends prepared input and preserves model failures", async () => {
+test("decide sends its input and surfaces model failures through prepare", async () => {
   const bodies: unknown[] = [];
   let fail = false;
   const http = Bun.serve({
@@ -54,34 +54,27 @@ test("decision client sends prepared input and preserves model failures", async 
       url: http.url.toString(),
       auth: undefined,
     }));
-    const result = await Effect.runPromise(decide({ questions }, { context: "parent" }));
-    expect(result.answers).toEqual(answer.answers);
-    expect(bodies).toContainEqual({
-      model,
-      questions,
-      input: [{ type: "json", value: { context: "parent" } }],
-    });
+    const context = [{ type: "text" as const, text: "I am Pat." }];
+    const result = await Effect.runPromise(decide({ questions, input: context }));
+    expect(result).toMatchObject({ answers: answer.answers });
+    expect(bodies).toContainEqual({ model, questions, input: context });
     fail = true;
-    await expect(Effect.runPromise(decide({ questions }, {}))).rejects.toThrow("provider down");
+    await expect(Effect.runPromise(decide({ questions }))).rejects.toThrow("provider down");
     const h = await connect({ decide });
     try {
       h.stream({
         watchId: "model-failure",
-        prepare: "return input.event.data",
+        prepare: `return await tools.events.decide({ questions: ${JSON.stringify(questions)} })`,
         transform: 'return "ok"',
-        decisions: { questions },
       });
       await vi.waitFor(() => expect(h.notifications.some((n) => n.type === "active")).toBe(true));
       await h.publish({ eventId: "model-event", payload: {} });
       await vi.waitFor(() =>
         expect(h.notifications.some((n) => n.type === "terminated")).toBe(true),
       );
-      expect(h.notifications.find((n) => n.type === "terminated")?.reason).toContain(
-        "decisions failed on model-event:",
-      );
-      expect(h.notifications.find((n) => n.type === "terminated")?.reason).toContain(
-        "provider down",
-      );
+      const reason = h.notifications.find((n) => n.type === "terminated")?.reason;
+      expect(reason).toContain("prepare failed on model-event:");
+      expect(reason).toContain("provider down");
     } finally {
       await h.close();
     }

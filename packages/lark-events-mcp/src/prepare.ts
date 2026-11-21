@@ -1,5 +1,7 @@
 import { CodeMode, Tool } from "@opencode/codemode";
 import { Effect, Option, Schema } from "effect";
+import { DecideInput } from "./decisions.ts";
+import type { makeDecisions } from "./decisions.ts";
 import { bytes } from "./transform.ts";
 
 const QueryValue = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean]);
@@ -46,7 +48,11 @@ export const getLark = (request: LarkRequester, { path, query }: typeof GetInput
   });
 export const getDescription =
   "Read-only GET to the Lark OpenAPI as this app. path is relative to /open-apis, for example /im/v1/messages. Returns the response data, or fails with Lark's code and message, for example when the app lacks a scope.";
-export const makePrepare = (request: LarkRequester) => {
+export type DecisionsRequester = ReturnType<typeof makeDecisions>;
+
+const decideDescription =
+  "Ask the operator's model the given questions about input. The default gate: one call is much cheaper than waking the session. Returns the answers.";
+export const makePrepare = (request: LarkRequester, decide?: DecisionsRequester) => {
   const get = Tool.make({
     description: getDescription,
     input: GetInput,
@@ -54,7 +60,21 @@ export const makePrepare = (request: LarkRequester) => {
     execute: (input) => getLark(request, input),
   });
   const runtime = CodeMode.make({
-    tools: { "lark-events": { get } },
+    tools: {
+      "lark-events": { get },
+      ...(decide === undefined
+        ? {}
+        : {
+            events: {
+              decide: Tool.make({
+                description: decideDescription,
+                input: DecideInput,
+                output: Schema.Json,
+                execute: (input) => decide(input),
+              }),
+            },
+          }),
+    },
     limits: { maxOutputBytes: 65536 },
   });
   return (source: string, event: unknown) =>

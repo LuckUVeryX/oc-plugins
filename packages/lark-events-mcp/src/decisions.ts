@@ -4,21 +4,30 @@ import { Generate } from "@opencode/schema/generate";
 import { Effect, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
 
-export const Decisions = Schema.Struct({
+export const DecideInput = Schema.Struct({
   questions: Generate.DecisionRequest.fields.questions,
   input: Schema.optionalKey(Generate.DecisionRequest.fields.input),
-}).annotate({
-  description:
-    "The operator's model answers your questions about prepare's value before transform runs. Read the answers at input.result.",
 });
-export type Decisions = typeof Decisions.Type;
-export type DecisionModel = typeof Generate.DecisionRequest.fields.model.Type;
+export type DecideInput = typeof DecideInput.Type;
+type DecisionModel = typeof Generate.DecisionRequest.fields.model.Type;
 
-export const makeDecisions = (model: DecisionModel, discover = Service.discover) =>
-  Effect.fn("LarkDecisions.request")(function* (decisions: Decisions, event: unknown) {
-    const value = yield* Schema.decodeUnknownEffect(Schema.Json)(event).pipe(
-      Effect.mapError(() => "InvalidInput" as const),
-    );
+const errorMessage = (error: { readonly cause?: unknown }): Effect.Effect<never, string> => {
+  const cause = error.cause;
+  if (!HttpClientError.isHttpClientError(cause))
+    return Effect.fail(cause instanceof Error ? cause.message : String(cause ?? error));
+  const response = cause.response;
+  if (!response) return Effect.fail(cause.message);
+  return response.text.pipe(
+    Effect.catch(() => Effect.succeed("")),
+    Effect.flatMap((body) => Effect.fail(`${cause.message}${body ? `: ${body}` : ""}`)),
+  );
+};
+
+export const makeDecisions = (model: DecisionModel, discover = Service.discover) => {
+  const request = Effect.fn("EventsDecisions.decide")(function* ({
+    questions,
+    input,
+  }: DecideInput) {
     const endpoint = yield* Effect.tryPromise({
       try: () => discover(),
       catch: (error) => String(error),
@@ -32,25 +41,12 @@ export const makeDecisions = (model: DecisionModel, discover = Service.discover)
     const client = yield* OpenCode.make({ baseUrl: endpoint.url }).pipe(
       Effect.provideService(HttpClient.HttpClient, auth),
     );
-    return yield* client.experimental.generate
-      .decisions({
-        model,
-        questions: decisions.questions,
-        input: [...(decisions.input ?? []), { type: "json", value }],
-      })
-      .pipe(
-        Effect.catch((error) => {
-          const cause = error.cause;
-          if (HttpClientError.isHttpClientError(cause)) {
-            const response = cause.response;
-            if (response)
-              return response.text.pipe(
-                Effect.catch(() => Effect.succeed("")),
-                Effect.flatMap((body) => Effect.fail(`${cause.message}${body ? `: ${body}` : ""}`)),
-              );
-            return Effect.fail(cause.message);
-          }
-          return Effect.fail(cause instanceof Error ? cause.message : String(cause ?? error));
-        }),
-      );
-  }, Effect.provide(FetchHttpClient.layer));
+    const result = yield* client.experimental.generate
+      .decisions({ model, questions, input: input ?? [] })
+      .pipe(Effect.catch(errorMessage));
+    return yield* Schema.decodeUnknownEffect(Schema.Json)(result).pipe(
+      Effect.mapError(() => "InvalidOutput" as const),
+    );
+  });
+  return (input: DecideInput) => request(input).pipe(Effect.provide(FetchHttpClient.layer));
+};

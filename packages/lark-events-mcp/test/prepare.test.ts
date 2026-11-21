@@ -1,12 +1,13 @@
 import { Effect } from "effect";
 import { expect, test, vi } from "vitest";
+import type { DecideInput } from "../src/decisions.ts";
 import { makePrepare } from "../src/prepare.ts";
 import { connect } from "./harness.ts";
 
 const questions = [
   { type: "predicate", name: "p", instructions: "test", criteria: { true: "yes" } },
 ];
-const answer = { answers: [], tokens: { input: 0, output: 0 }, native: {} };
+const answer = { answers: [{ type: "predicate", name: "needs_me", probability: 0.9 }] };
 const pass = {
   prepare: "return input.event.data",
   transform: "return JSON.stringify(input.prepared)",
@@ -24,23 +25,22 @@ async function terminated(h: Awaited<ReturnType<typeof connect>>) {
   return h.notifications.find((n) => n.type === "terminated")?.reason;
 }
 
-test("prepare feeds decisions and transform, and null skips decisions", async () => {
-  const values: unknown[] = [];
+test("decide answers reach transform through input.prepared", async () => {
+  const calls: DecideInput[] = [];
   const h = await connect({
-    decide: (_decisions, value) => {
-      values.push(value);
+    decide: (input) => {
+      calls.push(input);
       return Effect.succeed(answer);
     },
   });
   try {
     h.stream({
       watchId: "prepared",
-      decisions: { questions },
-      prepare: 'if (input.event.eventId === "drop") return null; return { parent: "memes" }',
-      transform: "return input.prepared.parent",
+      prepare: `if (input.event.eventId === "drop") return null; return await tools.events.decide({ questions: ${JSON.stringify(questions)}, input: [{ type: "json", value: { parent: "memes" } }] })`,
+      transform: "return input.prepared.answers[0].name",
     });
     h.stream({
-      watchId: "without-decisions",
+      watchId: "without-decide-call",
       prepare: 'return { text: "prepared" }',
       transform: "return input.prepared.text",
     });
@@ -50,10 +50,31 @@ test("prepare feeds decisions and transform, and null skips decisions", async ()
     await vi.waitFor(() =>
       expect(h.notifications.filter((n) => n.eventId === "sentinel")).toHaveLength(2),
     );
-    expect(values).toEqual([{ parent: "memes" }]);
+    expect(calls).toEqual([
+      {
+        questions,
+        input: [{ type: "json", value: { parent: "memes" } }],
+      },
+    ]);
     expect(h.notifications.filter((n) => n.eventId === "sentinel").map((n) => n.data)).toEqual(
-      expect.arrayContaining(["memes", "prepared"]),
+      expect.arrayContaining(["needs_me", "prepared"]),
     );
+  } finally {
+    await h.close();
+  }
+});
+
+test("rejects a decisions argument", async () => {
+  const h = await connect();
+  try {
+    const outcome = await h.stream({
+      watchId: "legacy",
+      decisions: { questions },
+      prepare: "return input.event.data",
+      transform: "return null",
+    }).done;
+    expect(outcome).toMatchObject({ code: -32602 });
+    expect((await h.call("list_watches")).watches).toEqual([]);
   } finally {
     await h.close();
   }

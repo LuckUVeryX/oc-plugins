@@ -7,18 +7,16 @@ flowchart LR
     Lark[Lark app] -- WebSocket --> Filter[filter]
     Filter --> Prepare[prepare]
     Prepare -- "get" --> LarkAPI[Lark OpenAPI]
-    Prepare --> Decisions["decisions (optional)"]
-    Prepare -. without decisions .-> Transform
-    Decisions --> Transform[transform]
+    Prepare -- "decide (optional)" --> Model[Operator's model]
+    Prepare --> Transform[transform]
     Transform --> OpenCode[OpenCode agent]
 ```
 
 Each event passes through these steps in order:
 
 1. **filter** matches fields of the raw event. Events that do not match are skipped.
-2. **prepare** is a script that can read the Lark OpenAPI with `get`, for example to fetch the thread a reply belongs to. It returns the value the next steps see, or null to skip the event.
-3. **decisions** is optional. A model configured by the operator answers questions about the value from prepare, such as whether a message needs you.
-4. **transform** is a script that reads the event, the value from prepare and the decision answers. It returns the string the agent receives, or null to skip the event.
+2. **prepare** is a script that can read the Lark OpenAPI with `get`, for example to fetch the thread a reply belongs to. When the operator configured a model, it can also call `tools.events.decide` to ask whether the event is worth a wake-up. It returns the value the next step sees, or null to skip the event.
+3. **transform** is a script that reads the event and the value from prepare. It returns the string the agent receives, or null to skip the event.
 
 If any step fails, the watch stops, and the agent sees which step failed and why.
 
@@ -27,7 +25,7 @@ If any step fails, the watch stops, and the agent sees which step failed and why
 Without this server, an agent learns about new Lark activity only when you paste it in or ask it to poll. With a watch, the session that opened it receives each event as it happens. Some uses:
 
 - **Follow a thread from your current session.** You are fixing a bug that a teammate reported in a Lark thread. Ask the agent to watch `im.message.receive_v1` filtered to that thread. New replies, such as a fresh stack trace or "still broken on staging", reach the session that already has the code open.
-- **Hear only about messages that need you.** Ask the agent to watch the chats you care about. The watch fetches thread context and its `decisions` argument asks a model whether each message needs you, for example a direct question or a blocked release. The agent messages you about those and skips the rest. This needs `LARK_DECISIONS_MODEL`.
+- **Hear only about messages that need you.** Ask the agent to watch the chats you care about. The watch fetches thread context, then its prepare script calls `decide` to ask a configured model whether each message needs you, for example a direct question or a blocked release. The agent messages you about those and skips the rest. This needs `LARK_DECISIONS_MODEL`.
 - **Build a running report.** Ask the agent to watch a channel, such as incident updates or customer feedback, and write a summary when the watch ends. A watch expires after one hour by default, so a longer report needs a new watch each hour.
 
 The server reads events and Lark data. The agent replies or notifies with its own tools, such as `lark-cli`.
@@ -109,17 +107,17 @@ Follow these steps on the machine that runs the OpenCode service. Ask the user f
 
 Add these to the `environment` block if the user wants them.
 
-| Variable                     | Default | Effect                                                                                                                                                                                                                                                                                          |
-| ---------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LARK_WATCH_MAX_SECONDS`     | `3600`  | How long each watch lasts. Positive integer.                                                                                                                                                                                                                                                    |
-| `LARK_DECISIONS_MODEL`       | unset   | Model that answers `decisions` questions, as JSON: `{"providerID":"your-provider","id":"your-model","variant":"optional"}`. Omit `variant` if it is not needed. Without this variable, the server rejects watches that use `decisions`. Each event that passes prepare sends one model request. |
-| `LARK_EVENT_TIMEOUT_SECONDS` | `120`   | Time limit for prepare, decisions and transform together. Positive integer. A watch handles one event at a time, so a slow event delays the ones behind it.                                                                                                                                     |
+| Variable                     | Default | Effect                                                                                                                                                                                                                                                     |
+| ---------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LARK_WATCH_MAX_SECONDS`     | `3600`  | How long each watch lasts. Positive integer.                                                                                                                                                                                                               |
+| `LARK_DECISIONS_MODEL`       | unset   | Model behind `tools.events.decide`, as JSON: `{"providerID":"your-provider","id":"your-model","variant":"optional"}`. Omit `variant` if it is not needed. Without this variable, prepare has no `decide` tool. Each `decide` call sends one model request. |
+| `LARK_EVENT_TIMEOUT_SECONDS` | `120`   | Time limit for one event's prepare and transform together. Positive integer. A watch handles one event at a time, so a slow event delays the ones behind it.                                                                                               |
 
 ## Writing a watch
 
 1. Call `get` on each endpoint prepare will read, and look at the real response.
 2. Write `prepare`. To pass the event through unchanged, use `return input.event.data`.
-3. Add `decisions` if `LARK_DECISIONS_MODEL` is set.
+3. If `LARK_DECISIONS_MODEL` is set, call `tools.events.decide` in prepare to keep only events worth a wake-up. Return what transform needs, including the answers you use.
 4. Write `transform`. To deliver the value from prepare as it is, use `return JSON.stringify(input.prepared)`.
 
 Both scripts are required.
@@ -147,36 +145,36 @@ return { message, context };
 
 Thread IDs have the `omt_` prefix. The returned message's `body.content` is a JSON string; parse it when you need its fields.
 
-The decision model needs to know who "me" is, so the `decisions` input names you. In a live test, the thread reply "be creative" to "send me some memes" scored 0.17 without its thread and 0.89 with it.
+The decision model needs to know who "me" is, so pass that as text in `decide`'s input. In a live test, the thread reply "be creative" to "send me some memes" scored 0.17 without its thread and 0.89 with it. Replace `<your name>` and the prepare example's final return with:
 
-Add this `decisions` argument and replace `<your name>`:
-
-```json
-{
-  "input": [
+```js
+const { answers } = await tools.events.decide({
+  input: [
     {
-      "type": "text",
-      "text": "I am <your name>. A message needs me if it names me, asks me for something, or continues a conversation that asked me for something. context holds the earlier messages."
-    }
+      type: "text",
+      text: "I am <your name>. A message needs me if it names me, asks me for something, or continues a conversation that asked me for something. context holds the earlier messages.",
+    },
+    { type: "json", value: { message, context } },
   ],
-  "questions": [
+  questions: [
     {
-      "type": "predicate",
-      "name": "needs_me",
-      "instructions": "Does the latest message need me?",
-      "criteria": {
-        "true": "It names me, asks me for something, or continues a request made to me.",
-        "false": "It is unrelated to me."
-      }
-    }
-  ]
-}
+      type: "predicate",
+      name: "needs_me",
+      instructions: "Does the latest message need me?",
+      criteria: {
+        true: "It names me, asks me for something, or continues a request made to me.",
+        false: "It is unrelated to me.",
+      },
+    },
+  ],
+});
+return { message, context, answers };
 ```
 
 This transform drops probabilities below 0.7:
 
 ```js
-const answer = input.result.answers.find((item) => item.name === "needs_me");
+const answer = input.prepared.answers.find((item) => item.name === "needs_me");
 if (!answer || answer.type !== "predicate" || answer.probability < 0.7) return null;
 return JSON.stringify(input.prepared);
 ```
