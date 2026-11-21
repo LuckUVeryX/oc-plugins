@@ -34,6 +34,26 @@ const allowed = [
   "task.task.update_user_access_v2",
 ] as const;
 
+// The SDK comments carry documentation markup and whole-sentence errors that would reach the agent.
+const clean = (text: string): string =>
+  text
+    .replaceAll(";;", "\n")
+    .replaceAll(";- ", "\n- ")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/[ \t]+$/gm, "")
+    .trim();
+
+const overrides: Readonly<Record<string, string>> = {
+  "im.chat.member.user.deleted_v1":
+    "用户出群\n\n用户主动退出群聊或被移出群聊时触发。只关心某个群时，用 filter 匹配 chat_id。",
+  "im.chat.member.user.withdrawn_v1":
+    "撤销拉用户进群\n\n撤销拉用户进群后触发。撤销操作指群内的「撤销邀请」。只关心某个群时，用 filter 匹配 chat_id。",
+  "task.task.update_user_access_v2":
+    "任务事件\n\n监听任务创建、删除或变更。需要区分变更类型时，在 prepare 中读取 input.event.data.event_types。",
+  "im.message.reaction.deleted_v1":
+    "监听表情回复被移除的消息。只关心某条消息时，用 filter 匹配 message_id。",
+};
+
 const program = ts.createProgram([input], {
   strict: true,
   skipLibCheck: true,
@@ -135,7 +155,9 @@ try {
     const draft07 = { ...payload, ...(root.definitions ? { definitions: root.definitions } : {}) };
     rejectImpossible(draft07, member.name);
     const document = JsonSchema.fromSchemaDraft07(draft07);
-    const description = ts.displayPartsToString(member.getDocumentationComment(checker));
+    const description =
+      overrides[member.name] ??
+      clean(ts.displayPartsToString(member.getDocumentationComment(checker)));
     return {
       name: member.name,
       ...(description ? { description } : {}),

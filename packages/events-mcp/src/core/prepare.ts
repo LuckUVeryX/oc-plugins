@@ -47,7 +47,8 @@ const codeModeTool = (tool: IntegrationTool) =>
 
 const stateGet = (state: WatchState) =>
   Tool.make({
-    description: "This watch's JSON memory; null until set.",
+    description:
+      "Read this watch's own JSON memory, which starts as null. Use it to carry state between events, such as the newest note id you handled.",
     input: Schema.Struct({}),
     output: Schema.Json,
     execute: () => state.get,
@@ -55,7 +56,7 @@ const stateGet = (state: WatchState) =>
 
 const stateSet = (state: WatchState) =>
   Tool.make({
-    description: "Replace this watch's JSON memory, up to 64 KB.",
+    description: `Replace this watch's own JSON memory and return the new value. It holds up to ${MAX_STATE_BYTES / 1024} KB and lasts only as long as the watch.`,
     input: Schema.Json,
     output: Schema.Json,
     execute: (value) => state.set(value),
@@ -64,7 +65,7 @@ const stateSet = (state: WatchState) =>
 const decideTool = (decide: Decide) =>
   Tool.make({
     description:
-      "Ask the decision model questions about input; returns an answer per question with probabilities. Use it to judge events a filter can't.",
+      "Judge a payload that a filter cannot settle, such as whether a message is a real request. Send text or JSON input and one or more named questions of type predicate, choice, or score. Check each answer's type before reading its probability. A question can return an error instead. One call is one model request.",
     input: DecideInput,
     output: Schema.Json,
     execute: (input) => decide(input),

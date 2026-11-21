@@ -4,8 +4,14 @@ import { ToolError, type Tool } from "./integration.ts";
 const QueryValue = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean]);
 
 export const GetInput = Schema.Struct({
-  path: Schema.String,
-  query: Schema.optionalKey(Schema.Record(Schema.String, QueryValue)),
+  path: Schema.String.annotate({
+    description: "Endpoint path after the API prefix. Starts with / and has no query string.",
+  }),
+  query: Schema.optionalKey(
+    Schema.Record(Schema.String, QueryValue).annotate({
+      description: "Query parameters as name and value pairs. Numbers and booleans are allowed.",
+    }),
+  ),
 });
 export type GetInput = typeof GetInput.Type;
 

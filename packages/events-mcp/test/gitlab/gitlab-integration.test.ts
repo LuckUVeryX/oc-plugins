@@ -216,8 +216,9 @@ test("rejects a database id where a global ID is required", async () => {
       ).done,
     );
     expect(failure.code).toBe(-32602);
-    expect(failure.message).toContain("gid://gitlab/Ci::Pipeline/");
-    expect(failure.message).toContain("not the number in the web URL");
+    expect(failure.message).toContain(
+      "pipelineId: Use gid://gitlab/Ci::Pipeline/<id>. Replace <id> with the pipeline's numeric id",
+    );
     expect(fake.identifiers).toHaveLength(0);
   } finally {
     await h.close();

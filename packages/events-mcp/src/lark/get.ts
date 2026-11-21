@@ -52,7 +52,8 @@ export const getLark = Effect.fn("Lark.get")(function* (
 
 export const makeGetTool = (api: LarkAuth.Interface): Tool =>
   makeTool({
-    description: "Read-only GET to the Lark OpenAPI as the app. path is under /open-apis.",
+    description:
+      "Read Lark data with the app's permissions, for example to resolve a chat_id or read a message before arming a watch or from inside prepare. path starts with /, stays under /open-apis, and carries no query string or percent escapes. Pass parameters in query and page with page_token. Returns the response's data. Lark API errors include the API code and message.",
     input: GetInput,
     run: (input) =>
       Effect.gen(function* () {

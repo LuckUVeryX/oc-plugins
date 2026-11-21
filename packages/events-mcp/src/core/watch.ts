@@ -119,7 +119,7 @@ export const runWatch = Effect.fn("Watch.run")(function* (
         Stream.runForEach((event) =>
           Deferred.await(firstHealthAnnounced).pipe(Effect.andThen(deliver(event))),
         ),
-        Effect.as("Event source ended"),
+        Effect.as("Events stopped arriving. Arm a new watch"),
         Effect.catch((failure: IntegrationError | StepFailed) => Effect.succeed(failure.message)),
       ),
       feed.health.pipe(

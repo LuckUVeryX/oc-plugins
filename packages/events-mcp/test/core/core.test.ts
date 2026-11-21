@@ -117,6 +117,6 @@ test("announces active before delivering the first event of a short stream", asy
       }),
     ),
   );
-  expect(reason).toBe("Event source ended");
+  expect(reason).toBe("Events stopped arriving. Arm a new watch");
   expect(types).toEqual(["active", "event", "terminated"]);
 });
