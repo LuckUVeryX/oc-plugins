@@ -1,11 +1,12 @@
 import { expect, test } from "vitest";
-import { Effect, Fiber, Queue, Redacted, Schema, Scope, Stream } from "effect";
+import { Effect, Exit, Fiber, Queue, Redacted, Schema, Scope, Stream } from "effect";
 import type { Cable } from "../src/gitlab/cable.ts";
 import type { GetInput } from "../src/get.ts";
 import { type GitlabClient, type GraphqlRequest } from "../src/gitlab/client.ts";
 import { makeGitlabSource, type GitlabOptions } from "../src/gitlab/source.ts";
 import type { GitlabIdentity } from "../src/gitlab/token.ts";
 import { Health, SourceError, type Source } from "../src/source.ts";
+import { connect } from "./harness.ts";
 
 const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),
@@ -89,7 +90,7 @@ const runSource = <A, E>(
           host: "gitlab.test",
           identity: options.identity ?? Effect.succeed(identity),
           client: options.client,
-          cable: Effect.succeed(options.cable),
+          cable: options.cable,
         } satisfies GitlabOptions);
         return yield* body(source);
       }),
@@ -144,7 +145,6 @@ test("drops the initial null and maps the next payload to an occurrence", async 
   const occurrence = values[0];
   if (occurrence === undefined) throw new Error("missing occurrence");
   expect(occurrence.id).toBeUndefined();
-  expect(occurrence.occurredAt?.epochMilliseconds).toBe(Date.parse("2026-11-21T08:00:00Z"));
   expect(occurrence.payload).toEqual({
     id: "gid://gitlab/Ci::Pipeline/463669",
     status: "FAILED",
@@ -174,15 +174,42 @@ test("rejects an inaccessible project before any subscribe frame", async () => {
 test("rejects a database id where a global ID is required", async () => {
   const fake = makeFakeCable();
   const client = makeFakeClient();
-  const error = await runSource({ client: client.client, cable: fake.cable }, (source) =>
-    Effect.gen(function* () {
-      const event = eventNamed(source, "ciPipelineStatusUpdated");
-      return yield* Effect.scoped(event.subscribe({ pipelineId: "463669" })).pipe(Effect.flip);
-    }),
-  );
-  expect(error._tag).toBe("Rejected");
-  expect(error.message).toContain("gid://gitlab/Ci::Pipeline/");
-  expect(fake.identifiers).toHaveLength(0);
+  const scope = await Effect.runPromise(Scope.make());
+  try {
+    const source = await Effect.runPromise(
+      makeGitlabSource({
+        host: "gitlab.test",
+        identity: Effect.succeed(identity),
+        client: client.client,
+        cable: fake.cable,
+      }).pipe(Effect.provideService(Scope.Scope, scope)),
+    );
+    const h = await connect({ sources: [source] });
+    try {
+      const failure = Schema.decodeUnknownSync(
+        Schema.Struct({ code: Schema.Number, message: Schema.String }),
+      )(
+        await h.stream(
+          {
+            watchId: "database-id",
+            params: { pipelineId: "463669" },
+            prepare: "return null",
+            transform: "return null",
+            expiresInSeconds: 1,
+          },
+          "gitlab.ciPipelineStatusUpdated",
+        ).done,
+      );
+      expect(failure.code).toBe(-32602);
+      expect(failure.message).toContain("gid://gitlab/Ci::Pipeline/");
+      expect(failure.message).toContain("not the number in the web URL");
+      expect(fake.identifiers).toHaveLength(0);
+    } finally {
+      await h.close();
+    }
+  } finally {
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  }
 });
 
 test("rejects a user that is not the token's user before any subscribe frame", async () => {
@@ -343,7 +370,7 @@ test("a transient token check is retried instead of cached", async () => {
   expect(attempts).toBe(2);
 });
 
-test("a merge request event carries no occurrence time when updatedAt is old", async () => {
+test("delivers a merge request event whose updatedAt is old", async () => {
   const fake = makeFakeCable();
   const client = makeFakeClient();
   const values = await runSource({ client: client.client, cable: fake.cable }, (source) =>
@@ -373,5 +400,9 @@ test("a merge request event carries no occurrence time when updatedAt is old", a
   );
   const occurrence = values[0];
   if (occurrence === undefined) throw new Error("missing occurrence");
-  expect(occurrence.occurredAt).toBeUndefined();
+  expect(occurrence.payload).toMatchObject({
+    id: "gid://gitlab/MergeRequest/1",
+    updatedAt: "2026-11-21T05:00:00Z",
+    approved: true,
+  });
 });

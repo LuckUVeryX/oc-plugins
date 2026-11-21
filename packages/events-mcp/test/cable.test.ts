@@ -122,7 +122,7 @@ const startCable = async (
       Effect.gen(function* () {
         const cable = yield* makeCable({
           url,
-          headers: {},
+          headers: Effect.succeed({}),
           pingTimeout: options.pingTimeout,
           backoff: options.backoff ?? Schedule.spaced("10 millis"),
         });
