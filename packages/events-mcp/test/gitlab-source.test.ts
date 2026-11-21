@@ -1,11 +1,12 @@
 import { expect, test } from "vitest";
-import { Effect, Fiber, Queue, Redacted, Schema, Scope, Stream } from "effect";
+import { Effect, Exit, Fiber, Queue, Redacted, Schema, Scope, Stream } from "effect";
 import type { Cable } from "../src/gitlab/cable.ts";
 import type { GetInput } from "../src/get.ts";
 import { type GitlabClient, type GraphqlRequest } from "../src/gitlab/client.ts";
 import { makeGitlabSource, type GitlabOptions } from "../src/gitlab/source.ts";
 import type { GitlabIdentity } from "../src/gitlab/token.ts";
 import { Health, SourceError, type Source } from "../src/source.ts";
+import { connect } from "./harness.ts";
 
 const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),
@@ -173,15 +174,42 @@ test("rejects an inaccessible project before any subscribe frame", async () => {
 test("rejects a database id where a global ID is required", async () => {
   const fake = makeFakeCable();
   const client = makeFakeClient();
-  const error = await runSource({ client: client.client, cable: fake.cable }, (source) =>
-    Effect.gen(function* () {
-      const event = eventNamed(source, "ciPipelineStatusUpdated");
-      return yield* Effect.scoped(event.subscribe({ pipelineId: "463669" })).pipe(Effect.flip);
-    }),
-  );
-  expect(error._tag).toBe("Rejected");
-  expect(error.message).toContain("gid://gitlab/Ci::Pipeline/");
-  expect(fake.identifiers).toHaveLength(0);
+  const scope = await Effect.runPromise(Scope.make());
+  try {
+    const source = await Effect.runPromise(
+      makeGitlabSource({
+        host: "gitlab.test",
+        identity: Effect.succeed(identity),
+        client: client.client,
+        cable: fake.cable,
+      }).pipe(Effect.provideService(Scope.Scope, scope)),
+    );
+    const h = await connect({ sources: [source] });
+    try {
+      const failure = Schema.decodeUnknownSync(
+        Schema.Struct({ code: Schema.Number, message: Schema.String }),
+      )(
+        await h.stream(
+          {
+            watchId: "database-id",
+            params: { pipelineId: "463669" },
+            prepare: "return null",
+            transform: "return null",
+            expiresInSeconds: 1,
+          },
+          "gitlab.ciPipelineStatusUpdated",
+        ).done,
+      );
+      expect(failure.code).toBe(-32602);
+      expect(failure.message).toContain("gid://gitlab/Ci::Pipeline/");
+      expect(failure.message).toContain("not the number in the web URL");
+      expect(fake.identifiers).toHaveLength(0);
+    } finally {
+      await h.close();
+    }
+  } finally {
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  }
 });
 
 test("rejects a user that is not the token's user before any subscribe frame", async () => {

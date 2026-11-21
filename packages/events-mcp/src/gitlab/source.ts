@@ -16,7 +16,7 @@ import {
   makeGetTool,
   makeGitlabClient,
 } from "./client.ts";
-import { globalIdHint, mergeRequestGlobalId, readNoteable } from "./noteable.ts";
+import { globalIdHint, readNoteable } from "./noteable.ts";
 import { makeNotesEvent } from "./notes.ts";
 import { subscribeToChannel } from "./subscription.ts";
 import { type GitlabIdentity, resolveIdentity } from "./token.ts";
@@ -77,32 +77,22 @@ const identifierFor = (event: GitlabEvent, params: Schema.JsonObject): CableIden
 
 const databaseId = (globalId: string): string => globalId.slice(globalId.lastIndexOf("/") + 1);
 
-const GLOBAL_ID_PREFIXES: Readonly<Record<string, string>> = {
-  projectId: "gid://gitlab/Project/",
-  userId: "gid://gitlab/User/",
-  issuableId: mergeRequestGlobalId,
-  pipelineId: "gid://gitlab/Ci::Pipeline/",
-  jobId: "gid://gitlab/Ci::Build/",
-};
-
-const invalidGlobalId = (name: string, value: unknown, prefix: string): string | undefined =>
-  typeof value === "string" && value.startsWith(prefix) && /^\d+$/.test(value.slice(prefix.length))
-    ? undefined
-    : `${name} must be a GitLab global ID such as ${prefix}123, not the number in the web URL.`;
+const AccessParams = Schema.Struct({
+  projectFullPath: Schema.optionalKey(Schema.String),
+  projectId: Schema.optionalKey(Schema.String),
+  userId: Schema.optionalKey(Schema.String),
+  issuableId: Schema.optionalKey(Schema.String),
+});
 
 const checkProject = (
   client: GitlabClient,
-  params: Schema.JsonObject,
+  project: { readonly fullPath: string } | { readonly id: string },
 ): Effect.Effect<void, SourceError> => {
-  const fullPath = params["projectFullPath"];
-  const projectId = params["projectId"];
-  if (typeof fullPath !== "string" && typeof projectId !== "string")
-    return Effect.fail(SourceError.Rejected({ message: "Pass projectFullPath or projectId." }));
-  const label = typeof fullPath === "string" ? fullPath : String(projectId);
+  const label = "fullPath" in project ? project.fullPath : project.id;
   const path =
-    typeof fullPath === "string"
-      ? `/projects/${encodeURIComponent(fullPath)}`
-      : `/projects/${databaseId(String(projectId))}`;
+    "fullPath" in project
+      ? `/projects/${encodeURIComponent(project.fullPath)}`
+      : `/projects/${databaseId(project.id)}`;
   return client.get({ path }).pipe(
     Effect.catchTag("Rejected", (error) =>
       Effect.fail(
@@ -168,19 +158,17 @@ export const makeGitlabSource = (
     const checkAccess: (params: Schema.JsonObject) => Effect.Effect<void, SourceError> = Effect.fn(
       "GitlabSource.checkAccess",
     )(function* (params) {
-      for (const [name, prefix] of Object.entries(GLOBAL_ID_PREFIXES)) {
-        const value = params[name];
-        if (value === undefined) continue;
-        const message = invalidGlobalId(name, value, prefix);
-        if (message !== undefined) return yield* Effect.fail(SourceError.Rejected({ message }));
-      }
+      const access = yield* Schema.decodeUnknownEffect(AccessParams)(params).pipe(
+        Effect.mapError((error) => SourceError.Rejected({ message: error.message })),
+      );
       const identity = yield* identityEffect;
-      const userId = params["userId"];
-      const issuableId = params["issuableId"];
-      if (typeof params["projectFullPath"] === "string" || typeof params["projectId"] === "string")
-        return yield* checkProject(client, params);
-      if (typeof userId === "string") return yield* checkUser(identity, userId);
-      if (typeof issuableId === "string") return yield* checkMergeRequest(client, issuableId);
+      if (access.projectFullPath !== undefined)
+        return yield* checkProject(client, { fullPath: access.projectFullPath });
+      if (access.projectId !== undefined)
+        return yield* checkProject(client, { id: access.projectId });
+      if (access.userId !== undefined) return yield* checkUser(identity, access.userId);
+      if (access.issuableId !== undefined)
+        return yield* checkMergeRequest(client, access.issuableId);
     });
     return {
       name: Schema.decodeUnknownSync(SourceName)("gitlab"),

@@ -18,7 +18,8 @@ const compileParams = (event: EventType, name: string) => {
   try {
     const document = JsonSchema.fromSchemaDraft2020_12(event.params);
     const schema: Schema.Codec<unknown> = Schema.make(
-      SchemaRepresentation.fromJsonSchemaDocument(document).ast,
+      // The catalog is generated and committed here, so its patterns are trusted.
+      SchemaRepresentation.fromJsonSchemaDocument(document, { patterns: "apply" }).ast,
     );
     return Schema.decodeTo(Schema.JsonObject)(schema);
   } catch (error) {

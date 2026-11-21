@@ -8,7 +8,8 @@
         "properties": {
           "projectId": {
             "type": "string",
-            "description": "global id, gid://gitlab/Project/599"
+            "pattern": "^gid://gitlab/Project/\\d+$",
+            "description": "A GitLab global ID such as gid://gitlab/Project/123, not the number in the web URL."
           },
           "projectFullPath": {
             "type": "string",
@@ -165,7 +166,8 @@
         "properties": {
           "pipelineId": {
             "type": "string",
-            "description": "global id, gid://gitlab/Ci::Pipeline/463669"
+            "pattern": "^gid://gitlab/Ci::Pipeline/\\d+$",
+            "description": "A GitLab global ID such as gid://gitlab/Ci::Pipeline/123, not the number in the web URL."
           }
         },
         "required": ["pipelineId"],
@@ -307,7 +309,8 @@
         "properties": {
           "jobId": {
             "type": "string",
-            "description": "global id, gid://gitlab/Ci::Build/2093168"
+            "pattern": "^gid://gitlab/Ci::Build/\\d+$",
+            "description": "A GitLab global ID such as gid://gitlab/Ci::Build/123, not the number in the web URL."
           }
         },
         "required": ["jobId"],
@@ -436,7 +439,8 @@
         "properties": {
           "userId": {
             "type": "string",
-            "description": "global id, gid://gitlab/User/256, the token's own user"
+            "pattern": "^gid://gitlab/User/\\d+$",
+            "description": "A GitLab global ID such as gid://gitlab/User/123, not the number in the web URL."
           }
         },
         "required": ["userId"],
@@ -637,7 +641,8 @@
         "properties": {
           "issuableId": {
             "type": "string",
-            "description": "global id, gid://gitlab/MergeRequest/1234"
+            "pattern": "^gid://gitlab/MergeRequest/\\d+$",
+            "description": "A GitLab global ID such as gid://gitlab/MergeRequest/123, not the number in the web URL."
           }
         },
         "required": ["issuableId"],
@@ -838,7 +843,8 @@
         "properties": {
           "issuableId": {
             "type": "string",
-            "description": "global id, gid://gitlab/MergeRequest/1234"
+            "pattern": "^gid://gitlab/MergeRequest/\\d+$",
+            "description": "A GitLab global ID such as gid://gitlab/MergeRequest/123, not the number in the web URL."
           }
         },
         "required": ["issuableId"],
@@ -1039,7 +1045,8 @@
         "properties": {
           "issuableId": {
             "type": "string",
-            "description": "global id, gid://gitlab/MergeRequest/1234"
+            "pattern": "^gid://gitlab/MergeRequest/\\d+$",
+            "description": "A GitLab global ID such as gid://gitlab/MergeRequest/123, not the number in the web URL."
           }
         },
         "required": ["issuableId"],
