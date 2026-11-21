@@ -1,9 +1,11 @@
 import { Domain, EventDispatcher, WSClient } from "@larksuiteoapi/node-sdk";
 import {
   Clock,
+  Context,
   DateTime,
   Deferred,
   Effect,
+  Layer,
   Option,
   PubSub,
   RcMap,
@@ -20,8 +22,9 @@ import {
   type Subscription,
   Unavailable,
 } from "../core/source.ts";
-import { sdkLogger } from "./sdk-logger.ts";
+import { LarkApi } from "./api.ts";
 import { getLark, type LarkRequester } from "./get.ts";
+import { sdkLogger } from "./sdk-logger.ts";
 
 const STALE_EVENT_CUTOFF_MS = 60 * 60 * 1000;
 
@@ -92,25 +95,21 @@ const forward =
     );
   };
 
-interface LarkCredentials {
-  readonly appId: string;
-  readonly appSecret: string;
-  readonly request: LarkRequester;
-}
-
-export interface LarkConnection {
+export interface Interface {
   readonly subscribe: (options: {
     readonly event: string;
   }) => Effect.Effect<Subscription, SourceError, Scope.Scope>;
 }
 
-export const makeConnection = (options: {
-  readonly credentials: Effect.Effect<LarkCredentials, SourceError>;
-}): Effect.Effect<LarkConnection, never, Scope.Scope> =>
+export class Service extends Context.Service<Service, Interface>()("@events-mcp/LarkConnection") {}
+
+export const layer = Layer.effect(
+  Service,
   Effect.gen(function* () {
+    const api = yield* LarkApi.Service;
     const connection = yield* RcRef.make({
       acquire: Effect.gen(function* () {
-        const credentials = yield* options.credentials;
+        const credentials = yield* api.credentials();
         yield* assertSoleConnection(credentials.request);
         const health = yield* SubscriptionRef.make<Health>(Health.Live());
         const publishHealth = (next: Health) => Effect.runFork(SubscriptionRef.set(health, next));
@@ -163,7 +162,7 @@ export const makeConnection = (options: {
         return { channels, health, terminal };
       }),
     });
-    const subscribe: LarkConnection["subscribe"] = Effect.fn("LarkConnection.subscribe")(
+    const subscribe: Interface["subscribe"] = Effect.fn("LarkConnection.subscribe")(
       function* (request: { readonly event: string }) {
         const { channels, health, terminal } = yield* RcRef.get(connection);
         const channel = yield* RcMap.get(channels, request.event);
@@ -176,5 +175,8 @@ export const makeConnection = (options: {
         };
       },
     );
-    return { subscribe };
-  });
+    return Service.of({ subscribe });
+  }),
+);
+
+export * as LarkConnection from "./connection.ts";

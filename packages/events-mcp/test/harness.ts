@@ -27,6 +27,7 @@ import {
 import { Upstream } from "../src/core/upstream.ts";
 import { makeGetTool, type LarkRequester } from "../src/lark/get.ts";
 
+const larkApp = { appId: "cli_0123456789abcdef", appSecret: "offline" };
 const lark = Schema.decodeUnknownSync(SourceName)("lark");
 const other = Schema.decodeUnknownSync(SourceName)("other");
 const larkMessage = "lark.im.message.receive_v1";
@@ -66,7 +67,9 @@ export async function connect(
   const sources: ReadonlyArray<Source> = options.sources ?? [
     {
       name: lark,
-      tools: { get: makeGetTool(Effect.succeed(request)) },
+      tools: {
+        get: makeGetTool({ credentials: () => Effect.succeed({ ...larkApp, request }) }),
+      },
       instructions: "Lark instructions.",
       events: [
         {

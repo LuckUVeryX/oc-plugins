@@ -6,9 +6,14 @@ import { Decisions } from "./core/decisions.ts";
 import { Server } from "./core/server.ts";
 import { Upstream } from "./core/upstream.ts";
 import { makeGitlabSource } from "./gitlab/source.ts";
-import { makeLarkSource } from "./lark/source.ts";
+import { LarkApi } from "./lark/api.ts";
+import { LarkConnection } from "./lark/connection.ts";
+import { Lark } from "./lark/source.ts";
 
-const CatalogLayer = Catalog.layer(Effect.all([makeLarkSource(), makeGitlabSource()]));
+const LarkLayers = LarkConnection.layer.pipe(Layer.provideMerge(LarkApi.layer));
+const CatalogLayer = Catalog.layer(Effect.all([Lark.source, makeGitlabSource()])).pipe(
+  Layer.provide(LarkLayers),
+);
 const CoreLayer = Layer.mergeAll(Upstream.layer, Decisions.layer, CatalogLayer);
 const AppLayer = Server.layer.pipe(Layer.provide(CoreLayer));
 

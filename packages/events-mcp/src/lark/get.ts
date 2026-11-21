@@ -1,6 +1,7 @@
 import { Effect, Option, Schema } from "effect";
-import { type SourceError, ToolError, type Tool } from "../core/source.ts";
+import { ToolError, type Tool } from "../core/source.ts";
 import { GetInput, makeTool } from "../core/tool.ts";
+import type { LarkApi } from "./api.ts";
 
 const Envelope = Schema.Struct({
   code: Schema.Number,
@@ -49,15 +50,15 @@ export const getLark = Effect.fn("Lark.get")(function* (
   return envelope.data ?? null;
 });
 
-export const makeGetTool = (request: Effect.Effect<LarkRequester, SourceError>): Tool =>
+export const makeGetTool = (api: LarkApi.Interface): Tool =>
   makeTool({
     description: "Read-only GET to the Lark OpenAPI as the app. path is under /open-apis.",
     input: GetInput,
     run: (input) =>
       Effect.gen(function* () {
-        const requester = yield* request.pipe(
-          Effect.mapError((error) => new ToolError({ message: error.message })),
-        );
-        return yield* getLark(requester, input);
+        const credentials = yield* api
+          .credentials()
+          .pipe(Effect.mapError((error) => new ToolError({ message: error.message })));
+        return yield* getLark(credentials.request, input);
       }),
   });

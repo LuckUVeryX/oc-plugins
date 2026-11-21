@@ -142,7 +142,12 @@ test("Lark GET rejects unsafe paths", async () => {
     sources: [
       {
         name: Schema.decodeUnknownSync(SourceName)("lark"),
-        tools: { get: makeGetTool(Effect.succeed(request)) },
+        tools: {
+          get: makeGetTool({
+            credentials: () =>
+              Effect.succeed({ appId: "cli_0123456789abcdef", appSecret: "offline", request }),
+          }),
+        },
         events: [],
         instructions: "",
       },

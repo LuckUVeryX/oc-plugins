@@ -1,6 +1,8 @@
-import { Effect, Option } from "effect";
+import { Effect, Layer, Option } from "effect";
 import { expect, test } from "vitest";
-import { makeLarkSource } from "../../src/lark/source.ts";
+import { LarkApi } from "../../src/lark/api.ts";
+import { LarkConnection } from "../../src/lark/connection.ts";
+import { Lark } from "../../src/lark/source.ts";
 import { makePrepare, makeWatchState } from "../../src/core/prepare.ts";
 import { connect } from "../harness.ts";
 
@@ -9,7 +11,21 @@ const credentialMessage = "No Lark app credentials";
 delete process.env["LARK_APP_ID"];
 delete process.env["LARK_APP_SECRET"];
 
-const larkSource = await Effect.runPromise(Effect.scoped(makeLarkSource()));
+const larkSource = await Effect.runPromise(
+  Lark.source.pipe(
+    Effect.provide(
+      Layer.merge(
+        LarkApi.layer,
+        Layer.succeed(
+          LarkConnection.Service,
+          LarkConnection.Service.of({
+            subscribe: () => Effect.die(new Error("The tool test never subscribes")),
+          }),
+        ),
+      ),
+    ),
+  ),
+);
 
 test("a Lark credential failure reaches the MCP tool result", async () => {
   const h = await connect({ sources: [larkSource] });

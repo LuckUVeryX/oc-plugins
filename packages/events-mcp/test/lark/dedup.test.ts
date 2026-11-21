@@ -1,6 +1,8 @@
-import { ConfigProvider, Effect, Fiber, Schema, type Scope } from "effect";
+import { ConfigProvider, Effect, Fiber, Layer, Schema, type Scope } from "effect";
 import { expect, test, vi } from "vitest";
-import { makeLarkSource } from "../../src/lark/source.ts";
+import { LarkApi } from "../../src/lark/api.ts";
+import { LarkConnection } from "../../src/lark/connection.ts";
+import { Lark } from "../../src/lark/source.ts";
 import type { LarkRequester } from "../../src/lark/get.ts";
 import type { Source } from "../../src/core/source.ts";
 import { connect } from "../harness.ts";
@@ -30,13 +32,28 @@ vi.mock("@larksuiteoapi/node-sdk", async (importOriginal) => {
   };
 });
 
-const config = ConfigProvider.layer(
-  ConfigProvider.fromUnknown({
-    LARK_APP_ID: "cli_0123456789abcdef",
-    LARK_APP_SECRET: "offline",
-  }),
-);
 const request = async () => ({ code: 0, msg: "", data: { online_instance_cnt: 0 } });
+
+const fakeApi = (requester: LarkRequester) =>
+  Layer.succeed(
+    LarkApi.Service,
+    LarkApi.Service.of({
+      credentials: () =>
+        Effect.succeed({
+          appId: "cli_0123456789abcdef",
+          appSecret: "offline",
+          request: requester,
+        }),
+    }),
+  );
+
+const sourceWith = (requester: LarkRequester): Effect.Effect<Source, never, Scope.Scope> =>
+  Effect.gen(function* () {
+    const context = yield* Layer.build(
+      LarkConnection.layer.pipe(Layer.provideMerge(fakeApi(requester))),
+    );
+    return yield* Lark.source.pipe(Effect.provide(context));
+  });
 
 const withLark = <A, E>(
   body: (source: Source) => Effect.Effect<A, E, Scope.Scope>,
@@ -45,9 +62,9 @@ const withLark = <A, E>(
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const source = yield* makeLarkSource({ request: options.request ?? request });
+        const source = yield* sourceWith(options.request ?? request);
         return yield* body(source);
-      }).pipe(Effect.provide(config)),
+      }),
     ),
   );
 
@@ -146,9 +163,9 @@ test("closes the socket when an interrupted watch is still waiting for readiness
   const fiber = Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
-        const source = yield* makeLarkSource({ request });
+        const source = yield* sourceWith(request);
         yield* messageEvent(source).subscribe({});
-      }).pipe(Effect.provide(config)),
+      }),
     ),
   );
   try {
@@ -187,7 +204,10 @@ test("a watch without Lark credentials is rejected and names both variables", as
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const source = yield* makeLarkSource();
+        const context = yield* Layer.build(
+          LarkConnection.layer.pipe(Layer.provideMerge(LarkApi.layer)),
+        );
+        const source = yield* Lark.source.pipe(Effect.provide(context));
         const error = yield* messageEvent(source).subscribe({}).pipe(Effect.flip);
         expect(error).toMatchObject({ _tag: "Source.Rejected" });
         expect(error.message).toContain("LARK_APP_ID");
