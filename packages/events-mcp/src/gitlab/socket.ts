@@ -115,7 +115,10 @@ interface Entry {
 const send = (socket: WebSocket, frame: unknown) =>
   Effect.try({
     try: () => socket.send(JSON.stringify(frame)),
-    catch: () => new Unavailable({ message: "Cable socket send failed" }),
+    catch: () =>
+      new Unavailable({
+        message: "Could not send the watch request to GitLab. Arm a new watch",
+      }),
   });
 
 const sendQuiet = (socket: WebSocket, frame: unknown) => send(socket, frame).pipe(Effect.ignore);
@@ -130,8 +133,11 @@ const frameDisconnect = (frame: {
     _tag: "Fatal",
     error:
       reason === "unauthorized"
-        ? new Rejected({ message: "GitLab cable rejected the token" })
-        : new Unavailable({ message: `GitLab cable disconnected: ${reason}` }),
+        ? new Rejected({
+            message:
+              "GitLab rejected the token for this watch. Check GITLAB_TOKEN or the glab token for the host, then arm a new watch",
+          })
+        : new Unavailable({ message: `GitLab closed this watch's connection: ${reason}` }),
   };
 };
 
@@ -212,7 +218,10 @@ export const makeGitlabSocket: (
             }
             yield* failEntries(
               targets,
-              new Rejected({ message: "GitLab cable rejected the subscription" }),
+              new Rejected({
+                message:
+                  "GitLab refused this watch. Check that the token can read the resource named in your watch arguments",
+              }),
             );
           }),
         );

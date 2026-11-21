@@ -93,7 +93,7 @@ const checkUser = (
   if (databaseId(userId) === String(identity.userId)) return Effect.void;
   return Effect.fail(
     new Rejected({
-      message: `userId ${userId} is not the token's user, @${identity.username} (gid://gitlab/User/${identity.userId}). GitLab only delivers merge requests assigned to or reviewed by the token's user.`,
+      message: `userId ${userId} is not the token's user, @${identity.username} (gid://gitlab/User/${identity.userId}). GitLab delivers this event to the merge request's author, assignees, and reviewers.`,
     }),
   );
 };
