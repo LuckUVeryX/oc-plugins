@@ -129,11 +129,17 @@ const buildServer = (options: ServerOptions): McpServer => {
     {
       capabilities: { extensions: { [EVENTS_EXTENSION]: {} } },
       instructions: [
-        `Arm watches with ${CLIENT_WATCH_TOOL}; pass only server to list events. A watch runs filter → prepare → transform, and the transform string is delivered to the session.`,
+        `Call ${CLIENT_WATCH_TOOL} with only the configured server name to list its events and arguments. Arm one with an event name and its arguments. The watch runs filter, prepare, and transform in turn, and transform's returned string wakes this session.`,
+        "A watch is live. It sees events from the moment it arms until it expires or you stop it, and nothing older is replayed. Choose a watchId. list_watches shows the arguments of every open watch, and stop_watch ends one early.",
         ...options.registry.integrations.flatMap((integration) =>
           integration.instructions === undefined ? [] : [integration.instructions],
         ),
-        'On "<step> failed", fix that step and arm again.',
+        ...(Option.isSome(options.decide)
+          ? [
+              "When a filter cannot tell whether an event deserves a wake, ask the decision model from prepare with tools.events.decide.",
+            ]
+          : []),
+        'When a watch ends with "<step> failed", fix that step and arm a new watch.',
       ].join("\n\n"),
     },
   );
@@ -161,7 +167,8 @@ const buildServer = (options: ServerOptions): McpServer => {
   server.registerTool(
     "list_watches",
     {
-      description: "Active watches and their arguments.",
+      description:
+        "List open watches with their event, arguments, and expiry, so you can reuse the arguments or find a watchId. A watch that already ended is not listed.",
     },
     () =>
       text({
@@ -171,14 +178,15 @@ const buildServer = (options: ServerOptions): McpServer => {
   server.registerTool(
     "stop_watch",
     {
-      description: "Stop a watch and wait for it.",
+      description:
+        "End a watch early and wait until it has closed. Returns { watchId, stopped }. stopped is false when no open watch has that id.",
       inputSchema: fromJsonSchema<{ watchId: string }>({
         type: "object",
         properties: {
           watchId: {
             type: "string",
             minLength: 1,
-            description: "From list_watches.",
+            description: "The watch to end, from list_watches or from when you armed it.",
           },
         },
         required: ["watchId"],

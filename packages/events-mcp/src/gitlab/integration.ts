@@ -158,7 +158,7 @@ export const integration: Effect.Effect<
       makeNotesEvent({ client, socket }),
     ],
     instructions:
-      "GitLab: read with gitlab_get. IDs are global (gid://gitlab/MergeRequest/1234); notes_changed takes database ids.",
+      "GitLab: read with gitlab_get to find a project, pipeline, or merge request id before arming a watch, or from inside prepare. Most params take a global id, and each param description says how to build it. noteable.notes_changed takes database ids instead.",
   };
 });
 

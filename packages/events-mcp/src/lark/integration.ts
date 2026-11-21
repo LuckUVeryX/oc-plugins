@@ -32,7 +32,8 @@ export const integration: Effect.Effect<Integration, never, LarkAuth.Service | L
       name: Schema.decodeUnknownSync(IntegrationName)("lark"),
       tools: { get: makeGetTool(auth) },
       events,
-      instructions: "Lark: read with lark_get.",
+      instructions:
+        "Lark: read with lark_get to find a chat, message, or user id before arming a watch, or from inside prepare.",
     };
   });
 
