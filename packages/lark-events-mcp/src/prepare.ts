@@ -1,96 +1,93 @@
-import { CodeMode, Tool } from "@opencode/codemode";
-import { Effect, Option, Schema } from "effect";
+import { Tool } from "@opencode/codemode";
+import { Effect, Record, Ref, Schema } from "effect";
 import { DecideInput } from "./decisions.ts";
 import type { makeDecisions } from "./decisions.ts";
-import { bytes } from "./transform.ts";
+import { bytes, MAX_PREPARE_OUTPUT_BYTES, MAX_STATE_BYTES } from "./limits.ts";
+import { makeScript } from "./script.ts";
+import type { Source, Tool as SourceTool } from "./source.ts";
+import { inputJsonSchema } from "./tool.ts";
+import type { WatchEvent } from "./watch.ts";
 
-const QueryValue = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean]);
-export const GetInput = Schema.Struct({
-  path: Schema.String,
-  query: Schema.optionalKey(Schema.Record(Schema.String, QueryValue)),
-});
-const Envelope = Schema.Struct({
-  code: Schema.Number,
-  msg: Schema.String,
-  data: Schema.optionalKey(Schema.Json),
-});
-const ErrorResponse = Schema.Struct({
-  response: Schema.Struct({ data: Schema.Struct({ code: Schema.Number, msg: Schema.String }) }),
-});
-const HttpErrorResponse = Schema.Struct({ response: Schema.Struct({ status: Schema.Number }) });
-
-export type LarkRequester = (input: typeof GetInput.Type, signal: AbortSignal) => Promise<unknown>;
-
-const validPath = (path: string) =>
-  path.startsWith("/") && !path.includes("//") && !path.includes("..") && !/[?#\\%]/.test(path);
-
-export const getLark = (request: LarkRequester, { path, query }: typeof GetInput.Type) =>
-  Effect.gen(function* () {
-    if (!validPath(path)) return yield* Effect.fail("Invalid Lark GET path");
-    const response = yield* Effect.tryPromise({
-      try: (signal) => request({ path, ...(query === undefined ? {} : { query }) }, signal),
-      catch: (error) => {
-        const response = Schema.decodeUnknownOption(ErrorResponse)(error);
-        if (Option.isSome(response))
-          return `Lark API ${response.value.response.data.code}: ${response.value.response.data.msg}`;
-        const http = Schema.decodeUnknownOption(HttpErrorResponse)(error);
-        if (Option.isSome(http))
-          return `Lark HTTP ${http.value.response.status} on ${path}; check the path`;
-        return String(error);
-      },
-    });
-    const envelope = yield* Schema.decodeUnknownEffect(Envelope)(response).pipe(
-      Effect.mapError(() => "Invalid Lark response"),
-    );
-    if (envelope.code !== 0)
-      return yield* Effect.fail(`Lark API ${envelope.code}: ${envelope.msg}`);
-    return envelope.data ?? null;
-  });
-export const getDescription =
-  "Read-only GET to the Lark OpenAPI as this app. path is relative to /open-apis, for example /im/v1/messages. Returns the response data, or fails with Lark's code and message, for example when the app lacks a scope.";
 export type DecisionsRequester = ReturnType<typeof makeDecisions>;
 
-const decideDescription =
-  "Ask the operator's model the given questions about input. The default gate: one call is much cheaper than waking the session. Returns the answers.";
-export const makePrepare = (request: LarkRequester, decide?: DecisionsRequester) => {
-  const get = Tool.make({
-    description: getDescription,
-    input: GetInput,
+export interface WatchState {
+  readonly get: Effect.Effect<Schema.Json>;
+  readonly set: (value: Schema.Json) => Effect.Effect<Schema.Json, string>;
+}
+
+export const makeWatchState: Effect.Effect<WatchState> = Effect.gen(function* () {
+  const value = yield* Ref.make<Schema.Json>(null);
+  return {
+    get: Ref.get(value),
+    set: (next) =>
+      Effect.gen(function* () {
+        const encoded = JSON.stringify(next);
+        if (encoded === undefined || bytes(encoded) > MAX_STATE_BYTES)
+          return yield* Effect.fail(
+            `Watch state exceeds ${MAX_STATE_BYTES} bytes; keep the stored JSON smaller`,
+          );
+        yield* Ref.set(value, next);
+        return next;
+      }),
+  };
+});
+
+// Code Mode renders the signature from JSON Schema and passes the raw value to run,
+// so a provider decodes its input once whether the call comes from a script or MCP.
+const codeModeTool = (tool: SourceTool) =>
+  Tool.make({
+    description: tool.description,
+    input: inputJsonSchema(tool),
     output: Schema.Json,
-    execute: (input) => getLark(request, input),
+    execute: (input) => tool.run(input),
   });
-  const runtime = CodeMode.make({
+
+const stateGet = (state: WatchState) =>
+  Tool.make({
+    description: "This watch's JSON memory; null until set.",
+    input: Schema.Struct({}),
+    output: Schema.Json,
+    execute: () => state.get,
+  });
+
+const stateSet = (state: WatchState) =>
+  Tool.make({
+    description: "Replace this watch's JSON memory, up to 64 KB.",
+    input: Schema.Json,
+    output: Schema.Json,
+    execute: (value) => state.set(value),
+  });
+
+const decideTool = (decide: DecisionsRequester) =>
+  Tool.make({
+    description:
+      "Ask the decision model questions about input; returns an answer per question with probabilities. Use it to judge events a filter can't.",
+    input: DecideInput,
+    output: Schema.Json,
+    execute: (input) => decide(input),
+  });
+
+export const makePrepare = (options: {
+  readonly sources: ReadonlyArray<Source>;
+  readonly state: WatchState;
+  readonly decide?: DecisionsRequester | undefined;
+}) => {
+  const decide = options.decide;
+  const script = makeScript({
     tools: {
-      "lark-events": { get },
-      ...(decide === undefined
-        ? {}
-        : {
-            events: {
-              decide: Tool.make({
-                description: decideDescription,
-                input: DecideInput,
-                output: Schema.Json,
-                execute: (input) => decide(input),
-              }),
-            },
-          }),
+      watch: {
+        state: {
+          get: stateGet(options.state),
+          set: stateSet(options.state),
+        },
+      },
+      ...Object.fromEntries(
+        options.sources.map((source) => [source.name, Record.map(source.tools, codeModeTool)]),
+      ),
+      ...(decide === undefined ? {} : { events: { decide: decideTool(decide) } }),
     },
-    limits: { maxOutputBytes: 65536 },
+    limits: { maxOutputBytes: MAX_PREPARE_OUTPUT_BYTES },
   });
-  return (source: string, event: unknown) =>
-    Effect.gen(function* () {
-      const encoded = yield* Effect.try(() => JSON.stringify({ event })).pipe(
-        Effect.mapError(() => "InvalidInput"),
-      );
-      if (bytes(encoded) > 1048576) return yield* Effect.fail("InputTooLarge");
-      const input = yield* Schema.decodeUnknownEffect(Schema.Json)(JSON.parse(encoded)).pipe(
-        Effect.mapError(() => "InvalidInput"),
-      );
-      const result = yield* runtime.execute(source, { input });
-      if (!result.ok) return yield* Effect.fail(`${result.error.kind}: ${result.error.message}`);
-      if (result.truncated) return yield* Effect.fail("OutputTooLarge");
-      return yield* Schema.decodeUnknownEffect(Schema.Json)(result.value).pipe(
-        Effect.mapError(() => "InvalidOutput"),
-      );
-    });
+  return (source: string, event: WatchEvent): Effect.Effect<Schema.Json, string> =>
+    script(source, { event });
 };

@@ -5,17 +5,34 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript-sdk-schema";
 import { createGenerator } from "ts-json-schema-generator";
-import { JsonSchema, Schema, SchemaRepresentation } from "effect";
+import { JsonSchema } from "effect";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const input = fileURLToPath(new URL("./sdk-event-handles.ts", import.meta.url));
 const output = fileURLToPath(
-  new URL("../../packages/lark-events-mcp/src/generated/events.json", import.meta.url),
+  new URL("../../packages/events-mcp/src/generated/events.json", import.meta.url),
 );
 const require = createRequire(import.meta.url);
 const sdkPackage = require("@larksuiteoapi/node-sdk/package.json");
 assert.equal(sdkPackage.version, "1.76.0", "Generator requires SDK 1.76.0");
 assert.equal(ts.version, "5.9.3", "Generator requires TypeScript 5.9.3");
+
+const allowed = [
+  "application.bot.menu_v6",
+  "drive.notice.comment_add_v1",
+  "im.chat.disbanded_v1",
+  "im.chat.member.bot.added_v1",
+  "im.chat.member.bot.deleted_v1",
+  "im.chat.member.user.added_v1",
+  "im.chat.member.user.deleted_v1",
+  "im.chat.member.user.withdrawn_v1",
+  "im.chat.updated_v1",
+  "im.message.message_read_v1",
+  "im.message.reaction.created_v1",
+  "im.message.reaction.deleted_v1",
+  "im.message.receive_v1",
+  "task.task.update_user_access_v2",
+] as const;
 
 const program = ts.createProgram([input], {
   strict: true,
@@ -43,9 +60,17 @@ const owners = eventType.getSymbol()?.getDeclarations();
 assert(owners?.length, "Missing EventHandles interface declaration");
 const members = eventType
   .getProperties()
+  // Inherited handles are declared on the base interface, not on EventHandles itself.
   .filter((member) => member.getDeclarations()?.some((node) => owners.includes(node.parent)))
   .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-const fields = members.map((member) => {
+const names = new Set<string>(allowed);
+const selected = members.filter((member) => names.has(member.name));
+assert.deepEqual(
+  selected.map((member) => member.name),
+  allowed,
+  "SDK event handles do not match the allowlist",
+);
+const fields = selected.map((member) => {
   const handler = checker.getNonNullableType(
     checker.getTypeOfSymbolAtLocation(member, declaration),
   );
@@ -102,19 +127,14 @@ try {
   assert(root.properties, "Missing generated payload schemas");
   assert.deepEqual(
     Object.keys(root.properties).sort(),
-    members.map((member) => member.name),
+    selected.map((member) => member.name),
   );
-  const events = members.map((member) => {
-    const payload = root.properties?.[member.name];
+  const events = selected.map((member) => {
+    const payload = root.properties[member.name];
     assert(payload && typeof payload === "object", `Missing payload schema for ${member.name}`);
     const draft07 = { ...payload, ...(root.definitions ? { definitions: root.definitions } : {}) };
     rejectImpossible(draft07, member.name);
     const document = JsonSchema.fromSchemaDraft07(draft07);
-    Schema.make(
-      SchemaRepresentation.fromJsonSchemaDocument(
-        JsonSchema.fromSchemaDraft2020_12(document.schema),
-      ).ast,
-    );
     const description = ts.displayPartsToString(member.getDocumentationComment(checker));
     return {
       name: member.name,

@@ -1,7 +1,9 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { expect, test, vi } from "vitest";
 import type { DecideInput } from "../src/decisions.ts";
-import { makePrepare } from "../src/prepare.ts";
+import { makeGetTool } from "../src/lark/get.ts";
+import { makePrepare, makeWatchState } from "../src/prepare.ts";
+import { SourceName } from "../src/source.ts";
 import { connect } from "./harness.ts";
 
 const questions = [
@@ -64,33 +66,17 @@ test("decide answers reach transform through input.prepared", async () => {
   }
 });
 
-test("rejects a decisions argument", async () => {
-  const h = await connect();
-  try {
-    const outcome = await h.stream({
-      watchId: "legacy",
-      decisions: { questions },
-      prepare: "return input.event.data",
-      transform: "return null",
-    }).done;
-    expect(outcome).toMatchObject({ code: -32602 });
-    expect((await h.call("list_watches")).watches).toEqual([]);
-  } finally {
-    await h.close();
-  }
-});
-
 test("Lark failure stops the watch without leaking content to stderr", async () => {
   const log = vi.spyOn(console, "error").mockImplementation(() => {});
   const h = await connect({
-    larkRequest: async () => {
+    request: async () => {
       throw { response: { data: { code: 99991672, msg: "fake secret scope message" } } };
     },
   });
   try {
     h.stream({
       watchId: "scope",
-      prepare: 'return await tools["lark-events"].get({path:"/im/v1/messages"})',
+      prepare: 'return await tools.lark.get({path:"/im/v1/messages"})',
       transform: pass.transform,
     });
     await active(h);
@@ -114,7 +100,7 @@ test("timeout aborts an in-flight Lark request", async () => {
   const aborted = Promise.withResolvers<void>();
   const h = await connect({
     eventTimeoutSeconds: 1,
-    larkRequest: (_input, signal) =>
+    request: (_input, signal) =>
       new Promise((_resolve, reject) => {
         signal.addEventListener(
           "abort",
@@ -130,7 +116,7 @@ test("timeout aborts an in-flight Lark request", async () => {
   try {
     h.stream({
       watchId: "abort-timeout",
-      prepare: 'return await tools["lark-events"].get({path:"/im/v1/messages"})',
+      prepare: 'return await tools.lark.get({path:"/im/v1/messages"})',
       transform: pass.transform,
     });
     await active(h);
@@ -150,7 +136,17 @@ test("timeout aborts an in-flight Lark request", async () => {
 
 test("Lark GET rejects unsafe paths", async () => {
   const request = vi.fn(async () => ({ code: 0, msg: "ok", data: { parent: "memes" } }));
-  const prepare = makePrepare(request);
+  const prepare = makePrepare({
+    sources: [
+      {
+        name: Schema.decodeUnknownSync(SourceName)("lark"),
+        tools: { get: makeGetTool(Effect.succeed(request)) },
+        events: [],
+        instructions: "",
+      },
+    ],
+    state: await Effect.runPromise(makeWatchState),
+  });
   for (const path of [
     "/im/../users",
     "/im//users",
@@ -162,7 +158,11 @@ test("Lark GET rejects unsafe paths", async () => {
   ]) {
     await expect(
       Effect.runPromise(
-        prepare(`return await tools["lark-events"].get({ path: ${JSON.stringify(path)} })`, {}),
+        prepare(`return await tools.lark.get({ path: ${JSON.stringify(path)} })`, {
+          eventId: "event",
+          timestamp: new Date().toISOString(),
+          data: {},
+        }),
       ),
     ).rejects.toBeDefined();
   }

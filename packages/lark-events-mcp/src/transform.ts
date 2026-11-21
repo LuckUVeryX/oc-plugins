@@ -1,31 +1,17 @@
-import { CodeMode } from "@opencode/codemode";
-import { Effect, Schema } from "effect";
-
-export const bytes = (value: string): number => Buffer.byteLength(value, "utf8");
+import { Effect } from "effect";
+import { MAX_TRANSFORM_OUTPUT_BYTES } from "./limits.ts";
+import { makeScript } from "./script.ts";
+import type { TransformInput } from "./watch.ts";
 
 export const makeTransform = () => {
-  const runtime = CodeMode.make({
-    limits: { maxToolCalls: 0, maxOutputBytes: 16384 },
+  const script = makeScript({
+    limits: { maxToolCalls: 0, maxOutputBytes: MAX_TRANSFORM_OUTPUT_BYTES },
   });
-  return (
-    source: string,
-    inputValue: { readonly event: unknown; readonly prepared?: unknown },
-  ): Effect.Effect<string | null, string> =>
+  return (source: string, input: TransformInput) =>
     Effect.gen(function* () {
-      const encoded = yield* Effect.try(() => JSON.stringify(inputValue)).pipe(
-        Effect.mapError(() => "InvalidInput"),
-      );
-      if (bytes(encoded) > 1048576) return yield* Effect.fail("InputTooLarge");
-      const input = yield* Schema.decodeUnknownEffect(Schema.Json)(JSON.parse(encoded)).pipe(
-        Effect.mapError(() => "InvalidInput"),
-      );
-      const result = yield* runtime.execute(source, { input });
-      if (!result.ok) return yield* Effect.fail(`${result.error.kind}: ${result.error.message}`);
-      if (result.truncated) return yield* Effect.fail("Truncated");
-      if (result.value === null) return null;
-      if (typeof result.value !== "string") return yield* Effect.fail("InvalidOutput");
-      const serialized = JSON.stringify(result.value);
-      if (bytes(serialized) > 16384) return yield* Effect.fail("OutputTooLarge");
-      return result.value;
+      const value = yield* script(source, input);
+      if (value === null) return null;
+      if (typeof value !== "string") return yield* Effect.fail("InvalidOutput");
+      return value;
     });
 };

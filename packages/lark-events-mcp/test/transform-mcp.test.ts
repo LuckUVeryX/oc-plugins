@@ -75,8 +75,8 @@ test("transforms filtered events independently of raw watches and stops delivery
       id: transformed,
       data: "match",
       eventId: "two",
-      timestamp: "2026-01-01T00:00:00.000Z",
-      origin: "upstream",
+      name: "lark.im.message.receive_v1",
+      timestamp: expect.any(String),
     },
   ]);
   expect(

@@ -1,27 +1,37 @@
-import { Effect, Schema } from "effect";
+import { Effect, JsonSchema, Schema } from "effect";
 import { isObject } from "effect/Predicate";
+
+export const WatchId = Schema.NonEmptyString.pipe(Schema.brand("WatchId"));
+export type WatchId = typeof WatchId.Type;
 
 const Scalar = Schema.Union([Schema.String, Schema.Number, Schema.Boolean]);
 type Scalar = typeof Scalar.Type;
 const isScalar = Schema.is(Scalar);
 const WatchArguments = Schema.Struct({
-  watchId: Schema.NonEmptyString,
+  watchId: WatchId,
+  params: Schema.optionalKey(Schema.JsonObject),
   filter: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
   prepare: Schema.String,
   transform: Schema.String,
+  expiresInSeconds: Schema.optionalKey(
+    Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
+  ),
 });
 
-interface FilterLeaf {
-  readonly path: string;
+interface FilterPath {
+  readonly segments: ReadonlyArray<string>;
   readonly type: "string" | "number" | "integer" | "boolean";
   readonly values: ReadonlyArray<Scalar> | undefined;
 }
 
-export type Filter = ReadonlyArray<readonly [string, ReadonlyArray<Scalar>]>;
+export type CompiledFilter = ReadonlyMap<string, FilterPath>;
 
-const filterLeaves = (schema: unknown): ReadonlyArray<FilterLeaf> => {
-  const leaves: Array<FilterLeaf> = [];
-  const walk = (node: unknown, prefix: string): void => {
+export type FilterEntry = readonly [ReadonlyArray<string>, ReadonlyArray<Scalar>];
+export type Filter = ReadonlyArray<FilterEntry>;
+
+export const compileFilter = (payload: unknown): CompiledFilter => {
+  const paths = new Map<string, FilterPath>();
+  const walk = (node: unknown, segments: ReadonlyArray<string>): void => {
     if (!isObject(node)) return;
     const type = node["type"];
     if (type === "string" || type === "number" || type === "integer" || type === "boolean") {
@@ -31,54 +41,72 @@ const filterLeaves = (schema: unknown): ReadonlyArray<FilterLeaf> => {
         : Array.isArray(node["enum"])
           ? node["enum"].filter(isScalar)
           : undefined;
-      if (prefix) leaves.push({ path: prefix, type, values });
+      if (segments.length > 0) paths.set(segments.join("."), { segments, type, values });
       return;
     }
     if (type === "array") return;
     const properties = node["properties"];
     if (isObject(properties))
-      for (const [name, child] of Object.entries(properties))
-        walk(child, prefix ? `${prefix}.${name}` : name);
+      for (const [name, child] of Object.entries(properties)) walk(child, [...segments, name]);
   };
-  walk(schema, "");
-  return leaves;
+  walk(payload, []);
+  return paths;
 };
 
-const leafDocument = (leaf: FilterLeaf): Record<string, unknown> => ({
+const leafDocument = (leaf: FilterPath): Record<string, unknown> => ({
   type: leaf.type,
   ...(leaf.values === undefined ? {} : { enum: leaf.values }),
 });
 
-export const inputSchemaDocument = (schema: unknown): Record<string, unknown> => {
+export const inputSchemaDocument = (options: {
+  readonly filter: CompiledFilter;
+  readonly params: JsonSchema.JsonSchema;
+  readonly toolPaths: ReadonlyArray<string>;
+  readonly decide: boolean;
+  readonly defaultExpiresInSeconds: number;
+}): Record<string, unknown> => {
   const properties: Record<string, unknown> = {};
-  for (const leaf of filterLeaves(schema))
-    properties[leaf.path] = {
+  for (const [path, leaf] of options.filter)
+    properties[path] = {
       anyOf: [leafDocument(leaf), { type: "array", items: leafDocument(leaf), minItems: 1 }],
     };
+  const tools = [
+    ...options.toolPaths,
+    "tools.watch.state",
+    ...(options.decide ? ["tools.events.decide"] : []),
+  ].join(", ");
   return {
     type: "object",
     properties: {
       watchId: {
         type: "string",
         minLength: 1,
-        description: "Choose an ID unique among active watches.",
+        description: "Unique among active watches.",
+      },
+      params: {
+        ...options.params,
+        description: options.params["description"] ?? "Subscription params.",
       },
       filter: {
         type: "object",
         description:
-          "Match raw payload dot paths. All paths must match; an array matches any listed value.",
+          "Match payload fields by dot path before prepare runs. Each path maps to a value or a list of accepted values; all paths must match.",
         properties,
         additionalProperties: false,
       },
       prepare: {
         type: "string",
-        description:
-          'Code Mode script that runs on each event after the filter. Read the event at input.event.data. Fetch context with await tools["lark-events"].get({ path, query }). Gate the event with await tools.events.decide({ questions, input }) when available; one decide call is much cheaper than waking the session. Return the JSON transform should see, or null to skip the event. For no preparation, use: return input.event.data',
+        description: `Code Mode gate. Reads input.event.data; returns JSON for transform, or null to drop. Tools: ${tools}. Pass-through: return input.event.data`,
       },
       transform: {
         type: "string",
         description:
-          "Code Mode script that runs last, without tools. Read input.event and input.prepared. Return the string to deliver, or null to skip the event. For no shaping, use: return JSON.stringify(input.prepared)",
+          "Code Mode without tools. Reads input.event and input.prepared; returns the wake text, or null to drop. Pass-through: return JSON.stringify(input.prepared)",
+      },
+      expiresInSeconds: {
+        type: "integer",
+        minimum: 1,
+        description: `How long the watch stays open, in seconds. Defaults to ${options.defaultExpiresInSeconds} seconds.`,
       },
     },
     required: ["watchId", "prepare", "transform"],
@@ -86,30 +114,35 @@ export const inputSchemaDocument = (schema: unknown): Record<string, unknown> =>
   };
 };
 
-const matchesLeaf = (value: Scalar, leaf: FilterLeaf): boolean => {
-  if (leaf.values !== undefined && !leaf.values.includes(value)) return false;
-  switch (leaf.type) {
-    case "string":
-      return typeof value === "string";
-    case "number":
-      return typeof value === "number" && Number.isFinite(value);
-    case "integer":
-      return typeof value === "number" && Number.isInteger(value);
-    case "boolean":
-      return typeof value === "boolean";
-  }
+const leafTypes: Record<FilterPath["type"], (value: Scalar) => boolean> = {
+  string: (value) => typeof value === "string",
+  number: (value) => typeof value === "number" && Number.isFinite(value),
+  integer: (value) => Number.isInteger(value),
+  boolean: (value) => typeof value === "boolean",
 };
 
-export const decodeArguments = (schema: unknown, input: unknown) =>
+const matchesLeaf = (value: Scalar, leaf: FilterPath): boolean =>
+  (leaf.values === undefined || leaf.values.includes(value)) && leafTypes[leaf.type](value);
+
+export const decodeArguments = (options: {
+  readonly filter: CompiledFilter;
+  readonly value: unknown;
+}) =>
   Effect.gen(function* () {
-    const decoded = yield* Schema.decodeUnknownEffect(WatchArguments)(input, {
+    const decoded = yield* Schema.decodeUnknownEffect(WatchArguments)(options.value, {
       onExcessProperty: "error",
     }).pipe(Effect.mapError((issue) => issue.message));
-    const { watchId, filter: raw = {}, prepare, transform } = decoded;
-    const leaves = new Map(filterLeaves(schema).map((leaf) => [leaf.path, leaf]));
-    const filter: Array<readonly [string, ReadonlyArray<Scalar>]> = [];
+    const {
+      watchId,
+      params = {},
+      filter: raw = {},
+      prepare,
+      transform,
+      expiresInSeconds,
+    } = decoded;
+    const filter: Array<FilterEntry> = [];
     for (const [path, value] of Object.entries(raw)) {
-      const leaf = leaves.get(path);
+      const leaf = options.filter.get(path);
       if (!leaf)
         return yield* Effect.fail(`Unknown filter path: ${path}; choose a path from inputSchema`);
       const values = isScalar(value) ? [value] : Array.isArray(value) ? value : undefined;
@@ -119,15 +152,15 @@ export const decodeArguments = (schema: unknown, input: unknown) =>
         return yield* Effect.fail(
           `Invalid value for filter ${path}; use a value allowed by inputSchema`,
         );
-      filter.push([path, values]);
+      filter.push([leaf.segments, values]);
     }
-    return { filter, watchId, prepare, transform };
+    return { filter, params, prepare, transform, watchId, expiresInSeconds };
   });
 
 export const matchesFilter = (filter: Filter, payload: unknown): boolean =>
-  filter.every(([path, values]) => {
+  filter.every(([segments, values]) => {
     let node = payload;
-    for (const key of path.split(".")) {
+    for (const key of segments) {
       if (!isObject(node) || Array.isArray(node)) return false;
       node = node[key];
     }

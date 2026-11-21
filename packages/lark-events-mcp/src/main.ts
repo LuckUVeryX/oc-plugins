@@ -1,58 +1,53 @@
 #!/usr/bin/env bun
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { BunRuntime } from "@effect/platform-bun";
-import { Cause, ConfigProvider, Effect, Exit, Layer, Logger, Runtime } from "effect";
-import { catalogLayer, LarkCatalog } from "./catalog.ts";
-import { decisionModel, eventTimeoutSeconds, watchMaxSeconds } from "./config.ts";
+import { Cause, ConfigProvider, Effect, Exit, Logger, Runtime } from "effect";
+import { makeCatalog } from "./catalog.ts";
+import { decisionModel, stepTimeoutSeconds, watchDefaultSeconds } from "./config.ts";
 import { makeDecisions } from "./decisions.ts";
-import { EventProducers, producersLayer } from "./producers.ts";
+import { makeLarkSource } from "./lark/source.ts";
 import { makeServer } from "./server.ts";
-
-const serve = (
-  maxSeconds: number,
-  eventTimeout: number,
-  model: Effect.Success<typeof decisionModel>,
-) =>
-  Effect.gen(function* () {
-    const catalog = yield* LarkCatalog;
-    const producers = yield* EventProducers;
-    yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        serveStdio(
-          () =>
-            makeServer({
-              catalog,
-              producers,
-              maxSeconds,
-              eventTimeoutSeconds: eventTimeout,
-              larkRequest: producers.larkRequest,
-              decide: model._tag === "Some" ? makeDecisions(model.value) : undefined,
-            }),
-          {
-            legacy: "reject",
-            onerror: (error) => console.error(error),
-          },
-        ),
-      ),
-      (handle) => Effect.promise(() => handle.close()),
-    );
-    yield* Effect.callback<void>((resume) => {
-      const onEnd = () => resume(Effect.void);
-      process.stdin.once("end", onEnd);
-      return Effect.sync(() => process.stdin.off("end", onEnd));
-    });
-  }).pipe(Effect.provide(Layer.mergeAll(catalogLayer, producersLayer)));
+import { sdkLogger } from "./stderr-logger.ts";
+import { makeUpstream } from "./upstream.ts";
 
 const program = Effect.gen(function* () {
-  const maxSeconds = yield* watchMaxSeconds;
+  const lark = yield* makeLarkSource();
+  const catalog = yield* makeCatalog([lark]);
+  const upstream = yield* makeUpstream(catalog);
+  const defaultExpiresInSeconds = yield* watchDefaultSeconds;
+  const eventTimeoutSeconds = yield* stepTimeoutSeconds;
   const model = yield* decisionModel;
-  const eventTimeout = yield* eventTimeoutSeconds;
-  yield* serve(maxSeconds, eventTimeout, model);
+  yield* Effect.acquireRelease(
+    Effect.sync(() =>
+      serveStdio(
+        () =>
+          makeServer({
+            catalog,
+            upstream,
+            defaultExpiresInSeconds,
+            eventTimeoutSeconds,
+            decide: model._tag === "Some" ? makeDecisions(model.value) : undefined,
+          }),
+        {
+          legacy: "reject",
+          onerror: (error) => sdkLogger.error(error),
+        },
+      ),
+    ),
+    (handle) => Effect.promise(() => handle.close()),
+  );
+  // The program's lifetime is the connection's: serve until the client closes stdin.
+  yield* Effect.callback<void>((resume) => {
+    const onEnd = () => resume(Effect.void);
+    process.stdin.once("end", onEnd);
+    return Effect.sync(() => process.stdin.off("end", onEnd));
+  });
 }).pipe(
   Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ preserveEmptyStrings: true }))),
+  Effect.provideService(Logger.LogToStderr, true),
 );
 
-BunRuntime.runMain(program.pipe(Effect.scoped, Effect.provideService(Logger.LogToStderr, true)), {
+BunRuntime.runMain(program.pipe(Effect.scoped), {
   teardown: (exit, onExit) =>
     Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
       ? onExit(0)

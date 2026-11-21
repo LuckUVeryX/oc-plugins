@@ -1,0 +1,38 @@
+import { Effect } from "effect";
+import { expect, test } from "vitest";
+import { makeLarkSource } from "../src/lark/source.ts";
+import { makePrepare, makeWatchState } from "../src/prepare.ts";
+import { connect } from "./harness.ts";
+
+const credentialMessage = "No Lark app credentials";
+
+delete process.env["LARK_APP_ID"];
+delete process.env["LARK_APP_SECRET"];
+
+const larkSource = await Effect.runPromise(Effect.scoped(makeLarkSource()));
+
+test("a Lark credential failure reaches the MCP tool result", async () => {
+  const h = await connect({ sources: [larkSource] });
+  try {
+    const result = await h.callRaw("lark_get", { path: "/im/v1/messages" });
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain(credentialMessage);
+  } finally {
+    await h.close();
+  }
+});
+
+test("a Lark credential failure reaches a prepare failure", async () => {
+  const prepare = makePrepare({
+    sources: [larkSource],
+    state: await Effect.runPromise(makeWatchState),
+  });
+  const failure = await Effect.runPromise(
+    prepare('return await tools.lark.get({ path: "/im/v1/messages" })', {
+      eventId: "event",
+      timestamp: new Date().toISOString(),
+      data: {},
+    }).pipe(Effect.flip),
+  );
+  expect(failure).toContain(credentialMessage);
+});
