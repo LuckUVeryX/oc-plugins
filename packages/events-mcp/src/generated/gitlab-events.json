@@ -155,8 +155,7 @@
           }
         },
         "required": ["id", "iid", "status", "createdAt", "updatedAt", "detailedStatus"]
-      },
-      "occurredAtField": "updatedAt"
+      }
     },
     {
       "name": "ciPipelineStatusUpdated",
@@ -298,8 +297,7 @@
           }
         },
         "required": ["id", "iid", "status", "createdAt", "updatedAt", "detailedStatus"]
-      },
-      "occurredAtField": "updatedAt"
+      }
     },
     {
       "name": "ciJobStatusUpdated",

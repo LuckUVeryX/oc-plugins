@@ -63,7 +63,6 @@ type JsonObject = Schema.JsonObject;
 interface Selection {
   readonly scalars: ReadonlyArray<string>;
   readonly objects: Readonly<Record<string, ReadonlyArray<string>>>;
-  readonly occurredAtField?: string;
 }
 
 const PROJECT_FIELDS = ["id", "fullPath", "name", "webUrl"];
@@ -92,8 +91,6 @@ const SELECTIONS = {
       mergeRequest: ["id", "iid", "title", "state", "webUrl"],
       user: USER_FIELDS,
     },
-    // A pipeline status change moves updatedAt, so it is the event's time.
-    occurredAtField: "updatedAt",
   },
   CiJob: {
     scalars: [
@@ -148,7 +145,6 @@ const SELECTIONS = {
       author: USER_FIELDS,
       headPipeline: ["id", "iid", "status", "ref", "sha", "path", "updatedAt"],
     },
-    // A merge request update need not advance updatedAt, so the selection carries no event time.
   },
 } as const satisfies Record<string, Selection>;
 
@@ -421,9 +417,6 @@ const generate = (raw: unknown) => {
       params,
       query: queryFor(field, selectionSet),
       payload,
-      ...(selection.occurredAtField === undefined
-        ? {}
-        : { occurredAtField: selection.occurredAtField }),
     };
   });
   return { events };

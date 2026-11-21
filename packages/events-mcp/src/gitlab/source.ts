@@ -1,4 +1,4 @@
-import { Config, DateTime, Duration, Effect, Exit, Option, Schema, Scope } from "effect";
+import { Config, Duration, Effect, Exit, Option, Schema, Scope } from "effect";
 import generated from "../generated/gitlab-events.json";
 import {
   type EventType,
@@ -41,12 +41,6 @@ const cacheSuccess = <A, E, R>(
     Exit.isSuccess(exit) ? Duration.infinity : Duration.zero,
   );
 
-const occurredAt = (event: GitlabEvent, payload: Schema.JsonObject): DateTime.Utc | undefined => {
-  if (event.occurredAtField === undefined) return undefined;
-  const value = payload[event.occurredAtField];
-  return typeof value === "string" ? Option.getOrUndefined(DateTime.make(value)) : undefined;
-};
-
 const toOccurrence = (
   event: GitlabEvent,
   message: Schema.Json,
@@ -70,11 +64,7 @@ const toOccurrence = (
         yield* Effect.logWarning(`Ignoring a non-object GitLab payload for ${event.name}`);
       return Option.none();
     }
-    const time = occurredAt(event, object.value);
-    return Option.some({
-      ...(time === undefined ? {} : { occurredAt: time }),
-      payload: object.value,
-    });
+    return Option.some({ payload: object.value });
   });
 
 const identifierFor = (event: GitlabEvent, params: Schema.JsonObject): CableIdentifier => ({

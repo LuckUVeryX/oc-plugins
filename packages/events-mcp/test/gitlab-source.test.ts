@@ -144,7 +144,6 @@ test("drops the initial null and maps the next payload to an occurrence", async 
   const occurrence = values[0];
   if (occurrence === undefined) throw new Error("missing occurrence");
   expect(occurrence.id).toBeUndefined();
-  expect(occurrence.occurredAt?.epochMilliseconds).toBe(Date.parse("2026-11-21T08:00:00Z"));
   expect(occurrence.payload).toEqual({
     id: "gid://gitlab/Ci::Pipeline/463669",
     status: "FAILED",
@@ -343,7 +342,7 @@ test("a transient token check is retried instead of cached", async () => {
   expect(attempts).toBe(2);
 });
 
-test("a merge request event carries no occurrence time when updatedAt is old", async () => {
+test("delivers a merge request event whose updatedAt is old", async () => {
   const fake = makeFakeCable();
   const client = makeFakeClient();
   const values = await runSource({ client: client.client, cable: fake.cable }, (source) =>
@@ -373,5 +372,9 @@ test("a merge request event carries no occurrence time when updatedAt is old", a
   );
   const occurrence = values[0];
   if (occurrence === undefined) throw new Error("missing occurrence");
-  expect(occurrence.occurredAt).toBeUndefined();
+  expect(occurrence.payload).toMatchObject({
+    id: "gid://gitlab/MergeRequest/1",
+    updatedAt: "2026-11-21T05:00:00Z",
+    approved: true,
+  });
 });

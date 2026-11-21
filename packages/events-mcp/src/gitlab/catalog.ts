@@ -7,7 +7,6 @@ export const GitlabEvent = Schema.Struct({
   params: Schema.JsonObject,
   query: Schema.NonEmptyString,
   payload: Schema.JsonObject,
-  occurredAtField: Schema.optionalKey(Schema.NonEmptyString),
 });
 export type GitlabEvent = typeof GitlabEvent.Type;
 
