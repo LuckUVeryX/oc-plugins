@@ -1,10 +1,10 @@
 import { Effect, type Option, Result, type Schema, type Scope, Stream } from "effect";
 import type { Occurrence, SourceError, Subscription } from "../core/source.ts";
-import type { Cable, CableIdentifier } from "./cable.ts";
+import { Cable, type CableIdentifier } from "./cable.ts";
 
 /** Turns one cable channel's frames into a source subscription, dropping frames that map to none. */
 export const subscribeToChannel = (options: {
-  readonly cable: Cable;
+  readonly cable: Cable.Interface;
   readonly identifier: CableIdentifier;
   readonly toOccurrence: (
     message: Schema.Json,

@@ -1,6 +1,6 @@
 import { Effect, Option, Schema } from "effect";
 import { Rejected, type SourceError, Unavailable } from "../core/source.ts";
-import type { GitlabClient } from "./client.ts";
+import { GitlabClient } from "./client.ts";
 
 export const NoteableType = Schema.Literals(["merge_request", "issue"]);
 export type NoteableType = typeof NoteableType.Type;
@@ -62,7 +62,7 @@ export const databaseIdHint = (type: NoteableType): string => kinds[type].databa
 export const globalIdHint = (type: NoteableType): string => kinds[type].globalIdHint;
 
 export const readNoteable = (
-  client: GitlabClient,
+  client: GitlabClient.Interface,
   type: NoteableType,
   globalId: string,
   hint: string,

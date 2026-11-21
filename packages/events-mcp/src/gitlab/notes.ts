@@ -1,7 +1,7 @@
 import { Effect, Option, Schema } from "effect";
 import { type EventType, type Occurrence, Rejected } from "../core/source.ts";
-import { type Cable, type CableIdentifier } from "./cable.ts";
-import type { GitlabClient } from "./client.ts";
+import { Cable, type CableIdentifier } from "./cable.ts";
+import { GitlabClient } from "./client.ts";
 import { databaseIdHint, globalIdFor, NoteableType, readNoteable } from "./noteable.ts";
 import { subscribeToChannel } from "./subscription.ts";
 
@@ -78,8 +78,8 @@ const toOccurrence = (
 const params = Schema.toJsonSchemaDocument(NotesParams, { onExcessProperty: "error" }).schema;
 
 export interface NotesEventOptions {
-  readonly client: GitlabClient;
-  readonly cable: Cable;
+  readonly client: GitlabClient.Interface;
+  readonly cable: Cable.Interface;
 }
 
 export const makeNotesEvent = (options: NotesEventOptions): EventType => ({

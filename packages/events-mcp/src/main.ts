@@ -1,18 +1,28 @@
 #!/usr/bin/env bun
 import { BunRuntime } from "@effect/platform-bun";
 import { Cause, ConfigProvider, Effect, Exit, Layer, Logger, Runtime } from "effect";
+import { FetchHttpClient } from "effect/http";
 import { Catalog } from "./core/catalog.ts";
 import { Decisions } from "./core/decisions.ts";
 import { Server } from "./core/server.ts";
 import { Upstream } from "./core/upstream.ts";
-import { makeGitlabSource } from "./gitlab/source.ts";
+import { Cable } from "./gitlab/cable.ts";
+import { GitlabClient } from "./gitlab/client.ts";
+import { GitlabIdentity } from "./gitlab/identity.ts";
+import { Gitlab } from "./gitlab/source.ts";
 import { LarkApi } from "./lark/api.ts";
 import { LarkConnection } from "./lark/connection.ts";
 import { Lark } from "./lark/source.ts";
 
 const LarkLayers = LarkConnection.layer.pipe(Layer.provideMerge(LarkApi.layer));
-const CatalogLayer = Catalog.layer(Effect.all([Lark.source, makeGitlabSource()])).pipe(
-  Layer.provide(LarkLayers),
+const GitlabLayers = Layer.merge(Cable.layer, GitlabClient.layer).pipe(
+  Layer.provideMerge(GitlabIdentity.layer),
+);
+const SourceLayers = Layer.merge(LarkLayers, GitlabLayers).pipe(
+  Layer.provide(FetchHttpClient.layer),
+);
+const CatalogLayer = Catalog.layer(Effect.all([Lark.source, Gitlab.source])).pipe(
+  Layer.provide(SourceLayers),
 );
 const CoreLayer = Layer.mergeAll(Upstream.layer, Decisions.layer, CatalogLayer);
 const AppLayer = Server.layer.pipe(Layer.provide(CoreLayer));

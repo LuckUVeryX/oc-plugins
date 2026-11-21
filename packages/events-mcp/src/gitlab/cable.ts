@@ -1,7 +1,9 @@
 import {
+  Context,
   Deferred,
   Duration,
   Effect,
+  Layer,
   HashMap,
   Option,
   Queue,
@@ -16,7 +18,7 @@ import {
   SubscriptionRef,
 } from "effect";
 import { Health, Rejected, type SourceError, Unavailable } from "../core/source.ts";
-import type { GitlabIdentity } from "./token.ts";
+import { GitlabIdentity } from "./identity.ts";
 
 export type Json = Schema.Json;
 
@@ -25,12 +27,14 @@ export interface CableIdentifier extends Schema.JsonObject {
   readonly channel: string;
 }
 
-export interface Cable {
+export interface Interface {
   readonly subscribeUnique: (
     identifier: CableIdentifier,
   ) => Effect.Effect<Stream.Stream<Json, SourceError>, SourceError, Scope.Scope>;
   readonly health: Stream.Stream<Health>;
 }
+
+export class Service extends Context.Service<Service, Interface>()("@events-mcp/Cable") {}
 
 export interface CableOptions {
   readonly url: string;
@@ -38,11 +42,6 @@ export interface CableOptions {
   readonly headers: Effect.Effect<Readonly<Record<string, string>>, SourceError>;
   readonly pingTimeout?: Duration.Input | undefined;
   readonly backoff?: Schedule.Schedule<unknown> | undefined;
-}
-
-export interface GitlabCableOptions {
-  readonly host: string;
-  readonly identity: Effect.Effect<GitlabIdentity, SourceError>;
 }
 
 const ControlFrame = Schema.Union([
@@ -143,10 +142,10 @@ const defaultBackoff = Schedule.exponential("500 millis").pipe(
   ),
 );
 
-export const makeCable: (options: CableOptions) => Effect.Effect<Cable, never, Scope.Scope> =
+export const makeCable: (options: CableOptions) => Effect.Effect<Interface, never, Scope.Scope> =
   Effect.fn("Cable.make")(function* (
     options: CableOptions,
-  ): Effect.fn.Return<Cable, never, Scope.Scope> {
+  ): Effect.fn.Return<Interface, never, Scope.Scope> {
     const pingTimeout = options.pingTimeout ?? Duration.seconds(10);
     const backoff = options.backoff ?? defaultBackoff;
     const healthRef = yield* SubscriptionRef.make<Health>(
@@ -400,18 +399,22 @@ export const makeCable: (options: CableOptions) => Effect.Effect<Cable, never, S
     };
   });
 
-export const gitlabCable: (
-  options: GitlabCableOptions,
-) => Effect.Effect<Cable, never, Scope.Scope> = Effect.fn("Cable.gitlab")(function* (
-  options: GitlabCableOptions,
-): Effect.fn.Return<Cable, never, Scope.Scope> {
-  return yield* makeCable({
-    url: `wss://${options.host}/-/cable`,
-    headers: options.identity.pipe(
-      Effect.map((identity) => ({
-        Authorization: `Bearer ${Redacted.value(identity.token)}`,
-        Origin: `https://${options.host}`,
-      })),
-    ),
-  });
-});
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const identity = yield* GitlabIdentity.Service;
+    return Service.of(
+      yield* makeCable({
+        url: `wss://${identity.host}/-/cable`,
+        headers: identity.identity.pipe(
+          Effect.map((value) => ({
+            Authorization: `Bearer ${Redacted.value(value.token)}`,
+            Origin: `https://${identity.host}`,
+          })),
+        ),
+      }),
+    );
+  }),
+);
+
+export * as Cable from "./cable.ts";

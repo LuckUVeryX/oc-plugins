@@ -1,28 +1,30 @@
-import { Effect, Option, Redacted, Result, Schema } from "effect";
+import { Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect";
 import {
   FetchHttpClient,
   HttpClient,
   HttpClientRequest,
   type HttpClientResponse,
 } from "effect/http";
-import { GetInput } from "../core/tool.ts";
 import { Rejected, type SourceError, ToolError, type Tool, Unavailable } from "../core/source.ts";
-import { makeTool } from "../core/tool.ts";
-import type { GitlabIdentity } from "./token.ts";
+import { GetInput, makeTool } from "../core/tool.ts";
+import { GitlabIdentity } from "./identity.ts";
+import type { GitlabIdentity as TokenIdentity } from "./token.ts";
 
 export interface GraphqlRequest {
   readonly query: string;
   readonly variables: Readonly<Record<string, Schema.Json>>;
 }
 
-export interface GitlabClient {
+export interface Interface {
   readonly get: (input: GetInput) => Effect.Effect<Schema.Json, SourceError>;
   readonly graphql: (request: GraphqlRequest) => Effect.Effect<Schema.JsonObject, SourceError>;
 }
 
+export class Service extends Context.Service<Service, Interface>()("@events-mcp/GitlabClient") {}
+
 export interface GitlabClientOptions {
   readonly host: string;
-  readonly identity: Effect.Effect<GitlabIdentity, SourceError>;
+  readonly identity: Effect.Effect<TokenIdentity, SourceError>;
   readonly http?: HttpClient.HttpClient | undefined;
 }
 
@@ -79,7 +81,7 @@ const jsonBody = (response: HttpClientResponse.HttpClientResponse, label: string
     ),
   );
 
-export const makeGitlabClient = (options: GitlabClientOptions): Effect.Effect<GitlabClient> =>
+export const makeGitlabClient = (options: GitlabClientOptions): Effect.Effect<Interface> =>
   Effect.gen(function* () {
     const base = new URL(`https://${options.host}`);
     const http =
@@ -162,7 +164,17 @@ export const makeGitlabClient = (options: GitlabClientOptions): Effect.Effect<Gi
     return { get, graphql };
   });
 
-export const makeGetTool = (client: GitlabClient): Tool =>
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const identity = yield* GitlabIdentity.Service;
+    return Service.of(
+      yield* makeGitlabClient({ host: identity.host, identity: identity.identity }),
+    );
+  }),
+);
+
+export const makeGetTool = (client: Interface): Tool =>
   makeTool({
     description:
       "Read-only GET to the GitLab REST API as the token's user. path is under /api/v4. Returns JSON.",
@@ -170,3 +182,5 @@ export const makeGetTool = (client: GitlabClient): Tool =>
     run: (input) =>
       client.get(input).pipe(Effect.mapError((error) => new ToolError({ message: error.message }))),
   });
+
+export * as GitlabClient from "./client.ts";

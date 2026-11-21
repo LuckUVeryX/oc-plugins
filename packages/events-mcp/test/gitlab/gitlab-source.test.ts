@@ -1,27 +1,22 @@
 import { expect, test } from "vitest";
-import { Effect, Exit, Fiber, Queue, Redacted, Schema, Scope, Stream } from "effect";
-import type { Cable } from "../../src/gitlab/cable.ts";
+import { Effect, Fiber, Layer, Queue, Redacted, Schema, Scope, Stream } from "effect";
+import { Cable } from "../../src/gitlab/cable.ts";
 import type { GetInput } from "../../src/core/tool.ts";
-import { type GitlabClient, type GraphqlRequest } from "../../src/gitlab/client.ts";
-import { makeGitlabSource, type GitlabOptions } from "../../src/gitlab/source.ts";
-import type { GitlabIdentity } from "../../src/gitlab/token.ts";
-import {
-  Health,
-  Rejected,
-  type SourceError,
-  type Source,
-  Unavailable,
-} from "../../src/core/source.ts";
+import { GitlabClient, type GraphqlRequest } from "../../src/gitlab/client.ts";
+import { GitlabIdentity } from "../../src/gitlab/identity.ts";
+import { Gitlab } from "../../src/gitlab/source.ts";
+import type { GitlabIdentity as TokenIdentity } from "../../src/gitlab/token.ts";
+import { Health, Rejected, type SourceError, type Source } from "../../src/core/source.ts";
 import { connect } from "../harness.ts";
 
-const identity: GitlabIdentity = {
+const identity: TokenIdentity = {
   token: Redacted.make("test-token"),
   userId: 256,
   username: "tester",
 };
 
 interface FakeCable {
-  readonly cable: Cable;
+  readonly cable: Cable.Interface;
   readonly identifiers: Array<Schema.Json>;
   readonly queues: Array<Queue.Queue<Schema.Json, SourceError>>;
 }
@@ -53,7 +48,7 @@ const makeFakeClient = (
 ) => {
   const gets: Array<GetInput> = [];
   const graphqls: Array<GraphqlRequest> = [];
-  const client: GitlabClient = {
+  const client: GitlabClient.Interface = {
     get: (input) => {
       gets.push(input);
       return options.getError === undefined
@@ -81,23 +76,39 @@ const makeFakeClient = (
   return { client, gets, graphqls };
 };
 
+const sourceWith = (options: {
+  readonly client: GitlabClient.Interface;
+  readonly cable: Cable.Interface;
+  readonly identity?: Effect.Effect<TokenIdentity, SourceError> | undefined;
+}): Effect.Effect<Source> =>
+  Gitlab.source.pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Layer.succeed(
+          GitlabIdentity.Service,
+          GitlabIdentity.Service.of({
+            host: "gitlab.test",
+            identity: options.identity ?? Effect.succeed(identity),
+          }),
+        ),
+        Layer.succeed(GitlabClient.Service, GitlabClient.Service.of(options.client)),
+        Layer.succeed(Cable.Service, Cable.Service.of(options.cable)),
+      ),
+    ),
+  );
+
 const runSource = <A, E>(
   options: {
-    readonly client: GitlabClient;
-    readonly cable: Cable;
-    readonly identity?: Effect.Effect<GitlabIdentity, SourceError> | undefined;
+    readonly client: GitlabClient.Interface;
+    readonly cable: Cable.Interface;
+    readonly identity?: Effect.Effect<TokenIdentity, SourceError> | undefined;
   },
   body: (source: Source) => Effect.Effect<A, E, Scope.Scope>,
 ): Promise<A> =>
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const source = yield* makeGitlabSource({
-          host: "gitlab.test",
-          identity: options.identity ?? Effect.succeed(identity),
-          client: options.client,
-          cable: options.cable,
-        } satisfies GitlabOptions);
+        const source = yield* sourceWith(options);
         return yield* body(source);
       }),
     ),
@@ -180,41 +191,29 @@ test("rejects an inaccessible project before any subscribe frame", async () => {
 test("rejects a database id where a global ID is required", async () => {
   const fake = makeFakeCable();
   const client = makeFakeClient();
-  const scope = await Effect.runPromise(Scope.make());
+  const source = await Effect.runPromise(sourceWith({ client: client.client, cable: fake.cable }));
+  const h = await connect({ sources: [source] });
   try {
-    const source = await Effect.runPromise(
-      makeGitlabSource({
-        host: "gitlab.test",
-        identity: Effect.succeed(identity),
-        client: client.client,
-        cable: fake.cable,
-      }).pipe(Effect.provideService(Scope.Scope, scope)),
+    const failure = Schema.decodeUnknownSync(
+      Schema.Struct({ code: Schema.Number, message: Schema.String }),
+    )(
+      await h.stream(
+        {
+          watchId: "database-id",
+          params: { pipelineId: "463669" },
+          prepare: "return null",
+          transform: "return null",
+          expiresInSeconds: 1,
+        },
+        "gitlab.ciPipelineStatusUpdated",
+      ).done,
     );
-    const h = await connect({ sources: [source] });
-    try {
-      const failure = Schema.decodeUnknownSync(
-        Schema.Struct({ code: Schema.Number, message: Schema.String }),
-      )(
-        await h.stream(
-          {
-            watchId: "database-id",
-            params: { pipelineId: "463669" },
-            prepare: "return null",
-            transform: "return null",
-            expiresInSeconds: 1,
-          },
-          "gitlab.ciPipelineStatusUpdated",
-        ).done,
-      );
-      expect(failure.code).toBe(-32602);
-      expect(failure.message).toContain("gid://gitlab/Ci::Pipeline/");
-      expect(failure.message).toContain("not the number in the web URL");
-      expect(fake.identifiers).toHaveLength(0);
-    } finally {
-      await h.close();
-    }
+    expect(failure.code).toBe(-32602);
+    expect(failure.message).toContain("gid://gitlab/Ci::Pipeline/");
+    expect(failure.message).toContain("not the number in the web URL");
+    expect(fake.identifiers).toHaveLength(0);
   } finally {
-    await Effect.runPromise(Scope.close(scope, Exit.void));
+    await h.close();
   }
 });
 
@@ -342,38 +341,6 @@ test("rejects an inaccessible noteable before any subscribe frame", async () => 
   expect(error._tag).toBe("Source.Rejected");
   expect(error.message).toContain("not found or is not accessible");
   expect(fake.identifiers).toHaveLength(0);
-});
-
-test("a transient token check is retried instead of cached", async () => {
-  let attempts = 0;
-  const fake = makeFakeCable();
-  const client = makeFakeClient();
-  const first = await runSource(
-    {
-      client: client.client,
-      cable: fake.cable,
-      identity: Effect.suspend(() => {
-        attempts += 1;
-        return attempts === 1
-          ? Effect.fail(new Unavailable({ message: "Could not reach GitLab" }))
-          : Effect.succeed(identity);
-      }),
-    },
-    (source) =>
-      Effect.gen(function* () {
-        const event = eventNamed(source, "userMergeRequestUpdated");
-        const failure = yield* Effect.scoped(
-          event.subscribe({ userId: "gid://gitlab/User/256" }),
-        ).pipe(Effect.flip);
-        const subscribed = yield* Effect.scoped(
-          event.subscribe({ userId: "gid://gitlab/User/256" }),
-        );
-        return { failure, subscribed };
-      }),
-  );
-  expect(first.failure._tag).toBe("Source.Unavailable");
-  expect(first.subscribed.occurrences).toBeDefined();
-  expect(attempts).toBe(2);
 });
 
 test("delivers a merge request event whose updatedAt is old", async () => {

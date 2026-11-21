@@ -1,46 +1,27 @@
-import { Config, Duration, Effect, Exit, Option, Schema, Scope } from "effect";
-import generated from "./events.json";
+import { Effect, Option, Schema } from "effect";
 import {
   type EventType,
   type Occurrence,
-  type Source,
   Rejected,
+  type Source,
   type SourceError,
   SourceName,
 } from "../core/source.ts";
-import { type Cable, type CableIdentifier, gitlabCable } from "./cable.ts";
+import generated from "./events.json";
+import { Cable, type CableIdentifier } from "./cable.ts";
 import { type GitlabEvent, decodeGitlabCatalog } from "./catalog.ts";
-import {
-  type GitlabClient,
-  GraphqlResult,
-  graphqlFailure,
-  makeGetTool,
-  makeGitlabClient,
-} from "./client.ts";
+import { GitlabClient, GraphqlResult, graphqlFailure, makeGetTool } from "./client.ts";
+import { GitlabIdentity } from "./identity.ts";
 import { globalIdHint, readNoteable } from "./noteable.ts";
 import { makeNotesEvent } from "./notes.ts";
 import { subscribeToChannel } from "./subscription.ts";
-import { type GitlabIdentity, resolveIdentity } from "./token.ts";
+import type { GitlabIdentity as TokenIdentity } from "./token.ts";
 
 const catalog = decodeGitlabCatalog(generated);
 
 const GraphqlMessage = Schema.Struct({
   result: Schema.optionalKey(Schema.NullOr(GraphqlResult)),
 });
-
-export interface GitlabOptions {
-  readonly host?: string | undefined;
-  readonly identity?: Effect.Effect<GitlabIdentity, SourceError> | undefined;
-  readonly client?: GitlabClient | undefined;
-  readonly cable?: Cable | undefined;
-}
-
-const cacheSuccess = <A, E, R>(
-  effect: Effect.Effect<A, E, R>,
-): Effect.Effect<Effect.Effect<A, E, R>> =>
-  Effect.cachedWithTTL(effect, (exit) =>
-    Exit.isSuccess(exit) ? Duration.infinity : Duration.zero,
-  );
 
 const toOccurrence = (
   event: GitlabEvent,
@@ -86,7 +67,7 @@ const AccessParams = Schema.Struct({
 });
 
 const checkProject = (
-  client: GitlabClient,
+  client: GitlabClient.Interface,
   project: { readonly fullPath: string } | { readonly id: string },
 ): Effect.Effect<void, SourceError> => {
   const label = "fullPath" in project ? project.fullPath : project.id;
@@ -105,7 +86,7 @@ const checkProject = (
   );
 };
 
-const checkUser = (identity: GitlabIdentity, userId: string): Effect.Effect<void, SourceError> => {
+const checkUser = (identity: TokenIdentity, userId: string): Effect.Effect<void, SourceError> => {
   if (databaseId(userId) === String(identity.userId)) return Effect.void;
   return Effect.fail(
     new Rejected({
@@ -114,17 +95,9 @@ const checkUser = (identity: GitlabIdentity, userId: string): Effect.Effect<void
   );
 };
 
-const checkMergeRequest = (
-  client: GitlabClient,
-  issuableId: string,
-): Effect.Effect<void, SourceError> =>
-  readNoteable(client, "merge_request", issuableId, globalIdHint("merge_request")).pipe(
-    Effect.asVoid,
-  );
-
 const graphqlEvent = (options: {
   readonly event: GitlabEvent;
-  readonly cable: Cable;
+  readonly cable: Cable.Interface;
   readonly checkAccess: (params: Schema.JsonObject) => Effect.Effect<void, SourceError>;
 }): EventType => ({
   name: options.event.name,
@@ -142,49 +115,48 @@ const graphqlEvent = (options: {
     }),
 });
 
-export const makeGitlabSource = (
-  options: GitlabOptions = {},
-): Effect.Effect<Source, never, Scope.Scope> =>
-  Effect.gen(function* () {
-    const host =
-      options.host ??
-      (yield* Config.String("GITLAB_HOST").pipe(
-        Config.withDefault("gitlab.glints.com"),
-        Effect.orDie,
-      ));
-    if (host.trim() === "") yield* Effect.die(new Error("GITLAB_HOST must not be empty"));
-    const identityEffect = yield* cacheSuccess(options.identity ?? resolveIdentity(host));
-    const client = options.client ?? (yield* makeGitlabClient({ host, identity: identityEffect }));
-    const cable = options.cable ?? (yield* gitlabCable({ host, identity: identityEffect }));
-    const checkAccess: (params: Schema.JsonObject) => Effect.Effect<void, SourceError> = Effect.fn(
-      "GitlabSource.checkAccess",
-    )(function* (params) {
-      const access = yield* Schema.decodeUnknownEffect(AccessParams)(params).pipe(
-        Effect.mapError((error) => new Rejected({ message: error.message })),
-      );
-      const identity = yield* identityEffect;
-      if (access.projectFullPath !== undefined)
-        return yield* checkProject(client, { fullPath: access.projectFullPath });
-      if (access.projectId !== undefined)
-        return yield* checkProject(client, { id: access.projectId });
-      if (access.userId !== undefined) return yield* checkUser(identity, access.userId);
-      if (access.issuableId !== undefined)
-        return yield* checkMergeRequest(client, access.issuableId);
-    });
-    return {
-      name: Schema.decodeUnknownSync(SourceName)("gitlab"),
-      tools: { get: makeGetTool(client) },
-      events: [
-        ...catalog.events.map((event) =>
-          graphqlEvent({
-            event,
-            cable,
-            checkAccess,
-          }),
-        ),
-        makeNotesEvent({ client, cable }),
-      ],
-      instructions:
-        "GitLab: read with gitlab_get. IDs are global (gid://gitlab/MergeRequest/1234); notes_changed takes database ids.",
-    };
+export const source: Effect.Effect<
+  Source,
+  never,
+  GitlabIdentity.Service | GitlabClient.Service | Cable.Service
+> = Effect.gen(function* () {
+  const identity = yield* GitlabIdentity.Service;
+  const client = yield* GitlabClient.Service;
+  const cable = yield* Cable.Service;
+  const checkAccess = Effect.fn("Gitlab.checkAccess")(function* (params: Schema.JsonObject) {
+    const access = yield* Schema.decodeUnknownEffect(AccessParams)(params).pipe(
+      Effect.mapError((error) => new Rejected({ message: error.message })),
+    );
+    const token = yield* identity.identity;
+    if (access.projectFullPath !== undefined)
+      return yield* checkProject(client, { fullPath: access.projectFullPath });
+    if (access.projectId !== undefined)
+      return yield* checkProject(client, { id: access.projectId });
+    if (access.userId !== undefined) return yield* checkUser(token, access.userId);
+    if (access.issuableId !== undefined)
+      return yield* readNoteable(
+        client,
+        "merge_request",
+        access.issuableId,
+        globalIdHint("merge_request"),
+      ).pipe(Effect.asVoid);
   });
+  return {
+    name: Schema.decodeUnknownSync(SourceName)("gitlab"),
+    tools: { get: makeGetTool(client) },
+    events: [
+      ...catalog.events.map((event) =>
+        graphqlEvent({
+          event,
+          cable,
+          checkAccess,
+        }),
+      ),
+      makeNotesEvent({ client, cable }),
+    ],
+    instructions:
+      "GitLab: read with gitlab_get. IDs are global (gid://gitlab/MergeRequest/1234); notes_changed takes database ids.",
+  };
+});
+
+export * as Gitlab from "./source.ts";

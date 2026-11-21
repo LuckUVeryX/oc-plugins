@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { Effect, Fiber, Option, Queue, Schedule, Schema, Stream } from "effect";
-import { type Cable, type CableIdentifier, type Json, makeCable } from "../../src/gitlab/cable.ts";
+import { Cable, type CableIdentifier, type Json, makeCable } from "../../src/gitlab/cable.ts";
 import { Health, type SourceError } from "../../src/core/source.ts";
 
 const WireFrame = Schema.Record(Schema.String, Schema.Unknown);
@@ -116,7 +116,7 @@ const startCable = async (
   url: string,
   options: { readonly pingTimeout?: number; readonly backoff?: Schedule.Schedule<unknown> } = {},
 ) => {
-  const ready = Promise.withResolvers<Cable>();
+  const ready = Promise.withResolvers<Cable.Interface>();
   const fiber = Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
@@ -134,7 +134,7 @@ const startCable = async (
   return { cable: await ready.promise, stop: () => Effect.runPromise(Fiber.interrupt(fiber)) };
 };
 
-const hold = async (cable: Cable, identifier: CableIdentifier) => {
+const hold = async (cable: Cable.Interface, identifier: CableIdentifier) => {
   const messages = await Effect.runPromise(Queue.unbounded<Json>());
   const fiber = Effect.runFork(
     Effect.scoped(
@@ -151,7 +151,7 @@ const hold = async (cable: Cable, identifier: CableIdentifier) => {
   return { messages, release: () => Effect.runPromise(Fiber.interrupt(fiber)) };
 };
 
-const healthLog = (cable: Cable) => {
+const healthLog = (cable: Cable.Interface) => {
   const values = Effect.runSync(Queue.unbounded<Health>());
   const tags: Array<string> = [];
   const fiber = Effect.runFork(

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Config, Effect, Option, Redacted, Schema } from "effect";
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { Rejected, type SourceError, Unavailable } from "../core/source.ts";
 
 export interface GitlabIdentity {
@@ -89,6 +89,6 @@ const resolve = Effect.fn("GitlabToken.resolve")(function* (host: string) {
   return yield* validate({ host, token });
 });
 
-export const resolveIdentity: (host: string) => Effect.Effect<GitlabIdentity, SourceError> = (
-  host,
-) => resolve(host).pipe(Effect.provide(FetchHttpClient.layer));
+export const resolveIdentity: (
+  host: string,
+) => Effect.Effect<GitlabIdentity, SourceError, HttpClient.HttpClient> = (host) => resolve(host);

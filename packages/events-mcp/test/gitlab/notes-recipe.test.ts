@@ -1,15 +1,16 @@
 import { expect, test, vi } from "vitest";
-import { Effect, Exit, Queue, Redacted, Schema, Scope, Stream } from "effect";
-import type { Cable } from "../../src/gitlab/cable.ts";
+import { Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
 import type { GetInput } from "../../src/core/tool.ts";
-import type { GitlabClient } from "../../src/gitlab/client.ts";
+import { Cable } from "../../src/gitlab/cable.ts";
+import { GitlabClient } from "../../src/gitlab/client.ts";
+import { GitlabIdentity } from "../../src/gitlab/identity.ts";
 import { notesRecipe } from "../../src/gitlab/notes.ts";
-import { makeGitlabSource } from "../../src/gitlab/source.ts";
-import type { GitlabIdentity } from "../../src/gitlab/token.ts";
+import { Gitlab } from "../../src/gitlab/source.ts";
+import type { GitlabIdentity as TokenIdentity } from "../../src/gitlab/token.ts";
 import { Health, type SourceError } from "../../src/core/source.ts";
 import { connect } from "../harness.ts";
 
-const identity: GitlabIdentity = {
+const identity: TokenIdentity = {
   token: Redacted.make("test-token"),
   userId: 256,
   username: "tester",
@@ -41,7 +42,7 @@ test("the notes recipe delivers the first new comment after START and nothing el
   const responseCount = responses.length;
   const queuePromise = Promise.withResolvers<Queue.Queue<Schema.Json, SourceError>>();
   const gets: Array<GetInput> = [];
-  const client: GitlabClient = {
+  const client: GitlabClient.Interface = {
     get: (input) => {
       gets.push(input);
       return Effect.succeed(responses.shift() ?? []);
@@ -55,7 +56,7 @@ test("the notes recipe delivers the first new comment after START and nothing el
         },
       }),
   };
-  const cable: Cable = {
+  const cable: Cable.Interface = {
     subscribeUnique: () =>
       Effect.gen(function* () {
         const queue = yield* Queue.unbounded<Schema.Json, SourceError>();
@@ -64,14 +65,19 @@ test("the notes recipe delivers the first new comment after START and nothing el
       }),
     health: Stream.succeed(Health.Live()),
   };
-  const sourceScope = await Effect.runPromise(Scope.make());
   const source = await Effect.runPromise(
-    makeGitlabSource({
-      host: "gitlab.test",
-      identity: Effect.succeed(identity),
-      client,
-      cable,
-    }).pipe(Effect.provideService(Scope.Scope, sourceScope)),
+    Gitlab.source.pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.succeed(
+            GitlabIdentity.Service,
+            GitlabIdentity.Service.of({ host: "gitlab.test", identity: Effect.succeed(identity) }),
+          ),
+          Layer.succeed(GitlabClient.Service, GitlabClient.Service.of(client)),
+          Layer.succeed(Cable.Service, Cable.Service.of(cable)),
+        ),
+      ),
+    ),
   );
   const h = await connect({ sources: [source] });
   try {
@@ -117,6 +123,5 @@ test("the notes recipe delivers the first new comment after START and nothing el
     });
   } finally {
     await h.close();
-    await Effect.runPromise(Scope.close(sourceScope, Exit.void));
   }
 });
