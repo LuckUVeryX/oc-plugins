@@ -16,6 +16,7 @@ import {
   SubscriptionRef,
 } from "effect";
 import { Health, SourceError } from "../source.ts";
+import type { GitlabIdentity } from "./token.ts";
 
 export type Json = Schema.Json;
 
@@ -33,14 +34,15 @@ export interface Cable {
 
 export interface CableOptions {
   readonly url: string;
-  readonly headers: Readonly<Record<string, string>>;
+  /** Resolved when the connection is acquired, so a token failure fails that subscribe. */
+  readonly headers: Effect.Effect<Readonly<Record<string, string>>, SourceError>;
   readonly pingTimeout?: Duration.Input | undefined;
   readonly backoff?: Schedule.Schedule<unknown> | undefined;
 }
 
 export interface GitlabCableOptions {
   readonly host: string;
-  readonly token: Redacted.Redacted<string>;
+  readonly identity: Effect.Effect<GitlabIdentity, SourceError>;
 }
 
 const ControlFrame = Schema.Union([
@@ -153,6 +155,7 @@ export const makeCable: (options: CableOptions) => Effect.Effect<Cable, never, S
 
     const connection = yield* RcRef.make({
       acquire: Effect.gen(function* () {
+        const headers = yield* options.headers;
         const connectionState = yield* Ref.make<ConnectionState>({ _tag: "Closed" });
         const subscriptions = yield* Ref.make(HashMap.empty<string, Entry>());
         const mutex = yield* Semaphore.make(1);
@@ -287,7 +290,7 @@ export const makeCable: (options: CableOptions) => Effect.Effect<Cable, never, S
           const socket = yield* Effect.sync(
             () =>
               new WebSocket(options.url, {
-                headers: { ...options.headers },
+                headers: { ...headers },
               }),
           );
           yield* Effect.sync(() => attach(socket, events));
@@ -404,9 +407,11 @@ export const gitlabCable: (
 ): Effect.fn.Return<Cable, never, Scope.Scope> {
   return yield* makeCable({
     url: `wss://${options.host}/-/cable`,
-    headers: {
-      Authorization: `Bearer ${Redacted.value(options.token)}`,
-      Origin: `https://${options.host}`,
-    },
+    headers: options.identity.pipe(
+      Effect.map((identity) => ({
+        Authorization: `Bearer ${Redacted.value(identity.token)}`,
+        Origin: `https://${options.host}`,
+      })),
+    ),
   });
 });

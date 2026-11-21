@@ -31,7 +31,7 @@ export interface GitlabOptions {
   readonly host?: string | undefined;
   readonly identity?: Effect.Effect<GitlabIdentity, SourceError> | undefined;
   readonly client?: GitlabClient | undefined;
-  readonly cable?: Effect.Effect<Cable, SourceError, Scope.Scope> | undefined;
+  readonly cable?: Cable | undefined;
 }
 
 const cacheSuccess = <A, E, R>(
@@ -143,7 +143,7 @@ const checkMergeRequest = (
 
 const graphqlEvent = (options: {
   readonly event: GitlabEvent;
-  readonly cable: Effect.Effect<Cable, SourceError, Scope.Scope>;
+  readonly cable: Cable;
   readonly checkAccess: (params: Schema.JsonObject) => Effect.Effect<void, SourceError>;
 }): EventType => ({
   name: options.event.name,
@@ -174,14 +174,7 @@ export const makeGitlabSource = (
     if (host.trim() === "") yield* Effect.die(new Error("GITLAB_HOST must not be empty"));
     const identityEffect = yield* cacheSuccess(options.identity ?? resolveIdentity(host));
     const client = options.client ?? (yield* makeGitlabClient({ host, identity: identityEffect }));
-    const scope = yield* Effect.scope;
-    const cableEffect: Effect.Effect<Cable, SourceError, Scope.Scope> = yield* cacheSuccess(
-      Effect.gen(function* () {
-        if (options.cable !== undefined) return yield* options.cable;
-        const identity = yield* identityEffect;
-        return yield* gitlabCable({ host, token: identity.token });
-      }).pipe(Effect.provideService(Scope.Scope, scope)),
-    );
+    const cable = options.cable ?? (yield* gitlabCable({ host, identity: identityEffect }));
     const checkAccess: (params: Schema.JsonObject) => Effect.Effect<void, SourceError> = Effect.fn(
       "GitlabSource.checkAccess",
     )(function* (params) {
@@ -206,11 +199,11 @@ export const makeGitlabSource = (
         ...catalog.events.map((event) =>
           graphqlEvent({
             event,
-            cable: cableEffect,
+            cable,
             checkAccess,
           }),
         ),
-        makeNotesEvent({ client, cable: cableEffect }),
+        makeNotesEvent({ client, cable }),
       ],
       instructions:
         "GitLab: read with gitlab_get. IDs are global (gid://gitlab/MergeRequest/1234); notes_changed takes database ids.",

@@ -89,7 +89,7 @@ const runSource = <A, E>(
           host: "gitlab.test",
           identity: options.identity ?? Effect.succeed(identity),
           client: options.client,
-          cable: Effect.succeed(options.cable),
+          cable: options.cable,
         } satisfies GitlabOptions);
         return yield* body(source);
       }),
