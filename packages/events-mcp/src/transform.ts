@@ -1,11 +1,11 @@
 import { Effect } from "effect";
-import { MAX_TRANSFORM_OUTPUT_BYTES } from "./limits.ts";
+import { MAX_EVENT_BYTES } from "./limits.ts";
 import { makeScript } from "./script.ts";
 import type { TransformInput } from "./watch.ts";
 
 export const makeTransform = () => {
   const script = makeScript({
-    limits: { maxToolCalls: 0, maxOutputBytes: MAX_TRANSFORM_OUTPUT_BYTES },
+    limits: { maxToolCalls: 0, maxOutputBytes: MAX_EVENT_BYTES },
   });
   return (source: string, input: TransformInput) =>
     Effect.gen(function* () {
