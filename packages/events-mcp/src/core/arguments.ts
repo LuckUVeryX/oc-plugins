@@ -1,5 +1,6 @@
 import { Effect, JsonSchema, Schema } from "effect";
 import { isObject } from "effect/Predicate";
+import { MAX_EVENT_BYTES } from "./limits.ts";
 
 export class Invalid extends Schema.TaggedError<Invalid>()("Arguments.Invalid", {
   message: Schema.String,
@@ -76,41 +77,48 @@ export const inputSchemaDocument = (options: {
     };
   const tools = [
     ...options.toolPaths,
-    "tools.watch.state",
+    "tools.watch.state.get",
+    "tools.watch.state.set",
     ...(options.decide ? ["tools.events.decide"] : []),
   ].join(", ");
+  const paramsProperties = options.params["properties"];
+  const paramsCount = isObject(paramsProperties) ? Object.keys(paramsProperties).length : 0;
   return {
     type: "object",
     properties: {
       watchId: {
         type: "string",
         minLength: 1,
-        description: "Unique among active watches.",
+        description:
+          "Your name for this watch, unique among open watches. It appears in list_watches and stop_watch.",
       },
       params: {
         ...options.params,
-        description: options.params["description"] ?? "Subscription params.",
+        description:
+          options.params["description"] ??
+          (paramsCount === 0
+            ? "This event takes no params."
+            : "Selects the resource to watch. The schema lists the fields."),
       },
       filter: {
         type: "object",
         description:
-          "Match payload fields by dot path before prepare runs. Each path maps to a value or a list of accepted values; all paths must match.",
+          "Continue only with payloads that match. Each key is a dot path into this event's payload with one value or a list of accepted values, and every key you set must match. A payload that fails is dropped before prepare runs, and paths inside arrays cannot be filtered. Omit it to accept every payload.",
         properties,
         additionalProperties: false,
       },
       prepare: {
         type: "string",
-        description: `Code Mode gate. Reads input.event.data; returns JSON for transform, or null to drop. Tools: ${tools}. Pass-through: return input.event.data`,
+        description: `JavaScript that runs for each payload passing filter and decides whether to wake you. Read the payload at input.event.data and its metadata at input.event.eventId and input.event.timestamp. It can await any of ${tools}. Return JSON for transform, or null to drop this event. Prepare and transform share the step time limit, and a slow event delays the ones behind it. Pass the payload through with \`return input.event.data\`.`,
       },
       transform: {
         type: "string",
-        description:
-          "Code Mode without tools. Reads input.event and input.prepared; returns the wake text, or null to drop. Pass-through: return JSON.stringify(input.prepared)",
+        description: `JavaScript that turns prepare's result into the text that wakes you. Read input.prepared and input.event, then return a string, or null to drop this event. It runs without tools. The delivered event is capped at ${MAX_EVENT_BYTES} bytes, so return only what the session needs. Pass everything through with \`return JSON.stringify(input.prepared)\`.`,
       },
       expiresInSeconds: {
         type: "integer",
         minimum: 1,
-        description: `How long the watch stays open, in seconds. Defaults to ${options.defaultExpiresInSeconds} seconds.`,
+        description: `How long the watch stays open, in seconds. When it elapses the watch closes and sends nothing more. Defaults to ${options.defaultExpiresInSeconds} seconds.`,
       },
     },
     required: ["watchId", "prepare", "transform"],
