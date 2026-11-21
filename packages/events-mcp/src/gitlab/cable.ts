@@ -104,11 +104,6 @@ type SessionOutcome =
   | { readonly _tag: "Unopened" }
   | { readonly _tag: "Fatal" };
 
-type Welcome =
-  | { readonly _tag: "Welcomed" }
-  | { readonly _tag: "Unwelcomed" }
-  | { readonly _tag: "Ended"; readonly end: SessionEnd };
-
 interface Entry {
   readonly identifier: string;
   readonly messages: Queue.Queue<Json, SourceError>;
@@ -267,21 +262,6 @@ export const makeCable: (options: CableOptions) => Effect.Effect<Cable, never, S
           });
         };
 
-        const awaitWelcome = (events: Queue.Queue<SocketEvent>): Effect.Effect<Welcome> =>
-          Effect.gen(function* () {
-            while (true) {
-              const next = yield* Queue.take(events).pipe(Effect.timeoutOption(pingTimeout));
-              if (Option.isNone(next) || next.value._tag !== "Message")
-                return { _tag: "Unwelcomed" };
-              const frame = yield* decodeInbound(next.value.data).pipe(Effect.option);
-              if (Option.isNone(frame) || !("type" in frame.value)) continue;
-              if (frame.value.type === "welcome") return { _tag: "Welcomed" };
-              // A server can refuse the token before it welcomes the connection.
-              if (frame.value.type === "disconnect")
-                return { _tag: "Ended", end: frameDisconnect(frame.value) };
-            }
-          });
-
         const openSession = (socket: WebSocket) =>
           Effect.gen(function* () {
             yield* Ref.set(connectionState, { _tag: "Open", socket });
@@ -298,41 +278,6 @@ export const makeCable: (options: CableOptions) => Effect.Effect<Cable, never, S
             yield* publishLive;
           });
 
-        const drain = Effect.fn("Cable.drain")(function* (
-          socket: WebSocket,
-          events: Queue.Queue<SocketEvent>,
-        ): Effect.fn.Return<SessionEnd> {
-          while (true) {
-            const next = yield* Queue.take(events).pipe(Effect.timeoutOption(pingTimeout));
-            if (Option.isNone(next)) {
-              closeQuietly(socket);
-              return { _tag: "Disconnected", reason: "ping timeout" };
-            }
-            const event = next.value;
-            switch (event._tag) {
-              case "Close":
-                return { _tag: "Disconnected", reason: `socket closed (${event.code})` };
-              case "Error":
-                closeQuietly(socket);
-                return { _tag: "Disconnected", reason: event.message };
-              case "Message": {
-                const frame = yield* decodeInbound(event.data).pipe(Effect.option);
-                if (Option.isNone(frame)) continue;
-                const end = yield* handleFrame(frame.value);
-                if (end !== undefined) {
-                  closeQuietly(socket);
-                  return end;
-                }
-                break;
-              }
-              default: {
-                const _exhaustive: never = event;
-                return _exhaustive;
-              }
-            }
-          }
-        });
-
         const session = Effect.fn("Cable.session")(function* (): Effect.fn.Return<
           SessionOutcome,
           never,
@@ -347,16 +292,60 @@ export const makeCable: (options: CableOptions) => Effect.Effect<Cable, never, S
           );
           yield* Effect.sync(() => attach(socket, events));
           yield* Effect.addFinalizer(() => Effect.sync(() => closeQuietly(socket)));
-          const welcome = yield* awaitWelcome(events);
-          if (welcome._tag === "Unwelcomed") return { _tag: "Unopened" };
-          if (welcome._tag === "Ended") {
-            yield* down(welcome.end);
-            return welcome.end._tag === "Fatal" ? { _tag: "Fatal" } : { _tag: "Unopened" };
+
+          let welcomed = false;
+
+          const end = (outcome: SessionEnd): Effect.Effect<SessionOutcome> =>
+            Effect.gen(function* () {
+              yield* down(outcome);
+              if (outcome._tag === "Fatal") return { _tag: "Fatal" };
+              return { _tag: welcomed ? "Opened" : "Unopened" };
+            });
+
+          const lost = (reason: string): Effect.Effect<SessionOutcome> =>
+            welcomed ? end({ _tag: "Disconnected", reason }) : Effect.succeed({ _tag: "Unopened" });
+
+          while (true) {
+            const next = yield* Queue.take(events).pipe(Effect.timeoutOption(pingTimeout));
+            if (Option.isNone(next)) {
+              closeQuietly(socket);
+              return yield* lost("ping timeout");
+            }
+            const event = next.value;
+            switch (event._tag) {
+              case "Close":
+                return yield* lost(`socket closed (${event.code})`);
+              case "Error":
+                closeQuietly(socket);
+                return yield* lost(event.message);
+              case "Message": {
+                const frame = yield* decodeInbound(event.data).pipe(Effect.option);
+                if (Option.isNone(frame)) continue;
+                if (!welcomed) {
+                  const control = frame.value;
+                  if (!("type" in control)) continue;
+                  if (control.type === "welcome") {
+                    yield* mutex.withPermits(1)(openSession(socket));
+                    welcomed = true;
+                    continue;
+                  }
+                  // A server can refuse the token before it welcomes the connection.
+                  if (control.type === "disconnect") return yield* end(frameDisconnect(control));
+                  continue;
+                }
+                const frameEnd = yield* handleFrame(frame.value);
+                if (frameEnd !== undefined) {
+                  closeQuietly(socket);
+                  return yield* end(frameEnd);
+                }
+                break;
+              }
+              default: {
+                const _exhaustive: never = event;
+                return _exhaustive;
+              }
+            }
           }
-          yield* mutex.withPermits(1)(openSession(socket));
-          const end = yield* drain(socket, events);
-          yield* down(end);
-          return end._tag === "Fatal" ? { _tag: "Fatal" } : { _tag: "Opened" };
         });
 
         const driver = Effect.fn("Cable.driver")(function* () {
