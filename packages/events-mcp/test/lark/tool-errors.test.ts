@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { expect, test } from "vitest";
 import { makeLarkSource } from "../../src/lark/source.ts";
 import { makePrepare, makeWatchState } from "../../src/core/prepare.ts";
@@ -26,6 +26,7 @@ test("a Lark credential failure reaches a prepare failure", async () => {
   const prepare = makePrepare({
     sources: [larkSource],
     state: await Effect.runPromise(makeWatchState),
+    decide: Option.none(),
   });
   const failure = await Effect.runPromise(
     prepare('return await tools.lark.get({ path: "/im/v1/messages" })', {
@@ -34,5 +35,5 @@ test("a Lark credential failure reaches a prepare failure", async () => {
       data: {},
     }).pipe(Effect.flip),
   );
-  expect(failure).toContain(credentialMessage);
+  expect(failure.message).toContain(credentialMessage);
 });

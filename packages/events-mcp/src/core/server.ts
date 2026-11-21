@@ -5,18 +5,31 @@ import {
   SUBSCRIPTION_ID_META_KEY,
   McpServer,
 } from "@modelcontextprotocol/server";
-import { Clock, Deferred, Effect, Logger, Schema, SchemaIssue } from "effect";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import {
+  Clock,
+  Config,
+  Context,
+  Deferred,
+  Effect,
+  Layer,
+  Logger,
+  Option,
+  Schema,
+  SchemaIssue,
+} from "effect";
 import type { JsonSchema } from "effect";
 import { isObject } from "effect/Predicate";
-import type { Catalog, RegisteredEvent } from "./catalog.ts";
 import { decodeArguments, inputSchemaDocument } from "./arguments.ts";
+import { Catalog, type RegisteredEvent } from "./catalog.ts";
+import { stepTimeoutSeconds, watchDefaultSeconds } from "./config.ts";
+import { Decisions, type Decide } from "./decisions.ts";
 import { bytes, MAX_SCRIPT_BYTES } from "./limits.ts";
-import type { DecisionsRequester } from "./prepare.ts";
 import { makePrepare, makeWatchState } from "./prepare.ts";
-import { SourceError } from "./source.ts";
+import type { SourceError } from "./source.ts";
 import { inputJsonSchema } from "./tool.ts";
 import { makeTransform } from "./transform.ts";
-import type { Upstream } from "./upstream.ts";
+import { Upstream } from "./upstream.ts";
 import { runWatch, type NotificationType } from "./watch.ts";
 
 const EVENTS_EXTENSION = "io.modelcontextprotocol/events";
@@ -24,11 +37,11 @@ const EVENTS_EXTENSION = "io.modelcontextprotocol/events";
 const CLIENT_WATCH_TOOL = "watch_mcp_event";
 
 interface ServerOptions {
-  readonly catalog: Catalog;
-  readonly upstream: Upstream;
+  readonly catalog: Catalog.Interface;
+  readonly upstream: Upstream.Interface;
+  readonly decide: Option.Option<Decide>;
   readonly defaultExpiresInSeconds: number;
   readonly eventTimeoutSeconds: number;
-  readonly decide?: DecisionsRequester | undefined;
 }
 
 const streamParams = Schema.toStandardSchemaV1(
@@ -105,7 +118,7 @@ interface Watch {
   readonly finished: Deferred.Deferred<void>;
 }
 
-export const makeServer = (options: ServerOptions): McpServer => {
+const buildServer = (options: ServerOptions): McpServer => {
   const transformEvent = makeTransform();
   const watches = new Map<string, Watch>();
   const toolPaths = options.catalog.sources.flatMap((source) =>
@@ -139,7 +152,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
         (input) =>
           run(
             Effect.match(tool.run(input), {
-              onFailure: (error) => ({ ...text(error), isError: true }),
+              onFailure: (error) => ({ ...text(error.message), isError: true }),
               onSuccess: text,
             }),
           ),
@@ -197,7 +210,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
           filter: event.filter,
           params: event.params,
           toolPaths,
-          decide: options.decide !== undefined,
+          decide: Option.isSome(options.decide),
           defaultExpiresInSeconds: options.defaultExpiresInSeconds,
         }),
         payloadSchema: { anyOf: [event.payload, { type: "string" }] },
@@ -231,7 +244,7 @@ export const makeServer = (options: ServerOptions): McpServer => {
         const decoded = yield* decodeArguments({
           filter: event.filter,
           value: params.arguments ?? {},
-        }).pipe(Effect.mapError(invalidParams));
+        }).pipe(Effect.mapError((error) => invalidParams(error.message)));
         for (const [name, source] of [
           ["Transform", decoded.transform],
           ["Prepare", decoded.prepare],
@@ -288,17 +301,14 @@ export const makeServer = (options: ServerOptions): McpServer => {
           expiresInSeconds,
           eventTimeoutSeconds: options.eventTimeoutSeconds,
           ended,
-          upstream: options.upstream,
           prepare: (occurrence) => prepare(decoded.prepare, occurrence),
           transform: (input) => transformEvent(decoded.transform, input),
           notify,
         }).pipe(
-          Effect.mapError((error) => {
-            const { code, message } = SourceError.$match(error, {
-              Rejected: ({ message }) => ({ code: -32024, message }),
-              Unavailable: ({ message }) => ({ code: -32603, message }),
-            });
-            return new ProtocolError(code, message);
+          Effect.provideService(Upstream.Service, options.upstream),
+          Effect.mapError((error: SourceError) => {
+            const code = error._tag === "Source.Rejected" ? -32024 : -32603;
+            return new ProtocolError(code, error.message);
           }),
         );
         return {};
@@ -309,3 +319,62 @@ export const makeServer = (options: ServerOptions): McpServer => {
 
   return server;
 };
+
+export interface Interface {
+  readonly done: Effect.Effect<void>;
+}
+
+export class Service extends Context.Service<Service, Interface>()("@events-mcp/Server") {}
+
+export const make: Effect.Effect<
+  McpServer,
+  Config.ConfigError,
+  Catalog.Service | Upstream.Service | Decisions.Service
+> = Effect.gen(function* () {
+  const catalog = yield* Catalog.Service;
+  const upstream = yield* Upstream.Service;
+  const decisions = yield* Decisions.Service;
+  const defaultExpiresInSeconds = yield* watchDefaultSeconds;
+  const eventTimeoutSeconds = yield* stepTimeoutSeconds;
+  return buildServer({
+    catalog,
+    upstream,
+    decide: decisions.decide,
+    defaultExpiresInSeconds,
+    eventTimeoutSeconds,
+  });
+});
+
+// Stdout carries MCP messages, so transport errors must go to stderr.
+const logError = (error: unknown): void => {
+  Effect.runSync(Effect.logError(error).pipe(Effect.provideService(Logger.LogToStderr, true)));
+};
+
+export const layer: Layer.Layer<
+  Service,
+  Config.ConfigError,
+  Catalog.Service | Upstream.Service | Decisions.Service
+> = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const server = yield* make;
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        serveStdio(() => server, {
+          legacy: "reject",
+          onerror: logError,
+        }),
+      ),
+      (handle) => Effect.promise(() => handle.close()),
+    );
+    const done = Effect.callback<void>((resume) => {
+      if (process.stdin.readableEnded) return resume(Effect.void);
+      const onEnd = () => resume(Effect.void);
+      process.stdin.once("end", onEnd);
+      return Effect.sync(() => process.stdin.off("end", onEnd));
+    });
+    return Service.of({ done });
+  }),
+);
+
+export * as Server from "./server.ts";

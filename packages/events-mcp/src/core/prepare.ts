@@ -1,18 +1,19 @@
 import { Tool } from "@opencode/codemode";
-import { Effect, Record, Ref, Schema } from "effect";
-import { DecideInput } from "./decisions.ts";
-import type { makeDecisions } from "./decisions.ts";
+import { Effect, Option, Record, Ref, Schema } from "effect";
+import { type Decide, DecideInput } from "./decisions.ts";
 import { bytes, MAX_PREPARE_OUTPUT_BYTES, MAX_STATE_BYTES } from "./limits.ts";
-import { makeScript } from "./script.ts";
+import { Failed, makeScript } from "./script.ts";
 import type { Source, Tool as SourceTool } from "./source.ts";
 import { inputJsonSchema } from "./tool.ts";
 import type { WatchEvent } from "./watch.ts";
 
-export type DecisionsRequester = ReturnType<typeof makeDecisions>;
+export class StateTooLarge extends Schema.TaggedError<StateTooLarge>()("WatchState.TooLarge", {
+  message: Schema.String,
+}) {}
 
 export interface WatchState {
   readonly get: Effect.Effect<Schema.Json>;
-  readonly set: (value: Schema.Json) => Effect.Effect<Schema.Json, string>;
+  readonly set: (value: Schema.Json) => Effect.Effect<Schema.Json, StateTooLarge>;
 }
 
 export const makeWatchState: Effect.Effect<WatchState> = Effect.gen(function* () {
@@ -22,9 +23,11 @@ export const makeWatchState: Effect.Effect<WatchState> = Effect.gen(function* ()
     set: (next) =>
       Effect.gen(function* () {
         const encoded = JSON.stringify(next);
-        if (encoded === undefined || bytes(encoded) > MAX_STATE_BYTES)
+        if (bytes(encoded) > MAX_STATE_BYTES)
           return yield* Effect.fail(
-            `Watch state exceeds ${MAX_STATE_BYTES} bytes; keep the stored JSON smaller`,
+            new StateTooLarge({
+              message: `Watch state exceeds ${MAX_STATE_BYTES} bytes; keep the stored JSON smaller`,
+            }),
           );
         yield* Ref.set(value, next);
         return next;
@@ -58,7 +61,7 @@ const stateSet = (state: WatchState) =>
     execute: (value) => state.set(value),
   });
 
-const decideTool = (decide: DecisionsRequester) =>
+const decideTool = (decide: Decide) =>
   Tool.make({
     description:
       "Ask the decision model questions about input; returns an answer per question with probabilities. Use it to judge events a filter can't.",
@@ -70,9 +73,8 @@ const decideTool = (decide: DecisionsRequester) =>
 export const makePrepare = (options: {
   readonly sources: ReadonlyArray<Source>;
   readonly state: WatchState;
-  readonly decide?: DecisionsRequester | undefined;
+  readonly decide: Option.Option<Decide>;
 }) => {
-  const decide = options.decide;
   const script = makeScript({
     tools: {
       watch: {
@@ -84,10 +86,12 @@ export const makePrepare = (options: {
       ...Object.fromEntries(
         options.sources.map((source) => [source.name, Record.map(source.tools, codeModeTool)]),
       ),
-      ...(decide === undefined ? {} : { events: { decide: decideTool(decide) } }),
+      ...(Option.isNone(options.decide)
+        ? {}
+        : { events: { decide: decideTool(options.decide.value) } }),
     },
     limits: { maxOutputBytes: MAX_PREPARE_OUTPUT_BYTES },
   });
-  return (source: string, event: WatchEvent): Effect.Effect<Schema.Json, string> =>
+  return (source: string, event: WatchEvent): Effect.Effect<Schema.Json, Failed> =>
     script(source, { event });
 };

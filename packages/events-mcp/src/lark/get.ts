@@ -1,7 +1,6 @@
 import { Effect, Option, Schema } from "effect";
-import { GetInput } from "../core/tool.ts";
-import { SourceError, type Tool } from "../core/source.ts";
-import { makeTool } from "../core/tool.ts";
+import { type SourceError, ToolError, type Tool } from "../core/source.ts";
+import { GetInput, makeTool } from "../core/tool.ts";
 
 const Envelope = Schema.Struct({
   code: Schema.Number,
@@ -21,24 +20,32 @@ const validPath = (path: string) =>
 export const getLark = Effect.fn("Lark.get")(function* (
   request: LarkRequester,
   { path, query }: GetInput,
-) {
-  if (!validPath(path)) return yield* Effect.fail("Invalid Lark GET path");
+): Effect.fn.Return<Schema.Json, ToolError> {
+  if (!validPath(path))
+    return yield* Effect.fail(new ToolError({ message: "Invalid Lark GET path" }));
   const response = yield* Effect.tryPromise({
     try: (signal) => request({ path, ...(query === undefined ? {} : { query }) }, signal),
     catch: (error) => {
       const response = Schema.decodeUnknownOption(ErrorResponse)(error);
       if (Option.isSome(response))
-        return `Lark API ${response.value.response.data.code}: ${response.value.response.data.msg}`;
+        return new ToolError({
+          message: `Lark API ${response.value.response.data.code}: ${response.value.response.data.msg}`,
+        });
       const http = Schema.decodeUnknownOption(HttpErrorResponse)(error);
       if (Option.isSome(http))
-        return `Lark HTTP ${http.value.response.status} on ${path}; check the path`;
-      return String(error);
+        return new ToolError({
+          message: `Lark HTTP ${http.value.response.status} on ${path}; check the path`,
+        });
+      return new ToolError({ message: String(error) });
     },
   });
   const envelope = yield* Schema.decodeUnknownEffect(Envelope)(response).pipe(
-    Effect.mapError(() => "Invalid Lark response"),
+    Effect.mapError(() => new ToolError({ message: "Invalid Lark response" })),
   );
-  if (envelope.code !== 0) return yield* Effect.fail(`Lark API ${envelope.code}: ${envelope.msg}`);
+  if (envelope.code !== 0)
+    return yield* Effect.fail(
+      new ToolError({ message: `Lark API ${envelope.code}: ${envelope.msg}` }),
+    );
   return envelope.data ?? null;
 });
 
@@ -48,7 +55,9 @@ export const makeGetTool = (request: Effect.Effect<LarkRequester, SourceError>):
     input: GetInput,
     run: (input) =>
       Effect.gen(function* () {
-        const requester = yield* request.pipe(Effect.mapError((error) => error.message));
+        const requester = yield* request.pipe(
+          Effect.mapError((error) => new ToolError({ message: error.message })),
+        );
         return yield* getLark(requester, input);
       }),
   });

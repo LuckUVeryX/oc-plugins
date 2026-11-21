@@ -1,9 +1,21 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, SUBSCRIPTION_ID_META_KEY } from "@modelcontextprotocol/server";
-import { DateTime, Effect, Exit, PubSub, Schema, Scope, Stream, SubscriptionRef } from "effect";
-import { type Catalog, makeCatalog } from "../src/core/catalog.ts";
-import { makeGetTool, type LarkRequester } from "../src/lark/get.ts";
-import { makeServer } from "../src/core/server.ts";
+import {
+  ConfigProvider,
+  DateTime,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  PubSub,
+  Schema,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "effect";
+import { Catalog } from "../src/core/catalog.ts";
+import { Decisions } from "../src/core/decisions.ts";
+import { Server } from "../src/core/server.ts";
 import {
   Health,
   SourceName,
@@ -12,9 +24,8 @@ import {
   type Source,
   type SourceError,
 } from "../src/core/source.ts";
-import { makeUpstream, type Upstream } from "../src/core/upstream.ts";
-
-type Options = Parameters<typeof makeServer>[0];
+import { Upstream } from "../src/core/upstream.ts";
+import { makeGetTool, type LarkRequester } from "../src/lark/get.ts";
 
 const lark = Schema.decodeUnknownSync(SourceName)("lark");
 const other = Schema.decodeUnknownSync(SourceName)("other");
@@ -39,7 +50,7 @@ interface Publish {
 export async function connect(
   options: {
     defaultExpiresInSeconds?: number;
-    decide?: Options["decide"];
+    decide?: Decisions.Decide | undefined;
     eventTimeoutSeconds?: number;
     request?: LarkRequester;
     otherSubscribeError?: SourceError | undefined;
@@ -103,18 +114,28 @@ export async function connect(
       ] satisfies ReadonlyArray<EventType>,
     },
   ];
-  const catalog = await Effect.runPromise(makeCatalog(sources));
-  const scope = await Effect.runPromise(Scope.make());
-  const upstream = await Effect.runPromise(
-    makeUpstream(catalog).pipe(Effect.provideService(Scope.Scope, scope)),
+  const catalogLayer = Catalog.layer(Effect.succeed(sources));
+  const decisionsLayer = Layer.succeed(
+    Decisions.Service,
+    Decisions.Service.of({
+      decide: options.decide === undefined ? Option.none() : Option.some(options.decide),
+    }),
   );
-  const server = makeServer({
-    catalog: catalog satisfies Catalog,
-    upstream: upstream satisfies Upstream,
-    defaultExpiresInSeconds: options.defaultExpiresInSeconds ?? 60,
-    decide: options.decide,
-    eventTimeoutSeconds: options.eventTimeoutSeconds ?? 30,
-  });
+  const config = ConfigProvider.layer(
+    ConfigProvider.fromUnknown({
+      EVENTS_WATCH_DEFAULT_SECONDS: String(options.defaultExpiresInSeconds ?? 60),
+      EVENTS_STEP_TIMEOUT_SECONDS: String(options.eventTimeoutSeconds ?? 30),
+    }),
+  );
+  const scope = await Effect.runPromise(Scope.make());
+  const context = await Effect.runPromise(
+    Layer.build(
+      Layer.merge(Upstream.layer.pipe(Layer.provideMerge(catalogLayer)), decisionsLayer),
+    ).pipe(Effect.provideService(Scope.Scope, scope)),
+  );
+  const server = await Effect.runPromise(
+    Server.make.pipe(Effect.provide(context), Effect.provide(config)),
+  );
   const client = new Client({ name: "test", version: "1" });
   const notifications: Array<{
     type: string;

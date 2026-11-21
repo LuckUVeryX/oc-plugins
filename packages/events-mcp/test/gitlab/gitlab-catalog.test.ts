@@ -4,7 +4,7 @@ import type { Cable } from "../../src/gitlab/cable.ts";
 import type { GitlabClient } from "../../src/gitlab/client.ts";
 import { makeGitlabSource } from "../../src/gitlab/source.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
-import { Health, SourceError } from "../../src/core/source.ts";
+import { Health, type SourceError } from "../../src/core/source.ts";
 import { connect } from "../harness.ts";
 
 const identity: GitlabIdentity = {

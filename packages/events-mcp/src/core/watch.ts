@@ -1,8 +1,9 @@
-import { Cause, Clock, DateTime, Deferred, Effect, type Schema, type Scope, Stream } from "effect";
+import { Cause, Clock, DateTime, Deferred, Effect, Schema, type Scope, Stream } from "effect";
 import { matchesFilter, type Filter } from "./arguments.ts";
 import { bytes, MAX_EVENT_BYTES } from "./limits.ts";
 import { Health, type EventType, type Occurrence, type SourceError } from "./source.ts";
-import type { Upstream } from "./upstream.ts";
+import { Failed } from "./script.ts";
+import { Upstream } from "./upstream.ts";
 
 // OpenCode cancels event subscriptions after 60 seconds without a notification.
 const HEARTBEAT_INTERVAL = "20 seconds";
@@ -13,16 +14,20 @@ export type WatchEvent = {
   readonly data: Schema.JsonObject;
 };
 
-type PrepareRunner = (event: WatchEvent) => Effect.Effect<Schema.Json, string>;
+type PrepareRunner = (event: WatchEvent) => Effect.Effect<Schema.Json, Failed>;
 
 export type TransformInput = {
   readonly event: WatchEvent;
   readonly prepared: Schema.Json;
 };
 
-type TransformRunner = (input: TransformInput) => Effect.Effect<string | null, string>;
+type TransformRunner = (input: TransformInput) => Effect.Effect<string | null, Failed>;
 
 export type NotificationType = "active" | "heartbeat" | "event" | "error" | "terminated";
+
+class StepFailed extends Schema.TaggedError<StepFailed>()("Watch.StepFailed", {
+  message: Schema.String,
+}) {}
 
 interface WatchRunOptions {
   readonly watchId: string;
@@ -32,7 +37,6 @@ interface WatchRunOptions {
   readonly expiresInSeconds: number;
   readonly eventTimeoutSeconds: number;
   readonly ended: Deferred.Deferred<string>;
-  readonly upstream: Upstream;
   readonly prepare: PrepareRunner;
   readonly transform: TransformRunner;
   readonly notify: (type: NotificationType, body?: Record<string, unknown>) => Effect.Effect<void>;
@@ -40,12 +44,15 @@ interface WatchRunOptions {
 
 const errorBody = (message: string) => ({ error: { code: -32000, message } });
 
-/** A watch session ends on the occurrences stream's `SourceError` or on a prepare/transform message. */
-type WatchFailure = SourceError | string;
+const messageOf = (cause: Cause.Cause<unknown>): string => {
+  const failure = Cause.squash(cause);
+  return failure instanceof Failed ? failure.message : String(failure);
+};
 
 export const runWatch = Effect.fn("Watch.run")(function* (
   options: WatchRunOptions,
-): Effect.fn.Return<string, SourceError, Scope.Scope> {
+): Effect.fn.Return<string, SourceError, Upstream.Service | Scope.Scope> {
+  const upstream = yield* Upstream.Service;
   const announce = Health.$match({
     Live: () => options.notify("active"),
     Degraded: ({ reason }) => options.notify("error", errorBody(reason)),
@@ -56,17 +63,17 @@ export const runWatch = Effect.fn("Watch.run")(function* (
       const now = yield* Clock.currentTimeMillis;
       const occurredAt = occurrence.occurredAt ?? DateTime.makeUnsafe(now);
       const eventId = occurrence.id ?? `local-${crypto.randomUUID()}`;
-      const event = {
+      const delivered = {
         eventId,
         timestamp: DateTime.formatIso(occurredAt),
         data: occurrence.payload,
       };
       let step: "prepare" | "transform" = "prepare";
       const pipeline = Effect.gen(function* () {
-        const prepared = yield* options.prepare(event);
+        const prepared = yield* options.prepare(delivered);
         if (prepared === null) return null;
         step = "transform";
-        return yield* options.transform({ event, prepared });
+        return yield* options.transform({ event: delivered, prepared });
       });
       const result = yield* pipeline.pipe(
         Effect.timeout(`${options.eventTimeoutSeconds} seconds`),
@@ -75,29 +82,35 @@ export const runWatch = Effect.fn("Watch.run")(function* (
           return Effect.logWarning("Event step failed").pipe(
             Effect.annotateLogs({ watchId: options.watchId, eventId, step }),
             Effect.andThen(
-              Effect.fail(`${step} failed on ${eventId}: ${String(Cause.squash(cause))}`),
+              Effect.fail(
+                new StepFailed({
+                  message: `${step} failed on ${eventId}: ${messageOf(cause)}`,
+                }),
+              ),
             ),
           );
         }),
       );
       if (result === null) return;
       if (
-        bytes(JSON.stringify({ id: eventId, timestamp: event.timestamp, data: result })) >
+        bytes(JSON.stringify({ id: eventId, timestamp: delivered.timestamp, data: result })) >
         MAX_EVENT_BYTES
       )
         return yield* Effect.fail(
-          `transform failed on ${eventId}: the delivered event exceeds ${MAX_EVENT_BYTES} bytes; return a shorter string`,
+          new StepFailed({
+            message: `transform failed on ${eventId}: the delivered event exceeds ${MAX_EVENT_BYTES} bytes; return a shorter string`,
+          }),
         );
       yield* options.notify("event", {
         eventId,
         name: options.eventType.name,
-        timestamp: event.timestamp,
+        timestamp: delivered.timestamp,
         data: result,
       });
     });
   const session = Effect.gen(function* () {
-    const subscription = yield* options.upstream.acquire({
-      name: options.eventType.name,
+    const subscription = yield* upstream.acquire({
+      event: options.eventType,
       params: options.params,
     });
     const firstHealthAnnounced = yield* Deferred.make<void>();
@@ -107,9 +120,7 @@ export const runWatch = Effect.fn("Watch.run")(function* (
           Deferred.await(firstHealthAnnounced).pipe(Effect.andThen(deliver(occurrence))),
         ),
         Effect.as("Event source ended"),
-        Effect.catch((failure: WatchFailure) =>
-          Effect.succeed(typeof failure === "string" ? failure : failure.message),
-        ),
+        Effect.catch((failure: SourceError | StepFailed) => Effect.succeed(failure.message)),
       ),
       subscription.health.pipe(
         Stream.runForEach((value) =>

@@ -1,8 +1,9 @@
 import { Client, Domain } from "@larksuiteoapi/node-sdk";
 import { Config, Effect, Redacted, Schema, type Scope } from "effect";
 import generated from "./events.json";
-import { type EventType, type Source, SourceError, SourceName } from "../core/source.ts";
+import { type EventType, type Source, Rejected, SourceName } from "../core/source.ts";
 import { sdkLogger } from "./sdk-logger.ts";
+import type { GetInput } from "../core/tool.ts";
 import { makeGetTool, type LarkRequester } from "./get.ts";
 import { makeConnection } from "./producers.ts";
 
@@ -25,7 +26,7 @@ export interface LarkOptions {
 const credentialMessage =
   "No Lark app credentials. Set LARK_APP_ID to cli_ followed by 16 hex characters, and LARK_APP_SECRET to the app secret.";
 
-const rejected = SourceError.Rejected({ message: credentialMessage });
+const rejected = new Rejected({ message: credentialMessage });
 
 const credentials = Effect.fn("Lark.credentials")(function* (request: LarkRequester | undefined) {
   const appId = yield* Config.String("LARK_APP_ID").pipe(Effect.mapError(() => rejected));
@@ -43,7 +44,7 @@ const credentials = Effect.fn("Lark.credentials")(function* (request: LarkReques
   return {
     appId: id,
     appSecret: key,
-    request: (input, signal) =>
+    request: (input: GetInput, signal: AbortSignal) =>
       client.request<unknown>({
         method: "GET",
         url: `https://open.larksuite.com/open-apis${input.path}`,

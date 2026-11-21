@@ -15,7 +15,7 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import { Health, SourceError } from "../core/source.ts";
+import { Health, Rejected, type SourceError, Unavailable } from "../core/source.ts";
 import type { GitlabIdentity } from "./token.ts";
 
 export type Json = Schema.Json;
@@ -116,7 +116,7 @@ interface Entry {
 const send = (socket: WebSocket, frame: unknown) =>
   Effect.try({
     try: () => socket.send(JSON.stringify(frame)),
-    catch: () => SourceError.Unavailable({ message: "Cable socket send failed" }),
+    catch: () => new Unavailable({ message: "Cable socket send failed" }),
   });
 
 const sendQuiet = (socket: WebSocket, frame: unknown) => send(socket, frame).pipe(Effect.ignore);
@@ -131,8 +131,8 @@ const frameDisconnect = (frame: {
     _tag: "Fatal",
     error:
       reason === "unauthorized"
-        ? SourceError.Rejected({ message: "GitLab cable rejected the token" })
-        : SourceError.Unavailable({ message: `GitLab cable disconnected: ${reason}` }),
+        ? new Rejected({ message: "GitLab cable rejected the token" })
+        : new Unavailable({ message: `GitLab cable disconnected: ${reason}` }),
   };
 };
 
@@ -215,7 +215,7 @@ export const makeCable: (options: CableOptions) => Effect.Effect<Cable, never, S
               }
               yield* failEntries(
                 targets,
-                SourceError.Rejected({ message: "GitLab cable rejected the subscription" }),
+                new Rejected({ message: "GitLab cable rejected the subscription" }),
               );
             }),
           );

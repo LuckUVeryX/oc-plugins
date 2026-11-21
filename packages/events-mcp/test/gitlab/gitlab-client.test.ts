@@ -39,7 +39,7 @@ test("the REST client rejects a percent-encoded path traversal", async () => {
   const error = await Effect.runPromise(
     client.get({ path: "/projects/%2e%2e/%2e%2e/admin" }).pipe(Effect.flip),
   );
-  expect(error._tag).toBe("Rejected");
+  expect(error._tag).toBe("Source.Rejected");
   expect(error.message).toContain("/api/v4");
   expect(fake.urls).toEqual([]);
 });
@@ -50,7 +50,7 @@ test("the REST client treats a redirect as an error rather than following it", a
   );
   const client = await clientWith(fake.http);
   const error = await Effect.runPromise(client.get({ path: "/user" }).pipe(Effect.flip));
-  expect(error._tag).toBe("Rejected");
+  expect(error._tag).toBe("Source.Rejected");
   expect(error.message).toContain("HTTP 302");
   expect(fake.urls).toEqual(["https://gitlab.test/api/v4/user"]);
 });

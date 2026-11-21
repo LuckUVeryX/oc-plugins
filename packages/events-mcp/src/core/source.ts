@@ -16,11 +16,15 @@ export type Health = Data.TaggedEnum<{
 }>;
 export const Health = Data.taggedEnum<Health>();
 
-export type SourceError = Data.TaggedEnum<{
-  Rejected: { readonly message: string };
-  Unavailable: { readonly message: string };
-}>;
-export const SourceError = Data.taggedEnum<SourceError>();
+export class Rejected extends Schema.TaggedError<Rejected>()("Source.Rejected", {
+  message: Schema.String,
+}) {}
+
+export class Unavailable extends Schema.TaggedError<Unavailable>()("Source.Unavailable", {
+  message: Schema.String,
+}) {}
+
+export type SourceError = Rejected | Unavailable;
 
 export interface Subscription {
   readonly occurrences: Stream.Stream<Occurrence, SourceError>;
@@ -37,11 +41,15 @@ export interface EventType {
   subscribe(params: Schema.JsonObject): Effect.Effect<Subscription, SourceError, Scope.Scope>;
 }
 
+export class ToolError extends Schema.TaggedError<ToolError>()("Tool.Failed", {
+  message: Schema.String,
+}) {}
+
 export interface Tool {
   readonly description: string;
   /** Decoded before a provider's run, once, from whichever transport called it. */
   readonly input: Schema.Decoder<unknown>;
-  readonly run: (input: unknown) => Effect.Effect<Schema.Json, string>;
+  readonly run: (input: unknown) => Effect.Effect<Schema.Json, ToolError>;
 }
 
 export interface Source {

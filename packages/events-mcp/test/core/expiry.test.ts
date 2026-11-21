@@ -3,6 +3,7 @@ import { Deferred, Effect, Fiber, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 import { Health, type EventType } from "../../src/core/source.ts";
+import { Upstream } from "../../src/core/upstream.ts";
 import { runWatch } from "../../src/core/watch.ts";
 
 const tick: EventType = {
@@ -28,13 +29,18 @@ it.effect("keeps a watch for its chosen expiry", () =>
           expiresInSeconds,
           eventTimeoutSeconds: 30,
           ended,
-          upstream: {
-            acquire: () => Effect.succeed({ occurrences: Stream.never, health }),
-          },
           prepare: () => Effect.succeed(null),
           transform: () => Effect.succeed(null),
           notify: (type) => Ref.update(seen, (all) => [...all, type]),
-        }).pipe(Effect.forkScoped);
+        }).pipe(
+          Effect.provideService(
+            Upstream.Service,
+            Upstream.Service.of({
+              acquire: () => Effect.succeed({ occurrences: Stream.never, health }),
+            }),
+          ),
+          Effect.forkScoped,
+        );
         return { fiber, seen };
       });
 
@@ -66,11 +72,16 @@ it.effect("stop and expiry end a watch whose upstream never becomes ready", () =
           expiresInSeconds,
           eventTimeoutSeconds: 30,
           ended,
-          upstream: { acquire: () => Effect.never },
           prepare: () => Effect.succeed(null),
           transform: () => Effect.succeed(null),
           notify: (type) => Ref.update(seen, (all) => [...all, type]),
-        }).pipe(Effect.forkScoped);
+        }).pipe(
+          Effect.provideService(
+            Upstream.Service,
+            Upstream.Service.of({ acquire: () => Effect.never }),
+          ),
+          Effect.forkScoped,
+        );
         return { ended, seen, fiber };
       });
 

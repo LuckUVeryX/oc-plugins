@@ -1,24 +1,23 @@
-import { Cache, Effect, RcMap, Ref, Schema, type Scope, Stream } from "effect";
-import type { Catalog } from "./catalog.ts";
-import type { Occurrence, SourceError, Subscription } from "./source.ts";
+import { Cache, Context, Effect, Layer, RcMap, Ref, Schema, type Scope, Stream } from "effect";
+import type { EventType, Occurrence, SourceError, Subscription } from "./source.ts";
 
 export interface SubscriptionKey {
-  readonly name: string;
+  readonly event: EventType;
   readonly params: Schema.JsonObject;
 }
 
-export interface Upstream {
+export interface Interface {
   readonly acquire: (key: SubscriptionKey) => Effect.Effect<Subscription, SourceError, Scope.Scope>;
 }
 
-export const makeUpstream = (catalog: Catalog): Effect.Effect<Upstream, never, Scope.Scope> =>
+export class Service extends Context.Service<Service, Interface>()("@events-mcp/Upstream") {}
+
+export const layer = Layer.effect(
+  Service,
   Effect.gen(function* () {
     const subscriptions = yield* RcMap.make({
       lookup: (key: SubscriptionKey) =>
         Effect.gen(function* () {
-          const event = catalog.get(key.name);
-          if (event === undefined)
-            return yield* Effect.die(new Error(`Unknown event: ${key.name}`));
           const claims = yield* Cache.make<string, Ref.Ref<boolean>>({
             capacity: 10_000,
             timeToLive: "1 hour",
@@ -30,7 +29,7 @@ export const makeUpstream = (catalog: Catalog): Effect.Effect<Upstream, never, S
               const claim = yield* Cache.get(claims, occurrence.id);
               return !(yield* Ref.getAndSet(claim, true));
             });
-          const subscription = yield* event.subscribe(key.params);
+          const subscription = yield* key.event.subscribe(key.params);
           const occurrences = yield* subscription.occurrences.pipe(
             Stream.filterEffect(admit),
             Stream.share({ capacity: "unbounded" }),
@@ -39,8 +38,11 @@ export const makeUpstream = (catalog: Catalog): Effect.Effect<Upstream, never, S
         }),
       idleTimeToLive: 0,
     });
-    const acquire: Upstream["acquire"] = Effect.fn("Upstream.acquire")(function* (key) {
+    const acquire = Effect.fn("Upstream.acquire")(function* (key: SubscriptionKey) {
       return yield* RcMap.get(subscriptions, key);
     });
-    return { acquire };
-  });
+    return Service.of({ acquire });
+  }),
+);
+
+export * as Upstream from "./upstream.ts";

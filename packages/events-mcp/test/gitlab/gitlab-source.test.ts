@@ -5,7 +5,13 @@ import type { GetInput } from "../../src/core/tool.ts";
 import { type GitlabClient, type GraphqlRequest } from "../../src/gitlab/client.ts";
 import { makeGitlabSource, type GitlabOptions } from "../../src/gitlab/source.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
-import { Health, SourceError, type Source } from "../../src/core/source.ts";
+import {
+  Health,
+  Rejected,
+  type SourceError,
+  type Source,
+  Unavailable,
+} from "../../src/core/source.ts";
 import { connect } from "../harness.ts";
 
 const identity: GitlabIdentity = {
@@ -156,7 +162,7 @@ test("drops the initial null and maps the next payload to an occurrence", async 
 test("rejects an inaccessible project before any subscribe frame", async () => {
   const fake = makeFakeCable();
   const client = makeFakeClient({
-    getError: SourceError.Rejected({ message: "GitLab HTTP 404 on /projects: not found" }),
+    getError: new Rejected({ message: "GitLab HTTP 404 on /projects: not found" }),
   });
   const error = await runSource({ client: client.client, cable: fake.cable }, (source) =>
     Effect.gen(function* () {
@@ -166,7 +172,7 @@ test("rejects an inaccessible project before any subscribe frame", async () => {
       );
     }),
   );
-  expect(error._tag).toBe("Rejected");
+  expect(error._tag).toBe("Source.Rejected");
   expect(error.message).toContain("Project glints/private is not accessible");
   expect(fake.identifiers).toHaveLength(0);
 });
@@ -223,7 +229,7 @@ test("rejects a user that is not the token's user before any subscribe frame", a
       );
     }),
   );
-  expect(error._tag).toBe("Rejected");
+  expect(error._tag).toBe("Source.Rejected");
   expect(error.message).toContain("gid://gitlab/User/256");
   expect(fake.identifiers).toHaveLength(0);
 });
@@ -236,7 +242,7 @@ test("rejects a watch with no token without touching GitLab", async () => {
       client: client.client,
       cable: fake.cable,
       identity: Effect.fail(
-        SourceError.Rejected({
+        new Rejected({
           message: "No GitLab token for gitlab.test. Set GITLAB_TOKEN, or authenticate glab.",
         }),
       ),
@@ -249,7 +255,7 @@ test("rejects a watch with no token without touching GitLab", async () => {
         );
       }),
   );
-  expect(error._tag).toBe("Rejected");
+  expect(error._tag).toBe("Source.Rejected");
   expect(error.message).toContain("GITLAB_TOKEN");
   expect(client.gets).toHaveLength(0);
   expect(fake.identifiers).toHaveLength(0);
@@ -333,7 +339,7 @@ test("rejects an inaccessible noteable before any subscribe frame", async () => 
       ).pipe(Effect.flip);
     }),
   );
-  expect(error._tag).toBe("Rejected");
+  expect(error._tag).toBe("Source.Rejected");
   expect(error.message).toContain("not found or is not accessible");
   expect(fake.identifiers).toHaveLength(0);
 });
@@ -349,7 +355,7 @@ test("a transient token check is retried instead of cached", async () => {
       identity: Effect.suspend(() => {
         attempts += 1;
         return attempts === 1
-          ? Effect.fail(SourceError.Unavailable({ message: "Could not reach GitLab" }))
+          ? Effect.fail(new Unavailable({ message: "Could not reach GitLab" }))
           : Effect.succeed(identity);
       }),
     },
@@ -365,7 +371,7 @@ test("a transient token check is retried instead of cached", async () => {
         return { failure, subscribed };
       }),
   );
-  expect(first.failure._tag).toBe("Unavailable");
+  expect(first.failure._tag).toBe("Source.Unavailable");
   expect(first.subscribed.occurrences).toBeDefined();
   expect(attempts).toBe(2);
 });

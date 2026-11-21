@@ -13,13 +13,19 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import { Health, type Occurrence, SourceError, type Subscription } from "../core/source.ts";
+import {
+  Health,
+  type Occurrence,
+  type SourceError,
+  type Subscription,
+  Unavailable,
+} from "../core/source.ts";
 import { sdkLogger } from "./sdk-logger.ts";
 import { getLark, type LarkRequester } from "./get.ts";
 
 const STALE_EVENT_CUTOFF_MS = 60 * 60 * 1000;
 
-const unavailable = (message: string) => SourceError.Unavailable({ message });
+const unavailable = (message: string) => new Unavailable({ message });
 
 const ConnectionCount = Schema.Struct({
   online_instance_cnt: Schema.optionalKey(Schema.Number),
@@ -28,9 +34,9 @@ const ConnectionCount = Schema.Struct({
 const assertSoleConnection = (request: LarkRequester) =>
   Effect.gen(function* () {
     const data = yield* getLark(request, { path: "/event/v1/connection" }).pipe(
-      Effect.mapError((message) =>
+      Effect.mapError((error) =>
         unavailable(
-          `Could not read the Lark event connection count, so the watch will not risk splitting events: ${message}`,
+          `Could not read the Lark event connection count, so the watch will not risk splitting events: ${error.message}`,
         ),
       ),
     );

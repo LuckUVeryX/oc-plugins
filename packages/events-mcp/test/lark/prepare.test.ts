@@ -1,6 +1,6 @@
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { expect, test, vi } from "vitest";
-import type { DecideInput } from "../../src/core/decisions.ts";
+import { Decisions } from "../../src/core/decisions.ts";
 import { makeGetTool } from "../../src/lark/get.ts";
 import { makePrepare, makeWatchState } from "../../src/core/prepare.ts";
 import { SourceName } from "../../src/core/source.ts";
@@ -28,7 +28,7 @@ async function terminated(h: Awaited<ReturnType<typeof connect>>) {
 }
 
 test("decide answers reach transform through input.prepared", async () => {
-  const calls: DecideInput[] = [];
+  const calls: Array<Decisions.DecideInput> = [];
   const h = await connect({
     decide: (input) => {
       calls.push(input);
@@ -122,7 +122,9 @@ test("timeout aborts an in-flight Lark request", async () => {
     await active(h);
     await h.publish({ eventId: "blocked-request", payload: {} });
     await started.promise;
-    expect(await terminated(h)).toContain("prepare failed on blocked-request:");
+    expect(await terminated(h)).toBe(
+      "prepare failed on blocked-request: TimeoutError: Operation timed out after '1s'",
+    );
     await Promise.race([
       aborted.promise,
       new Promise((_, reject) =>
@@ -146,6 +148,7 @@ test("Lark GET rejects unsafe paths", async () => {
       },
     ],
     state: await Effect.runPromise(makeWatchState),
+    decide: Option.none(),
   });
   for (const path of [
     "/im/../users",

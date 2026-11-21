@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import { type EventType, type Occurrence, SourceError } from "../core/source.ts";
+import { type EventType, type Occurrence, Rejected } from "../core/source.ts";
 import { type Cable, type CableIdentifier } from "./cable.ts";
 import type { GitlabClient } from "./client.ts";
 import { databaseIdHint, globalIdFor, NoteableType, readNoteable } from "./noteable.ts";
@@ -90,7 +90,7 @@ export const makeNotesEvent = (options: NotesEventOptions): EventType => ({
   subscribe: (input) =>
     Effect.gen(function* () {
       const decoded = yield* Schema.decodeUnknownEffect(NotesParams)(input).pipe(
-        Effect.mapError((issue) => SourceError.Rejected({ message: issue.message })),
+        Effect.mapError((issue) => new Rejected({ message: issue.message })),
       );
       const noteable = yield* readNoteable(
         options.client,
@@ -100,7 +100,7 @@ export const makeNotesEvent = (options: NotesEventOptions): EventType => ({
       );
       if (noteable.projectId !== decoded.projectId)
         return yield* Effect.fail(
-          SourceError.Rejected({
+          new Rejected({
             message: `${noteable.label} ${decoded.noteableId} is in project ${noteable.projectId}, not ${decoded.projectId}. Pass the project database id from GET /projects/:id -> .id.`,
           }),
         );

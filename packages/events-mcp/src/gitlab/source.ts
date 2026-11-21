@@ -4,7 +4,8 @@ import {
   type EventType,
   type Occurrence,
   type Source,
-  SourceError,
+  Rejected,
+  type SourceError,
   SourceName,
 } from "../core/source.ts";
 import { type Cable, type CableIdentifier, gitlabCable } from "./cable.ts";
@@ -94,9 +95,9 @@ const checkProject = (
       ? `/projects/${encodeURIComponent(project.fullPath)}`
       : `/projects/${databaseId(project.id)}`;
   return client.get({ path }).pipe(
-    Effect.catchTag("Rejected", (error) =>
+    Effect.catchTag("Source.Rejected", (error) =>
       Effect.fail(
-        SourceError.Rejected({
+        new Rejected({
           message: `Project ${label} is not accessible with this GitLab token: ${error.message}`,
         }),
       ),
@@ -107,7 +108,7 @@ const checkProject = (
 const checkUser = (identity: GitlabIdentity, userId: string): Effect.Effect<void, SourceError> => {
   if (databaseId(userId) === String(identity.userId)) return Effect.void;
   return Effect.fail(
-    SourceError.Rejected({
+    new Rejected({
       message: `userId ${userId} is not the token's user, @${identity.username} (gid://gitlab/User/${identity.userId}). GitLab only delivers merge requests assigned to or reviewed by the token's user.`,
     }),
   );
@@ -159,7 +160,7 @@ export const makeGitlabSource = (
       "GitlabSource.checkAccess",
     )(function* (params) {
       const access = yield* Schema.decodeUnknownEffect(AccessParams)(params).pipe(
-        Effect.mapError((error) => SourceError.Rejected({ message: error.message })),
+        Effect.mapError((error) => new Rejected({ message: error.message })),
       );
       const identity = yield* identityEffect;
       if (access.projectFullPath !== undefined)

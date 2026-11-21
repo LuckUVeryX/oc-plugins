@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { Effect, Fiber, Option, Queue, Schedule, Schema, Stream } from "effect";
 import { type Cable, type CableIdentifier, type Json, makeCable } from "../../src/gitlab/cable.ts";
-import { Health, SourceError } from "../../src/core/source.ts";
+import { Health, type SourceError } from "../../src/core/source.ts";
 
 const WireFrame = Schema.Record(Schema.String, Schema.Unknown);
 
@@ -191,7 +191,7 @@ test("fails the subscription when the server rejects it", async () => {
     const failure = await Effect.runPromise(
       Effect.scoped(cable.subscribeUnique(identifier("rejected"))).pipe(Effect.flip),
     );
-    expect(failure._tag).toBe("Rejected");
+    expect(failure._tag).toBe("Source.Rejected");
   } finally {
     await stop();
     server.stop();
@@ -233,7 +233,7 @@ test("fails every subscription when the server refuses to reconnect", async () =
         const stream = yield* cable.subscribeUnique(identifier("unauthorized"));
         yield* stream.pipe(
           Stream.runDrain,
-          Effect.catchTag("Rejected", (error) => Effect.sync(() => failed.resolve(error))),
+          Effect.catchTag("Source.Rejected", (error) => Effect.sync(() => failed.resolve(error))),
         );
       }),
     ),
@@ -241,7 +241,7 @@ test("fails every subscription when the server refuses to reconnect", async () =
   try {
     await server.waitFor(() => server.subscribes().length === 1);
     server.disconnect(false, "unauthorized");
-    expect((await failed.promise)._tag).toBe("Rejected");
+    expect((await failed.promise)._tag).toBe("Source.Rejected");
   } finally {
     await Effect.runPromise(Fiber.interrupt(fiber));
     await stop();
@@ -282,7 +282,7 @@ test("fails the subscription when the server refuses the token before welcoming"
         Effect.flip,
       ),
     );
-    expect(failure._tag).toBe("Rejected");
+    expect(failure._tag).toBe("Source.Rejected");
     expect(server.connections()).toBe(1);
   } finally {
     await stop();

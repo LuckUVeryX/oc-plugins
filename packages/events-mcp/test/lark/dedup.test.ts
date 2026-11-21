@@ -172,7 +172,7 @@ test("refuses to connect while another app connection is online", async () => {
           Effect.flip,
           Effect.tap((error) =>
             Effect.sync(() => {
-              expect(error).toMatchObject({ _tag: "Unavailable" });
+              expect(error).toMatchObject({ _tag: "Source.Unavailable" });
               expect(error.message).toContain("Another connection for this Lark app is online (1)");
               expect(error.message).toContain("Lark delivers each event to only one connection");
               expect(sdk.starts).toBe(0);
@@ -189,7 +189,7 @@ test("a watch without Lark credentials is rejected and names both variables", as
       Effect.gen(function* () {
         const source = yield* makeLarkSource();
         const error = yield* messageEvent(source).subscribe({}).pipe(Effect.flip);
-        expect(error).toMatchObject({ _tag: "Rejected" });
+        expect(error).toMatchObject({ _tag: "Source.Rejected" });
         expect(error.message).toContain("LARK_APP_ID");
         expect(error.message).toContain("LARK_APP_SECRET");
       }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({})))),

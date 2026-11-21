@@ -1,6 +1,10 @@
 import { Effect, JsonSchema, Schema } from "effect";
 import { isObject } from "effect/Predicate";
 
+export class Invalid extends Schema.TaggedError<Invalid>()("Arguments.Invalid", {
+  message: Schema.String,
+}) {}
+
 export const WatchId = Schema.NonEmptyString.pipe(Schema.brand("WatchId"));
 export type WatchId = typeof WatchId.Type;
 
@@ -131,7 +135,7 @@ export const decodeArguments = (options: {
   Effect.gen(function* () {
     const decoded = yield* Schema.decodeUnknownEffect(WatchArguments)(options.value, {
       onExcessProperty: "error",
-    }).pipe(Effect.mapError((issue) => issue.message));
+    }).pipe(Effect.mapError((issue) => new Invalid({ message: issue.message })));
     const {
       watchId,
       params = {},
@@ -144,13 +148,23 @@ export const decodeArguments = (options: {
     for (const [path, value] of Object.entries(raw)) {
       const leaf = options.filter.get(path);
       if (!leaf)
-        return yield* Effect.fail(`Unknown filter path: ${path}; choose a path from inputSchema`);
+        return yield* Effect.fail(
+          new Invalid({
+            message: `Unknown filter path: ${path}; choose a path from inputSchema`,
+          }),
+        );
       const values = isScalar(value) ? [value] : Array.isArray(value) ? value : undefined;
       if (!values || values.length === 0 || !values.every(isScalar))
-        return yield* Effect.fail(`Filter ${path} must be a scalar or non-empty array of scalars`);
+        return yield* Effect.fail(
+          new Invalid({
+            message: `Filter ${path} must be a scalar or non-empty array of scalars`,
+          }),
+        );
       if (!values.every((scalar) => matchesLeaf(scalar, leaf)))
         return yield* Effect.fail(
-          `Invalid value for filter ${path}; use a value allowed by inputSchema`,
+          new Invalid({
+            message: `Invalid value for filter ${path}; use a value allowed by inputSchema`,
+          }),
         );
       filter.push([leaf.segments, values]);
     }

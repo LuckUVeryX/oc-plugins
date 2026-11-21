@@ -1,6 +1,14 @@
 import { DateTime, Deferred, Effect, Stream } from "effect";
 import { expect, test, vi } from "vitest";
-import { Health, SourceError, type EventType, type Occurrence } from "../../src/core/source.ts";
+import {
+  Health,
+  type EventType,
+  type Occurrence,
+  Rejected,
+  type SourceError,
+  Unavailable,
+} from "../../src/core/source.ts";
+import { Upstream } from "../../src/core/upstream.ts";
 import { runWatch } from "../../src/core/watch.ts";
 import { connect } from "../harness.ts";
 
@@ -60,7 +68,7 @@ const subscribeOnce = async (error: SourceError) => {
 
 test("a rejected upstream answers with the permanent code", async () => {
   expect(
-    await subscribeOnce(SourceError.Rejected({ message: "The token cannot read that project" })),
+    await subscribeOnce(new Rejected({ message: "The token cannot read that project" })),
   ).toMatchObject({
     code: -32024,
     message: "The token cannot read that project",
@@ -68,9 +76,9 @@ test("a rejected upstream answers with the permanent code", async () => {
 });
 
 test("an unavailable upstream answers with the transient code", async () => {
-  expect(
-    await subscribeOnce(SourceError.Unavailable({ message: "GitLab is restarting" })),
-  ).toMatchObject({ code: -32603 });
+  expect(await subscribeOnce(new Unavailable({ message: "GitLab is restarting" }))).toMatchObject({
+    code: -32603,
+  });
 });
 
 test("announces active before delivering the first event of a short stream", async () => {
@@ -97,11 +105,15 @@ test("announces active before delivering the first event of a short stream", asy
           expiresInSeconds: 60,
           eventTimeoutSeconds: 30,
           ended: yield* Deferred.make<string>(),
-          upstream: { acquire: () => Effect.succeed({ occurrences, health }) },
           prepare: () => Effect.succeed({}),
           transform: () => Effect.succeed("delivered"),
           notify: (type) => Effect.sync(() => types.push(type)),
-        });
+        }).pipe(
+          Effect.provideService(
+            Upstream.Service,
+            Upstream.Service.of({ acquire: () => Effect.succeed({ occurrences, health }) }),
+          ),
+        );
       }),
     ),
   );

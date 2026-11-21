@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Config, Effect, Option, Redacted, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
-import { SourceError } from "../core/source.ts";
+import { Rejected, type SourceError, Unavailable } from "../core/source.ts";
 
 export interface GitlabIdentity {
   readonly token: Redacted.Redacted<string>;
@@ -11,7 +11,7 @@ export interface GitlabIdentity {
 }
 
 const missing = (host: string): SourceError =>
-  SourceError.Rejected({
+  new Rejected({
     message: `No GitLab token for ${host}. Set GITLAB_TOKEN, or authenticate glab so \`glab config get token --host ${host}\` returns one.`,
   });
 
@@ -48,27 +48,29 @@ const validate = Effect.fn("GitlabToken.validate")(function* (input: {
     HttpClientRequest.acceptJson,
   );
   const response = yield* HttpClient.execute(request).pipe(
-    Effect.mapError(() =>
-      SourceError.Unavailable({
-        message: `Could not reach https://${input.host}/api/v4/user to validate the GitLab token`,
-      }),
+    Effect.mapError(
+      () =>
+        new Unavailable({
+          message: `Could not reach https://${input.host}/api/v4/user to validate the GitLab token`,
+        }),
     ),
   );
   if (response.status !== 200)
     return yield* Effect.fail(
       response.status === 401 || response.status === 403
-        ? SourceError.Rejected({
+        ? new Rejected({
             message: `GitLab rejected the token for ${input.host} (HTTP ${response.status})`,
           })
-        : SourceError.Unavailable({
+        : new Unavailable({
             message: `GitLab could not validate the token for ${input.host} (HTTP ${response.status})`,
           }),
     );
   const user = yield* HttpClientResponse.schemaBodyJson(UserResponse)(response).pipe(
-    Effect.mapError(() =>
-      SourceError.Unavailable({
-        message: `GitLab returned an unexpected user response for ${input.host}`,
-      }),
+    Effect.mapError(
+      () =>
+        new Unavailable({
+          message: `GitLab returned an unexpected user response for ${input.host}`,
+        }),
     ),
   );
   return { token: input.token, userId: user.id, username: user.username };

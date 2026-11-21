@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import { SourceError } from "../core/source.ts";
+import { Rejected, type SourceError, Unavailable } from "../core/source.ts";
 import type { GitlabClient } from "./client.ts";
 
 export const NoteableType = Schema.Literals(["merge_request", "issue"]);
@@ -70,9 +70,9 @@ export const readNoteable = (
   Effect.gen(function* () {
     const kind = kinds[type];
     const data = yield* client.graphql({ query: kind.query, variables: { id: globalId } }).pipe(
-      Effect.catchTag("Rejected", (error) =>
+      Effect.catchTag("Source.Rejected", (error) =>
         Effect.fail(
-          SourceError.Rejected({
+          new Rejected({
             message: `Could not read ${kind.label.toLowerCase()} ${globalId}: ${error.message}`,
           }),
         ),
@@ -81,19 +81,19 @@ export const readNoteable = (
     const decoded = Schema.decodeUnknownOption(NoteableResponse)(data);
     if (Option.isNone(decoded))
       return yield* Effect.fail(
-        SourceError.Unavailable({ message: "GitLab returned an unexpected noteable lookup" }),
+        new Unavailable({ message: "GitLab returned an unexpected noteable lookup" }),
       );
     const noteable = decoded.value[kind.field];
     if (noteable === null || noteable === undefined)
       return yield* Effect.fail(
-        SourceError.Rejected({
+        new Rejected({
           message: `${kind.label} ${globalId} was not found or is not accessible with this GitLab token. ${hint}`,
         }),
       );
     const iid = Number(noteable.iid);
     if (!Number.isInteger(iid))
       return yield* Effect.fail(
-        SourceError.Unavailable({ message: `GitLab returned an invalid iid for ${globalId}` }),
+        new Unavailable({ message: `GitLab returned an invalid iid for ${globalId}` }),
       );
     return { label: kind.label, iid, projectId: noteable.projectId };
   });
