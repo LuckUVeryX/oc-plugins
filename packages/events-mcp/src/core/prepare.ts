@@ -1,5 +1,5 @@
 import { Tool } from "@opencode/codemode";
-import { Effect, Option, Record, Ref, Schema } from "effect";
+import { Effect, Record, Ref, Schema } from "effect";
 import { type Decide, DecideInput } from "./decision-model.ts";
 import { bytes, MAX_PREPARE_OUTPUT_BYTES, MAX_STATE_BYTES } from "./limits.ts";
 import { Failed, makeScript } from "./script.ts";
@@ -74,7 +74,7 @@ const decideTool = (decide: Decide) =>
 export const makePrepare = (options: {
   readonly integrations: ReadonlyArray<Integration>;
   readonly state: WatchState;
-  readonly decide: Option.Option<Decide>;
+  readonly decide: Decide;
 }) => {
   const script = makeScript({
     tools: {
@@ -90,9 +90,7 @@ export const makePrepare = (options: {
           Record.map(integration.tools, codeModeTool),
         ]),
       ),
-      ...(Option.isNone(options.decide)
-        ? {}
-        : { events: { decide: decideTool(options.decide.value) } }),
+      events: { decide: decideTool(options.decide) },
     },
     limits: { maxOutputBytes: MAX_PREPARE_OUTPUT_BYTES },
   });

@@ -5,7 +5,6 @@ import {
   Effect,
   Exit,
   Layer,
-  Option,
   PubSub,
   Schema,
   Scope,
@@ -40,6 +39,10 @@ const eventParams: Schema.JsonObject = {
   properties: {},
   additionalProperties: false,
 };
+
+// A watch that only needs the decide tool to exist, not to answer.
+export const unusedDecide: DecisionModel.Decide = () =>
+  Effect.fail(new DecisionModel.Failed({ message: "unused" }));
 
 interface Publish {
   readonly eventId?: string;
@@ -119,9 +122,7 @@ export async function connect(
   const registryLayer = Registry.layer(Effect.succeed(integrations));
   const decisionModelLayer = Layer.succeed(
     DecisionModel.Service,
-    DecisionModel.Service.of({
-      decide: options.decide === undefined ? Option.none() : Option.some(options.decide),
-    }),
+    DecisionModel.Service.of({ decide: options.decide ?? unusedDecide }),
   );
   const scope = await Effect.runPromise(Scope.make());
   const context = await Effect.runPromise(
