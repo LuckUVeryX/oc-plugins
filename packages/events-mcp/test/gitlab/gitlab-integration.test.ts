@@ -139,7 +139,7 @@ test("drops the initial null and maps the next payload to an event", async () =>
     (integration) =>
       Effect.gen(function* () {
         const event = eventNamed(integration, "ciPipelineStatusesUpdated");
-        const feed = yield* event.subscribe({ projectFullPath: "group/example" });
+        const feed = yield* event.subscribe({ projectFullPath: "group/project" });
         const fiber = yield* feed.events.pipe(Stream.take(1), Stream.runCollect, Effect.forkScoped);
         const queue = onlyQueue(fake);
         yield* Queue.offer(queue, {
@@ -170,7 +170,7 @@ test("drops the initial null and maps the next payload to an event", async () =>
     status: "FAILED",
     updatedAt: "2026-11-21T08:00:00Z",
   });
-  expect(client.gets).toEqual([{ path: "/projects/group%2Fexample" }]);
+  expect(client.gets).toEqual([{ path: "/projects/group%2Fproject" }]);
 });
 
 test("rejects an inaccessible project before any subscribe frame", async () => {
@@ -259,7 +259,7 @@ test("rejects a watch with no token without touching GitLab", async () => {
     (integration) =>
       Effect.gen(function* () {
         const event = eventNamed(integration, "ciPipelineStatusesUpdated");
-        return yield* Effect.scoped(event.subscribe({ projectFullPath: "group/example" })).pipe(
+        return yield* Effect.scoped(event.subscribe({ projectFullPath: "group/project" })).pipe(
           Effect.flip,
         );
       }),

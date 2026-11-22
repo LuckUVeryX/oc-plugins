@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { JsonSchema, Schema } from "effect";
 import { decodeGitlabCatalog } from "../../packages/events-mcp/src/gitlab/catalog.ts";
 
-const host = process.env["GITLAB_HOST"]?.trim() || "gitlab.example.com";
+const host = process.env["GITLAB_HOST"]?.trim() || "gitlab.com";
 const output = fileURLToPath(
   new URL("../../packages/events-mcp/src/gitlab/events.json", import.meta.url),
 );

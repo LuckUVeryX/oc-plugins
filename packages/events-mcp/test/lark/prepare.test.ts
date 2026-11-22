@@ -1,10 +1,10 @@
-import { Effect, Option, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { expect, test, vi } from "vitest";
 import { DecisionModel } from "../../src/core/decision-model.ts";
 import { makeGetTool } from "../../src/lark/get.ts";
 import { makePrepare, makeWatchState } from "../../src/core/prepare.ts";
 import { IntegrationName } from "../../src/core/integration.ts";
-import { connect } from "../harness.ts";
+import { connect, unusedDecide } from "../harness.ts";
 
 const questions = [
   { type: "predicate", name: "p", instructions: "test", criteria: { true: "yes" } },
@@ -153,7 +153,7 @@ test("Lark GET rejects unsafe paths", async () => {
       },
     ],
     state: await Effect.runPromise(makeWatchState),
-    decide: Option.none(),
+    decide: unusedDecide,
   });
   for (const path of [
     "/im/../users",

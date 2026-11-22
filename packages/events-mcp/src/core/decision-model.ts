@@ -1,9 +1,8 @@
 import { OpenCode } from "@opencode/client/effect";
 import { Service as OpenCodeService } from "@opencode/client/service";
 import { Generate } from "@opencode/schema/generate";
-import { Context, Effect, Layer, Option, Schema } from "effect";
+import { Config, Context, Effect, Layer, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
-import { decisionModel } from "./config.ts";
 
 export const DecideInput = Schema.Struct({
   questions: Generate.DecisionRequest.fields.questions,
@@ -11,6 +10,16 @@ export const DecideInput = Schema.Struct({
 });
 export type DecideInput = typeof DecideInput.Type;
 type DecisionModel = typeof Generate.DecisionRequest.fields.model.Type;
+
+const defaultModel = Schema.decodeUnknownSync(Generate.DecisionRequest.fields.model)({
+  providerID: "opencode",
+  id: "jev-1.13-free",
+});
+
+const model = Config.schema(
+  Schema.fromJsonString(Generate.DecisionRequest.fields.model),
+  "EVENTS_DECISIONS_MODEL",
+).pipe(Config.withDefault(defaultModel));
 
 export class Failed extends Schema.TaggedError<Failed>()("DecisionModel.Failed", {
   message: Schema.String,
@@ -63,7 +72,7 @@ export const makeDecisions = (
 };
 
 export interface Interface {
-  readonly decide: Option.Option<Decide>;
+  readonly decide: Decide;
 }
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/DecisionModel") {}
@@ -71,8 +80,8 @@ export class Service extends Context.Service<Service, Interface>()("@events-mcp/
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const model = yield* decisionModel;
-    return Service.of({ decide: Option.map(model, (value) => makeDecisions(value)) });
+    const configured = yield* model;
+    return Service.of({ decide: makeDecisions(configured) });
   }),
 );
 

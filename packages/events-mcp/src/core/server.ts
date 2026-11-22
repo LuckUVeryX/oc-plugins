@@ -6,23 +6,11 @@ import {
   McpServer,
 } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
-import {
-  Clock,
-  Config,
-  Context,
-  Deferred,
-  Effect,
-  Layer,
-  Logger,
-  Option,
-  Schema,
-  SchemaIssue,
-} from "effect";
+import { Clock, Context, Deferred, Effect, Layer, Logger, Schema, SchemaIssue } from "effect";
 import type { JsonSchema } from "effect";
 import { isObject } from "effect/Predicate";
 import { decodeArguments, inputSchemaDocument } from "./arguments.ts";
 import { Registry, type RegisteredEventKind } from "./registry.ts";
-import { stepTimeoutSeconds, watchDefaultSeconds } from "./config.ts";
 import { DecisionModel, type Decide } from "./decision-model.ts";
 import { bytes, MAX_SCRIPT_BYTES } from "./limits.ts";
 import { makePrepare, makeWatchState } from "./prepare.ts";
@@ -36,10 +24,13 @@ const EVENTS_EXTENSION = "io.modelcontextprotocol/events";
 
 const CLIENT_WATCH_TOOL = "watch_mcp_event";
 
+const DEFAULT_WATCH_SECONDS = 3600;
+const DEFAULT_STEP_TIMEOUT_SECONDS = 120;
+
 interface ServerOptions {
   readonly registry: Registry.Interface;
   readonly feeds: Feeds.Interface;
-  readonly decide: Option.Option<Decide>;
+  readonly decide: Decide;
   readonly defaultExpiresInSeconds: number;
   readonly eventTimeoutSeconds: number;
 }
@@ -134,11 +125,7 @@ const buildServer = (options: ServerOptions): McpServer => {
         ...options.registry.integrations.flatMap((integration) =>
           integration.instructions === undefined ? [] : [integration.instructions],
         ),
-        ...(Option.isSome(options.decide)
-          ? [
-              "When a filter cannot tell whether an event deserves a wake, ask the decision model from prepare with tools.events.decide.",
-            ]
-          : []),
+        "When a filter cannot tell whether an event deserves a wake, ask the decision model from prepare with tools.events.decide.",
         'When a watch ends with "<step> failed", fix that step and arm a new watch.',
       ].join("\n\n"),
     },
@@ -218,7 +205,6 @@ const buildServer = (options: ServerOptions): McpServer => {
           filter: event.filter,
           params: event.params,
           toolPaths,
-          decide: Option.isSome(options.decide),
           defaultExpiresInSeconds: options.defaultExpiresInSeconds,
         }),
         payloadSchema: { anyOf: [event.payload, { type: "string" }] },
@@ -334,24 +320,24 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/Server") {}
 
-export const make: Effect.Effect<
-  McpServer,
-  Config.ConfigError,
-  Registry.Service | Feeds.Service | DecisionModel.Service
-> = Effect.gen(function* () {
-  const registry = yield* Registry.Service;
-  const feeds = yield* Feeds.Service;
-  const decisionModel = yield* DecisionModel.Service;
-  const defaultExpiresInSeconds = yield* watchDefaultSeconds;
-  const eventTimeoutSeconds = yield* stepTimeoutSeconds;
-  return buildServer({
-    registry,
-    feeds,
-    decide: decisionModel.decide,
-    defaultExpiresInSeconds,
-    eventTimeoutSeconds,
+export const make = (
+  options: {
+    readonly defaultExpiresInSeconds?: number;
+    readonly eventTimeoutSeconds?: number;
+  } = {},
+): Effect.Effect<McpServer, never, Registry.Service | Feeds.Service | DecisionModel.Service> =>
+  Effect.gen(function* () {
+    const registry = yield* Registry.Service;
+    const feeds = yield* Feeds.Service;
+    const decisionModel = yield* DecisionModel.Service;
+    return buildServer({
+      registry,
+      feeds,
+      decide: decisionModel.decide,
+      defaultExpiresInSeconds: options.defaultExpiresInSeconds ?? DEFAULT_WATCH_SECONDS,
+      eventTimeoutSeconds: options.eventTimeoutSeconds ?? DEFAULT_STEP_TIMEOUT_SECONDS,
+    });
   });
-});
 
 // Stdout carries MCP messages, so transport errors must go to stderr.
 const logError = (error: unknown): void => {
@@ -360,12 +346,12 @@ const logError = (error: unknown): void => {
 
 export const layer: Layer.Layer<
   Service,
-  Config.ConfigError,
+  never,
   Registry.Service | Feeds.Service | DecisionModel.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const server = yield* make;
+    const server = yield* make();
     yield* Effect.acquireRelease(
       Effect.sync(() =>
         serveStdio(() => server, {

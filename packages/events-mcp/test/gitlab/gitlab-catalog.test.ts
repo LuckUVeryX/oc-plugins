@@ -82,7 +82,7 @@ test("advertises a param that a real watch accepts", async () => {
         "gitlab.ciPipelineStatusesUpdated",
       ).done;
 
-    expect(await watch("accepted", { projectFullPath: "group/example" })).toEqual({});
+    expect(await watch("accepted", { projectFullPath: "group/project" })).toEqual({});
     expect(await watch("rejected", {})).toMatchObject({ code: -32602 });
   } finally {
     await h.close();
