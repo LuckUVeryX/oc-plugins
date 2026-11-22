@@ -29,8 +29,10 @@ const clientWith = (http: HttpClient.HttpClient) =>
 test("the REST client keeps a percent-encoded project path under /api/v4", async () => {
   const fake = makeHttp(() => Response.json({ id: 599 }));
   const client = await clientWith(fake.http);
-  await Effect.runPromise(client.get({ path: "/projects/glints%2Fotp", query: { simple: true } }));
-  expect(fake.urls).toEqual(["https://gitlab.test/api/v4/projects/glints%2Fotp?simple=true"]);
+  await Effect.runPromise(
+    client.get({ path: "/projects/group%2Fproject", query: { simple: true } }),
+  );
+  expect(fake.urls).toEqual(["https://gitlab.test/api/v4/projects/group%2Fproject?simple=true"]);
 });
 
 test("the REST client rejects a percent-encoded path traversal", async () => {

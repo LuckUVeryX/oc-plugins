@@ -184,7 +184,7 @@ const receive = (messages: Queue.Queue<Json>) =>
 const identifier = (nonce: string) => ({
   channel: "GraphqlChannel",
   query: "subscription { ciPipelineStatusesUpdated { id } }",
-  variables: { projectFullPath: "glints/example" },
+  variables: { projectFullPath: "group/project" },
   operationName: null,
   nonce,
 });

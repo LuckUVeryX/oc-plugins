@@ -46,7 +46,7 @@ All 8 events arrive over one Action Cable connection to `/-/cable`.
 
 - Git, Bun 1.4.4, and OpenCode 2.3.2.
 - A Lark app in WebSocket event mode, with its app ID (`cli_` followed by 16 hex characters) and app secret.
-- A GitLab personal access token for the host with `read_api` and `read_repository`, or `glab` authenticated for that host.
+- A GitLab personal access token for the GitLab host with `read_api` and `read_repository`, or `glab` authenticated for that host. The host defaults to `gitlab.com`.
 
 The server reads events and integration data. The agent replies with its own tools, such as `lark-cli` or `glab`.
 
@@ -79,6 +79,8 @@ Merge this into `~/.config/opencode/opencode.jsonc` and keep the existing settin
           "LARK_APP_ID": "{env:LARK_APP_ID}",
           "LARK_APP_SECRET": "{env:LARK_APP_SECRET}",
           "GITLAB_TOKEN": "{env:GITLAB_TOKEN}",
+          // For self-managed GitLab only:
+          // "GITLAB_HOST": "gitlab.example.com",
         },
       },
     },
@@ -98,13 +100,13 @@ Restart the OpenCode service after you change the config or environment.
 
 No settings are required to start the server. Each integration needs its own credentials. The decision model has a default and needs setting only to override it.
 
-| Variable                 | Default                                          | Effect                                                                                                                                                                                         |
-| ------------------------ | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LARK_APP_ID`            | for Lark watches                                 | Lark app ID, `cli_` followed by 16 hex characters. Without it, Lark watches fail and GitLab watches work.                                                                                      |
-| `LARK_APP_SECRET`        | for Lark watches                                 | Lark app secret. Never write it into the config file.                                                                                                                                          |
-| `GITLAB_TOKEN`           | unset                                            | GitLab token. When unset or empty, the server reads `glab config get token --host <host>`. The token is validated with `GET /api/v4/user`, and a network failure is retried on the next watch. |
-| `GITLAB_HOST`            | `gitlab.glints.com`                              | Host for the Action Cable connection and the REST tool. An empty value is an error.                                                                                                            |
-| `EVENTS_DECISIONS_MODEL` | `{"providerID":"opencode","id":"jev-1.13-free"}` | Model behind `tools.events.decide`, as JSON: `{"providerID":"your-provider","id":"your-model","variant":"optional"}`. Omit `variant` when unused. Each call sends one model request.           |
+| Variable                 | Default                                          | Effect                                                                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LARK_APP_ID`            | for Lark watches                                 | Lark app ID, `cli_` followed by 16 hex characters. Without it, Lark watches fail and GitLab watches work.                                                                                                              |
+| `LARK_APP_SECRET`        | for Lark watches                                 | Lark app secret. Never write it into the config file.                                                                                                                                                                  |
+| `GITLAB_TOKEN`           | unset                                            | GitLab token for the configured host. When unset or empty, the server reads `glab config get token --host <host>`. The token is validated with `GET /api/v4/user`, and a network failure is retried on the next watch. |
+| `GITLAB_HOST`            | `gitlab.com`                                     | GitLab host for the Action Cable connection and the REST tool. Set it for self-managed GitLab. An empty value is an error.                                                                                             |
+| `EVENTS_DECISIONS_MODEL` | `{"providerID":"opencode","id":"jev-1.13-free"}` | Model behind `tools.events.decide`, as JSON: `{"providerID":"your-provider","id":"your-model","variant":"optional"}`. Omit `variant` when unused. Each call sends one model request.                                   |
 
 ## Limits
 
@@ -158,7 +160,7 @@ return JSON.stringify(input.prepared);
 | `tools.watch.state.set(value)`      | always       | Replace it, up to 64 KB.                                     |
 | `tools.events.decide(request)`      | always       | Decision model answers with probabilities, one per question. |
 
-The Lark path rejects `..`, `//`, `%`, `\`, a query string, and a fragment. Pass query parameters in `query`, and page with `page_token` when the endpoint paginates. The GitLab path must stay under `/api/v4` after URL normalisation and rejects a redirect. Percent-encode project paths, for example `/projects/glints%2Fotp`.
+The Lark path rejects `..`, `//`, `%`, `\`, a query string, and a fragment. Pass query parameters in `query`, and page with `page_token` when the endpoint paginates. The GitLab path must stay under `/api/v4` after URL normalisation and rejects a redirect. Percent-encode project paths, for example `/projects/group%2Fproject`.
 
 Use `decide` in prepare when `filter` cannot tell whether an event deserves a wake. One call accepts several questions.
 
@@ -180,7 +182,7 @@ Each recipe is the event plus the arguments to pass with it.
 
 #### Babysit a failing pipeline
 
-The watch wakes when any pipeline in `glints/otp` fails. Prepare reads the failed jobs and transform hands both the pipeline and jobs to the session.
+The watch wakes when any pipeline in `group/project` fails. Prepare reads the failed jobs and transform hands both the pipeline and jobs to the session.
 
 ```js
 // prepare
@@ -200,8 +202,8 @@ return JSON.stringify(input.prepared);
 
 ```json
 {
-  "watchId": "otp-pipeline",
-  "params": { "projectFullPath": "glints/otp" },
+  "watchId": "pipeline",
+  "params": { "projectFullPath": "group/project" },
   "filter": { "status": ["FAILED"] },
   "prepare": "…",
   "transform": "return JSON.stringify(input.prepared)"
@@ -236,7 +238,7 @@ return fresh.length === 0 ? null : { notes: fresh };
 ```json
 {
   "watchId": "mr-comments",
-  "params": { "projectId": 599, "noteableType": "merge_request", "noteableId": 48090 },
+  "params": { "projectId": 123, "noteableType": "merge_request", "noteableId": 456 },
   "prepare": "…",
   "transform": "return JSON.stringify(input.prepared)"
 }
@@ -319,7 +321,7 @@ return JSON.stringify(input.prepared);
 | Some events arrive, others do not                                 | The app lacks the subscription, or the event arrived while the connection was reconnecting.                                                                                                                                                                   |
 | An event never arrives                                            | The app lacks the permission or subscription, or Lark does not deliver that event over WebSocket.                                                                                                                                                             |
 | A watch stops with `prepare failed` and `Lark API 99991672`       | The app lacks a read scope for the request.                                                                                                                                                                                                                   |
-| A GitLab watch stops with "No GitLab token"                       | Set `GITLAB_TOKEN`, or authenticate `glab` for the host so `glab config get token --host <host>` returns a token.                                                                                                                                             |
+| A GitLab watch stops with "No GitLab token"                       | Set `GITLAB_TOKEN`, or authenticate `glab` for the GitLab host so `glab config get token --host <host>` returns a token.                                                                                                                                      |
 | A project watch stops with "is not accessible"                    | The token cannot read that project, or the path is wrong. `gitlab_get` with `/projects/<id>` shows the same result.                                                                                                                                           |
 | A GitLab pipeline or job watch stays silent                       | The token cannot read that pipeline or job, and GitLab gives no lookup by global ID alone.                                                                                                                                                                    |
 | A GitLab watch stops with "is not the token's user"               | `userId` is not the token's user. Pass the token user's global ID. GitLab delivers this event to the merge request's author, assignees, and reviewers.                                                                                                        |
