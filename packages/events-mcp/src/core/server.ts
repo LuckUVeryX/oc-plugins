@@ -9,6 +9,7 @@ import { serveStdio, StdioServerTransport } from "@modelcontextprotocol/server/s
 import {
   Cause,
   Clock,
+  ConfigProvider,
   Context,
   Deferred,
   Effect,
@@ -49,6 +50,7 @@ const DEFAULT_STEP_TIMEOUT_SECONDS = 120;
 
 interface ServerOptions {
   readonly harness: Harness;
+  readonly config: ConfigProvider.ConfigProvider;
   readonly scope: Scope.Scope;
   readonly registry: Registry.Interface;
   readonly feeds: Feeds.Interface;
@@ -66,8 +68,16 @@ const streamParams = Schema.toStandardSchemaV1(
 );
 
 // Stdout carries MCP messages, so handler logs must go to stderr.
-const run = <A, E>(effect: Effect.Effect<A, E>, options?: Effect.RunOptions) =>
-  Effect.runPromise(effect.pipe(Effect.provideService(Logger.LogToStderr, true)), options);
+const makeRun =
+  (config: ConfigProvider.ConfigProvider) =>
+  <A, E>(effect: Effect.Effect<A, E>, options?: Effect.RunOptions) =>
+    Effect.runPromise(
+      effect.pipe(
+        Effect.provideService(Logger.LogToStderr, true),
+        Effect.provideService(ConfigProvider.ConfigProvider, config),
+      ),
+      options,
+    );
 
 const invalidParams = (message: string) => new ProtocolError(INVALID_PARAMS, message);
 
@@ -166,6 +176,7 @@ const watchInputSchema = (options: {
 };
 
 const buildServer = (options: ServerOptions): McpServer => {
+  const run = makeRun(options.config);
   const transformEvent = makeTransform();
   const watches = new Map<string, Watch>();
   const toolPaths = options.registry.integrations.flatMap((integration) =>
@@ -350,6 +361,10 @@ const buildServer = (options: ServerOptions): McpServer => {
               } = yield* Schema.decodeUnknownEffect(WatchInput)(input).pipe(
                 Effect.mapError((error) => new Invalid({ message: error.message })),
               );
+              if (harness.check !== undefined)
+                yield* harness
+                  .check(session)
+                  .pipe(Effect.mapError((error) => new Invalid({ message: error.message })));
               const { event, decoded, eventParams } = yield* resolveWatch(name, {
                 watchId,
                 ...(params === undefined ? {} : { params }),
@@ -384,6 +399,18 @@ const buildServer = (options: ServerOptions): McpServer => {
                 state,
                 decide: options.decide,
               });
+              const wake = (
+                text: string,
+                onFailure: (error: { readonly message: string }) => Effect.Effect<void>,
+              ) =>
+                harness
+                  .wake(send, {
+                    session,
+                    watchId: decoded.watchId,
+                    event: event.name,
+                    text,
+                  })
+                  .pipe(Effect.catchTag("Harness.WakeFailed", onFailure));
               yield* runWatch({
                 watchId: decoded.watchId,
                 eventKind: event,
@@ -397,12 +424,13 @@ const buildServer = (options: ServerOptions): McpServer => {
                 transform: (transformInput) => transformEvent(decoded.transform, transformInput),
                 notify: (type, body = {}) => {
                   if (type === "event")
-                    return harness.wake(send, {
-                      session,
-                      watchId: decoded.watchId,
-                      event: event.name,
-                      text: typeof body.data === "string" ? body.data : JSON.stringify(body.data),
-                    });
+                    return wake(
+                      typeof body.data === "string" ? body.data : JSON.stringify(body.data),
+                      (error) =>
+                        Deferred.succeed(ended, `Wake failed: ${error.message}`).pipe(
+                          Effect.as(undefined),
+                        ),
+                    );
                   if (type !== "terminated") return Effect.void;
                   const error = body["error"];
                   const reason =
@@ -410,12 +438,9 @@ const buildServer = (options: ServerOptions): McpServer => {
                       ? error["message"]
                       : "Watch ended";
                   if (reason === "Stopped") return Effect.void;
-                  return harness.wake(send, {
-                    session,
-                    watchId: decoded.watchId,
-                    event: event.name,
-                    text: `Watch ${decoded.watchId} ended: ${reason}`,
-                  });
+                  return wake(`Watch ${decoded.watchId} ended: ${reason}`, (error) =>
+                    Effect.logWarning(`Termination wake failed: ${error.message}`),
+                  );
                 },
               }).pipe(
                 Effect.provideService(Feeds.Service, options.feeds),
@@ -554,8 +579,10 @@ export const make = (options: {
     const registry = yield* Registry.Service;
     const feeds = yield* Feeds.Service;
     const decisionModel = yield* DecisionModel.Service;
+    const config = yield* ConfigProvider.ConfigProvider;
     return buildServer({
       harness: get(options.harness),
+      config,
       scope: options.scope,
       registry,
       feeds,

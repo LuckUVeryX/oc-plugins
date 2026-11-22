@@ -10,7 +10,7 @@ const start = (...args: ReadonlyArray<string>) =>
 test("a missing harness argument stops at startup", () => {
   const result = start();
   expect(result.status).toBe(1);
-  expect(result.stderr).toContain("no harness given. Use one of: opencode, claude.");
+  expect(result.stderr).toContain("no harness given. Use one of: opencode, claude, codex.");
 });
 
 test("an unknown harness argument stops at startup", () => {

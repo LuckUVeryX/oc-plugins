@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, SUBSCRIPTION_ID_META_KEY } from "@modelcontextprotocol/server";
 import {
+  ConfigProvider,
   DateTime,
   Effect,
   Exit,
@@ -61,6 +62,7 @@ export async function connect(
     otherSubscribeError?: IntegrationError | undefined;
     integrations?: ReadonlyArray<Integration>;
     transport?: (transport: ReturnType<typeof InMemoryTransport.createLinkedPair>[1]) => void;
+    config?: ConfigProvider.ConfigProvider;
   } = {},
 ) {
   const request: LarkRequester =
@@ -138,7 +140,13 @@ export async function connect(
       scope,
       defaultExpiresInSeconds: options.defaultExpiresInSeconds ?? 60,
       eventTimeoutSeconds: options.eventTimeoutSeconds ?? 30,
-    }).pipe(Effect.provide(context)),
+    }).pipe(
+      Effect.provide(context),
+      Effect.provideService(
+        ConfigProvider.ConfigProvider,
+        options.config ?? ConfigProvider.fromEnv(),
+      ),
+    ),
   );
   const client = new Client({ name: "test", version: "1" });
   const notifications: Array<{
