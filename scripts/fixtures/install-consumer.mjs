@@ -34,7 +34,13 @@ async function dependency(from, name, entry) {
 async function verifyExecutable(name) {
   const signal = AbortSignal.timeout(10_000);
   const child = Bun.spawn(
-    [process.execPath, "--preload", "./lark-sdk-preload.mjs", join("node_modules", ".bin", name)],
+    [
+      process.execPath,
+      "--preload",
+      "./lark-sdk-preload.mjs",
+      join("node_modules", ".bin", name),
+      "opencode",
+    ],
     {
       cwd: process.cwd(),
       stdin: "pipe",
@@ -91,7 +97,13 @@ async function verifyExecutable(name) {
 
   const closedSignal = AbortSignal.timeout(10_000);
   const closed = Bun.spawn(
-    [process.execPath, "--preload", "./lark-sdk-preload.mjs", join("node_modules", ".bin", name)],
+    [
+      process.execPath,
+      "--preload",
+      "./lark-sdk-preload.mjs",
+      join("node_modules", ".bin", name),
+      "opencode",
+    ],
     {
       cwd: process.cwd(),
       stdin: "pipe",

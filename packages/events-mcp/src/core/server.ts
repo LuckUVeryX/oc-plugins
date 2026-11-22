@@ -19,15 +19,14 @@ import { inputJsonSchema } from "./tool.ts";
 import { makeTransform } from "./transform.ts";
 import { Feeds } from "./feeds.ts";
 import { runWatch, type NotificationType } from "./watch.ts";
-
-const EVENTS_EXTENSION = "io.modelcontextprotocol/events";
-
-const CLIENT_WATCH_TOOL = "watch_mcp_event";
+import type { Harness } from "./harness.ts";
+import { get, type Name as HarnessName } from "../harness/index.ts";
 
 const DEFAULT_WATCH_SECONDS = 3600;
 const DEFAULT_STEP_TIMEOUT_SECONDS = 120;
 
 interface ServerOptions {
+  readonly harness: Harness;
   readonly registry: Registry.Interface;
   readonly feeds: Feeds.Interface;
   readonly decide: Decide;
@@ -118,16 +117,8 @@ const buildServer = (options: ServerOptions): McpServer => {
   const server = new McpServer(
     { name: "events-mcp", version: "0.0.0" },
     {
-      capabilities: { extensions: { [EVENTS_EXTENSION]: {} } },
-      instructions: [
-        `Call ${CLIENT_WATCH_TOOL} with only the configured server name to list its events and arguments. Arm one with an event name and its arguments. The watch runs filter, prepare, and transform in turn, and transform's returned string wakes this session.`,
-        "A watch is live. It sees events from the moment it arms until it expires or you stop it, and nothing older is replayed. Choose a watchId. list_watches shows the arguments of every open watch, and stop_watch ends one early.",
-        ...options.registry.integrations.flatMap((integration) =>
-          integration.instructions === undefined ? [] : [integration.instructions],
-        ),
-        "When a filter cannot tell whether an event deserves a wake, ask the decision model from prepare with tools.events.decide.",
-        'When a watch ends with "<step> failed", fix that step and arm a new watch.',
-      ].join("\n\n"),
+      capabilities: options.harness.capabilities,
+      instructions: options.harness.instructions(options.registry.integrations),
     },
   );
 
@@ -320,17 +311,17 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/Server") {}
 
-export const make = (
-  options: {
-    readonly defaultExpiresInSeconds?: number;
-    readonly eventTimeoutSeconds?: number;
-  } = {},
-): Effect.Effect<McpServer, never, Registry.Service | Feeds.Service | DecisionModel.Service> =>
+export const make = (options: {
+  readonly harness: HarnessName;
+  readonly defaultExpiresInSeconds?: number;
+  readonly eventTimeoutSeconds?: number;
+}): Effect.Effect<McpServer, never, Registry.Service | Feeds.Service | DecisionModel.Service> =>
   Effect.gen(function* () {
     const registry = yield* Registry.Service;
     const feeds = yield* Feeds.Service;
     const decisionModel = yield* DecisionModel.Service;
     return buildServer({
+      harness: get(options.harness),
       registry,
       feeds,
       decide: decisionModel.decide,
@@ -344,31 +335,30 @@ const logError = (error: unknown): void => {
   Effect.runSync(Effect.logError(error).pipe(Effect.provideService(Logger.LogToStderr, true)));
 };
 
-export const layer: Layer.Layer<
-  Service,
-  never,
-  Registry.Service | Feeds.Service | DecisionModel.Service
-> = Layer.effect(
-  Service,
-  Effect.gen(function* () {
-    const server = yield* make();
-    yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        serveStdio(() => server, {
-          legacy: "reject",
-          onerror: logError,
-        }),
-      ),
-      (handle) => Effect.promise(() => handle.close()),
-    );
-    const done = Effect.callback<void>((resume) => {
-      if (process.stdin.readableEnded) return resume(Effect.void);
-      const onEnd = () => resume(Effect.void);
-      process.stdin.once("end", onEnd);
-      return Effect.sync(() => process.stdin.off("end", onEnd));
-    });
-    return Service.of({ done });
-  }),
-);
+export const layer = (
+  name: HarnessName,
+): Layer.Layer<Service, never, Registry.Service | Feeds.Service | DecisionModel.Service> =>
+  Layer.effect(
+    Service,
+    Effect.gen(function* () {
+      const server = yield* make({ harness: name });
+      yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          serveStdio(() => server, {
+            legacy: "reject",
+            onerror: logError,
+          }),
+        ),
+        (handle) => Effect.promise(() => handle.close()),
+      );
+      const done = Effect.callback<void>((resume) => {
+        if (process.stdin.readableEnded) return resume(Effect.void);
+        const onEnd = () => resume(Effect.void);
+        process.stdin.once("end", onEnd);
+        return Effect.sync(() => process.stdin.off("end", onEnd));
+      });
+      return Service.of({ done });
+    }),
+  );
 
 export * as Server from "./server.ts";
