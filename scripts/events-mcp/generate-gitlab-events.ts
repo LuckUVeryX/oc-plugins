@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { JsonSchema, Schema } from "effect";
 import { decodeGitlabCatalog } from "../../packages/events-mcp/src/gitlab/catalog.ts";
 
-const host = process.env["GITLAB_HOST"]?.trim() || "gitlab.glints.com";
+const host = process.env["GITLAB_HOST"]?.trim() || "gitlab.com";
 const output = fileURLToPath(
   new URL("../../packages/events-mcp/src/gitlab/events.json", import.meta.url),
 );
@@ -161,7 +161,7 @@ const EVENTS: ReadonlyArray<EventConfig> = [
     field: "ciPipelineStatusesUpdated",
     selection: "Pipeline",
     requireOneOf: ["projectId", "projectFullPath"],
-    when: "Watch a project's pipeline status changes. Pass projectFullPath, such as glints/otp, or projectId. Pass sha to follow one commit.",
+    when: "Watch a project's pipeline status changes. Pass projectFullPath, such as group/project, or projectId. Pass sha to follow one commit.",
   },
   {
     field: "ciPipelineStatusUpdated",
@@ -228,7 +228,7 @@ const GLOBAL_ID_KINDS: Readonly<Record<string, GlobalIdKind>> = {
 };
 
 const PARAM_DESCRIPTIONS: Readonly<Record<string, string>> = {
-  projectFullPath: "Project path as it appears in the web URL, such as glints/otp.",
+  projectFullPath: "Project path as it appears in the web URL, such as group/project.",
 };
 
 const child = (ref: TypeRef): TypeRef => {

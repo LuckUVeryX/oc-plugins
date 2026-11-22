@@ -46,7 +46,7 @@ All 8 events arrive over one Action Cable connection to `/-/cable`.
 
 - Git, Bun 1.4.4, and OpenCode 2.3.2.
 - A Lark app in WebSocket event mode, with its app ID (`cli_` followed by 16 hex characters) and app secret.
-- A GitLab personal access token for the host with `read_api` and `read_repository`, or `glab` authenticated for that host.
+- A GitLab personal access token for the GitLab host with `read_api` and `read_repository`, or `glab` authenticated for that host. The host defaults to `gitlab.com`.
 
 The server reads events and integration data. The agent replies with its own tools, such as `lark-cli` or `glab`.
 
@@ -79,6 +79,8 @@ Merge this into `~/.config/opencode/opencode.jsonc` and keep the existing settin
           "LARK_APP_ID": "{env:LARK_APP_ID}",
           "LARK_APP_SECRET": "{env:LARK_APP_SECRET}",
           "GITLAB_TOKEN": "{env:GITLAB_TOKEN}",
+          // For self-managed GitLab only:
+          // "GITLAB_HOST": "gitlab.example.com",
         },
       },
     },
@@ -96,19 +98,20 @@ Restart the OpenCode service after you change the config or environment.
 
 ### Settings
 
-| Variable                       | Default             | Effect                                                                                                                                                                                                                                    |
-| ------------------------------ | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LARK_APP_ID`                  | for Lark watches    | Lark app ID, `cli_` followed by 16 hex characters. Without it, Lark watches fail and GitLab watches work.                                                                                                                                 |
-| `LARK_APP_SECRET`              | for Lark watches    | Lark app secret. Never write it into the config file.                                                                                                                                                                                     |
-| `GITLAB_TOKEN`                 | unset               | GitLab token. When unset or empty, the server reads `glab config get token --host <host>`. The token is validated with `GET /api/v4/user`, and a network failure is retried on the next watch.                                            |
-| `GITLAB_HOST`                  | `gitlab.glints.com` | Host for the Action Cable connection and the REST tool. An empty value is an error.                                                                                                                                                       |
-| `EVENTS_DECISIONS_MODEL`       | unset               | Model behind `tools.events.decide`, as JSON: `{"providerID":"your-provider","id":"your-model","variant":"optional"}`. Omit `variant` when unused. Without this variable, prepare has no `decide` tool. Each call sends one model request. |
-| `EVENTS_WATCH_DEFAULT_SECONDS` | `3600`              | Watch lifetime when `expiresInSeconds` is omitted. Positive integer.                                                                                                                                                                      |
-| `EVENTS_STEP_TIMEOUT_SECONDS`  | `120`               | Time limit for one event's prepare and transform together. Positive integer. A watch handles one event at a time, so a slow event delays the ones behind it.                                                                              |
+No settings are required to start the server. Each integration needs its own credentials. The decision model has a default and needs setting only to override it.
+
+| Variable                 | Default                                          | Effect                                                                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LARK_APP_ID`            | for Lark watches                                 | Lark app ID, `cli_` followed by 16 hex characters. Without it, Lark watches fail and GitLab watches work.                                                                                                              |
+| `LARK_APP_SECRET`        | for Lark watches                                 | Lark app secret. Never write it into the config file.                                                                                                                                                                  |
+| `GITLAB_TOKEN`           | unset                                            | GitLab token for the configured host. When unset or empty, the server reads `glab config get token --host <host>`. The token is validated with `GET /api/v4/user`, and a network failure is retried on the next watch. |
+| `GITLAB_HOST`            | `gitlab.com`                                     | GitLab host for the Action Cable connection and the REST tool. Set it for self-managed GitLab. An empty value is an error.                                                                                             |
+| `EVENTS_DECISIONS_MODEL` | `{"providerID":"opencode","id":"jev-1.13-free"}` | Model behind `tools.events.decide`, as JSON: `{"providerID":"your-provider","id":"your-model","variant":"optional"}`. Omit `variant` when unused. Each call sends one model request.                                   |
 
 ## Limits
 
 - Everything is in memory. Watches, per-watch state, and the dedup cache live in the server process. A restart starts fresh.
+- A watch stays open for 3600 seconds unless `expiresInSeconds` says otherwise. One event's prepare and transform share a 120-second limit, and a watch handles one event at a time, so a slow event delays the ones behind it.
 - Delivery is live only. Events that arrive while no watch is open, or while a connection reconnects, are dropped. The stream reports `cursor: null`, so there is no replay.
 - Duplicate event IDs are dropped within each shared feed. Lark drops events older than an hour.
 - OpenCode ends every watch without a stop message when it reloads, restarts, or unloads an idle location. Set `location_idle_timeout` to `false` for long watches.
@@ -149,15 +152,15 @@ return JSON.stringify(input.prepared);
 
 ### Prepare tools
 
-| Tool                                | Present when                    | What it does                                                 |
-| ----------------------------------- | ------------------------------- | ------------------------------------------------------------ |
-| `tools.lark.get({ path, query })`   | always                          | Read-only GET under `/open-apis`.                            |
-| `tools.gitlab.get({ path, query })` | always                          | Read-only GET under `/api/v4`.                               |
-| `tools.watch.state.get()`           | always                          | This watch's JSON memory; null until set.                    |
-| `tools.watch.state.set(value)`      | always                          | Replace it, up to 64 KB.                                     |
-| `tools.events.decide(request)`      | `EVENTS_DECISIONS_MODEL` is set | Decision model answers with probabilities, one per question. |
+| Tool                                | Present when | What it does                                                 |
+| ----------------------------------- | ------------ | ------------------------------------------------------------ |
+| `tools.lark.get({ path, query })`   | always       | Read-only GET under `/open-apis`.                            |
+| `tools.gitlab.get({ path, query })` | always       | Read-only GET under `/api/v4`.                               |
+| `tools.watch.state.get()`           | always       | This watch's JSON memory; null until set.                    |
+| `tools.watch.state.set(value)`      | always       | Replace it, up to 64 KB.                                     |
+| `tools.events.decide(request)`      | always       | Decision model answers with probabilities, one per question. |
 
-The Lark path rejects `..`, `//`, `%`, `\`, a query string, and a fragment. Pass query parameters in `query`, and page with `page_token` when the endpoint paginates. The GitLab path must stay under `/api/v4` after URL normalisation and rejects a redirect. Percent-encode project paths, for example `/projects/glints%2Fotp`.
+The Lark path rejects `..`, `//`, `%`, `\`, a query string, and a fragment. Pass query parameters in `query`, and page with `page_token` when the endpoint paginates. The GitLab path must stay under `/api/v4` after URL normalisation and rejects a redirect. Percent-encode project paths, for example `/projects/group%2Fproject`.
 
 Use `decide` in prepare when `filter` cannot tell whether an event deserves a wake. One call accepts several questions.
 
@@ -179,7 +182,7 @@ Each recipe is the event plus the arguments to pass with it.
 
 #### Babysit a failing pipeline
 
-The watch wakes when any pipeline in `glints/otp` fails. Prepare reads the failed jobs and transform hands both the pipeline and jobs to the session.
+The watch wakes when any pipeline in `group/project` fails. Prepare reads the failed jobs and transform hands both the pipeline and jobs to the session.
 
 ```js
 // prepare
@@ -199,8 +202,8 @@ return JSON.stringify(input.prepared);
 
 ```json
 {
-  "watchId": "otp-pipeline",
-  "params": { "projectFullPath": "glints/otp" },
+  "watchId": "pipeline",
+  "params": { "projectFullPath": "group/project" },
   "filter": { "status": ["FAILED"] },
   "prepare": "…",
   "transform": "return JSON.stringify(input.prepared)"
@@ -235,7 +238,7 @@ return fresh.length === 0 ? null : { notes: fresh };
 ```json
 {
   "watchId": "mr-comments",
-  "params": { "projectId": 599, "noteableType": "merge_request", "noteableId": 48090 },
+  "params": { "projectId": 123, "noteableType": "merge_request", "noteableId": 456 },
   "prepare": "…",
   "transform": "return JSON.stringify(input.prepared)"
 }
@@ -312,20 +315,20 @@ return JSON.stringify(input.prepared);
 | Symptom                                                           | Cause                                                                                                                                                                                                                                                         |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Server code changes do not take effect after a reload             | With `pool: true`, the server process outlives OpenCode reloads. Stop the `events-mcp` process; OpenCode starts a fresh one on the next reload.                                                                                                               |
-| Server fails to start                                             | `GITLAB_HOST` is empty, or the committed event catalog is invalid. Server logs go to stderr.                                                                                                                                                                  |
-| A Lark watch stops with "No Lark app credentials"                 | Set `LARK_APP_ID` and `LARK_APP_SECRET` for the OpenCode service and arm a new watch.                                                                                                                                                                         |
+| Server fails to start                                             | `GITLAB_HOST` is empty, `EVENTS_DECISIONS_MODEL` is not valid JSON in the model shape, or the committed event catalog is invalid. Server logs go to stderr.                                                                                                   |
+| A Lark watch fails to start with "No Lark app credentials"        | Set `LARK_APP_ID` and `LARK_APP_SECRET` for the OpenCode service and arm a new watch.                                                                                                                                                                         |
 | Watch fails with "Another connection for this Lark app is online" | Another consumer of the same app holds a connection, such as `lark-cli event consume` or this server elsewhere. Stop it and arm a new watch.                                                                                                                  |
 | Some events arrive, others do not                                 | The app lacks the subscription, or the event arrived while the connection was reconnecting.                                                                                                                                                                   |
 | An event never arrives                                            | The app lacks the permission or subscription, or Lark does not deliver that event over WebSocket.                                                                                                                                                             |
 | A watch stops with `prepare failed` and `Lark API 99991672`       | The app lacks a read scope for the request.                                                                                                                                                                                                                   |
-| A GitLab watch stops with "No GitLab token"                       | Set `GITLAB_TOKEN`, or authenticate `glab` for the host so `glab config get token --host <host>` returns a token.                                                                                                                                             |
+| A GitLab watch stops with "No GitLab token"                       | Set `GITLAB_TOKEN`, or authenticate `glab` for the GitLab host so `glab config get token --host <host>` returns a token.                                                                                                                                      |
 | A project watch stops with "is not accessible"                    | The token cannot read that project, or the path is wrong. `gitlab_get` with `/projects/<id>` shows the same result.                                                                                                                                           |
 | A GitLab pipeline or job watch stays silent                       | The token cannot read that pipeline or job, and GitLab gives no lookup by global ID alone.                                                                                                                                                                    |
 | A GitLab watch stops with "is not the token's user"               | `userId` is not the token's user. Pass the token user's global ID. GitLab delivers this event to the merge request's author, assignees, and reviewers.                                                                                                        |
 | A merge request watch stops with "is not accessible"              | The merge request global ID does not exist, or the token cannot read that merge request. Pass `gid://gitlab/MergeRequest/<database id>`, not the !iid. Confirm with `gitlab_get` on `/projects/<project>/merge_requests/<iid>`; its `.id` is the database id. |
 | A notes watch stops with "refused this watch"                     | `projectId` and `noteableId` do not belong together, or the token cannot read that project or noteable.                                                                                                                                                       |
 | A notes watch stops with "exceeds 16384 bytes"                    | Transform returned an event bigger than OpenCode accepts. Return less data.                                                                                                                                                                                   |
-| A watch stops with a timeout                                      | The event exceeded `EVENTS_STEP_TIMEOUT_SECONDS`. Inspect the named step or increase the limit.                                                                                                                                                               |
+| A watch stops with a timeout                                      | The event exceeded the 120-second limit for prepare and transform together. Inspect the named step or shorten the work.                                                                                                                                       |
 | A watch stops with "Watch state exceeds 65536 bytes"              | Prepare stores too much in `tools.watch.state`. Keep less, or derive it again on each event.                                                                                                                                                                  |
 | A watch disappears without a stop message                         | OpenCode reloaded, restarted, or unloaded the idle location. Set `location_idle_timeout` to `false` and arm a new watch.                                                                                                                                      |
 | Memory grows over time                                            | Watches and their buffers live in one long-running server process, and buffers are unbounded. Run `list_watches` and stop unused watches.                                                                                                                     |

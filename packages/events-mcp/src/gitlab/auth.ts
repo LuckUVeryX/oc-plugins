@@ -22,7 +22,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const http = yield* HttpClient.HttpClient;
     const host = yield* Config.String("GITLAB_HOST").pipe(
-      Config.withDefault("gitlab.glints.com"),
+      Config.withDefault("gitlab.com"),
       Effect.orDie,
     );
     if (host.trim() === "") yield* Effect.die(new Error("GITLAB_HOST must not be empty"));

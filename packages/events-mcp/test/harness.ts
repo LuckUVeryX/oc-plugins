@@ -1,12 +1,10 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, SUBSCRIPTION_ID_META_KEY } from "@modelcontextprotocol/server";
 import {
-  ConfigProvider,
   DateTime,
   Effect,
   Exit,
   Layer,
-  Option,
   PubSub,
   Schema,
   Scope,
@@ -41,6 +39,10 @@ const eventParams: Schema.JsonObject = {
   properties: {},
   additionalProperties: false,
 };
+
+// A watch that only needs the decide tool to exist, not to answer.
+export const unusedDecide: DecisionModel.Decide = () =>
+  Effect.fail(new DecisionModel.Failed({ message: "unused" }));
 
 interface Publish {
   readonly eventId?: string;
@@ -120,15 +122,7 @@ export async function connect(
   const registryLayer = Registry.layer(Effect.succeed(integrations));
   const decisionModelLayer = Layer.succeed(
     DecisionModel.Service,
-    DecisionModel.Service.of({
-      decide: options.decide === undefined ? Option.none() : Option.some(options.decide),
-    }),
-  );
-  const config = ConfigProvider.layer(
-    ConfigProvider.fromUnknown({
-      EVENTS_WATCH_DEFAULT_SECONDS: String(options.defaultExpiresInSeconds ?? 60),
-      EVENTS_STEP_TIMEOUT_SECONDS: String(options.eventTimeoutSeconds ?? 30),
-    }),
+    DecisionModel.Service.of({ decide: options.decide ?? unusedDecide }),
   );
   const scope = await Effect.runPromise(Scope.make());
   const context = await Effect.runPromise(
@@ -137,7 +131,10 @@ export async function connect(
     ).pipe(Effect.provideService(Scope.Scope, scope)),
   );
   const server = await Effect.runPromise(
-    Server.make.pipe(Effect.provide(context), Effect.provide(config)),
+    Server.make({
+      defaultExpiresInSeconds: options.defaultExpiresInSeconds ?? 60,
+      eventTimeoutSeconds: options.eventTimeoutSeconds ?? 30,
+    }).pipe(Effect.provide(context)),
   );
   const client = new Client({ name: "test", version: "1" });
   const notifications: Array<{

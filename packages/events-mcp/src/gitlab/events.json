@@ -2,7 +2,7 @@
   "events": [
     {
       "name": "ciPipelineStatusesUpdated",
-      "description": "Watch a project's pipeline status changes. Pass projectFullPath, such as glints/otp, or projectId. Pass sha to follow one commit.",
+      "description": "Watch a project's pipeline status changes. Pass projectFullPath, such as group/project, or projectId. Pass sha to follow one commit.",
       "params": {
         "type": "object",
         "properties": {
@@ -13,7 +13,7 @@
           },
           "projectFullPath": {
             "type": "string",
-            "description": "Project path as it appears in the web URL, such as glints/otp."
+            "description": "Project path as it appears in the web URL, such as group/project."
           },
           "sha": {
             "type": "string",
