@@ -345,7 +345,7 @@ export const layer = (
       yield* Effect.acquireRelease(
         Effect.sync(() =>
           serveStdio(() => server, {
-            legacy: "reject",
+            legacy: "serve",
             onerror: logError,
           }),
         ),
