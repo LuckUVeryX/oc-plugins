@@ -1,6 +1,6 @@
 # events-mcp
 
-events-mcp is a local MCP server that wakes an OpenCode session when something happens in Lark or GitLab. It connects to each integration, delivers the raw events a watch asks for, and gives the watch read tools and memory. The agent chooses what to watch and what deserves a wake-up.
+events-mcp is a local MCP server that wakes an agent session in OpenCode or Claude Code when something happens in Lark or GitLab. It connects to each integration, delivers the raw events a watch asks for, and gives the watch read tools and memory. The agent chooses what to watch and what deserves a wake-up.
 
 ## What you can watch
 
@@ -44,7 +44,7 @@ All 8 events arrive over one Action Cable connection to `/-/cable`.
 
 ### Requirements
 
-- Git, Bun 1.4.4, and OpenCode 2.3.2.
+- Git, Bun 1.4.4, and OpenCode 2.3.2 or Claude Code 2.1.330.
 - A Lark app in WebSocket event mode, with its app ID (`cli_` followed by 16 hex characters) and app secret.
 - A GitLab personal access token for the GitLab host with `read_api` and `read_repository`, or `glab` authenticated for that host. The host defaults to `gitlab.com`.
 
@@ -58,7 +58,7 @@ cd "$HOME/.local/share/events-mcp"
 bun install --frozen-lockfile
 ```
 
-Make Bun, `LARK_APP_ID`, `LARK_APP_SECRET`, and either `GITLAB_TOKEN` or an authenticated `glab` available to the OpenCode service. OpenCode reads its own environment, which can differ from your shell.
+Make Bun and the credentials below available to the service that runs the server. OpenCode and Claude Code read their own environment, which can differ from your shell.
 
 ### Configure OpenCode
 
@@ -71,7 +71,11 @@ Merge this into `~/.config/opencode/opencode.jsonc` and keep the existing settin
     "servers": {
       "events": {
         "type": "local",
-        "command": ["bun", "{env:HOME}/.local/share/events-mcp/packages/events-mcp/src/main.ts"],
+        "command": [
+          "bun",
+          "{env:HOME}/.local/share/events-mcp/packages/events-mcp/src/main.ts",
+          "opencode",
+        ],
         "cwd": "{env:HOME}/.local/share/events-mcp",
         "pool": true,
         "protocol": "2026-07-28",
@@ -96,6 +100,43 @@ Put the block in the global config. With `"pool": true`, every project in one Op
 
 Restart the OpenCode service after you change the config or environment.
 
+### Configure Claude Code
+
+Claude Code receives wakes through MCP channels. The feature is a research preview. It needs claude.ai or Console API key auth and an organization that allows channels. It does not work with Bedrock, Google Cloud's Agent Platform, or Microsoft Foundry.
+
+Start Claude Code from a shell that exports `LARK_APP_ID`, `LARK_APP_SECRET`, and `GITLAB_TOKEN` or the `glab` login. The server inherits that environment. Add the server once, and pass `claude` as the harness:
+
+```sh
+claude mcp add --scope user events-mcp -- \
+  bun "$HOME/.local/share/events-mcp/packages/events-mcp/src/main.ts" claude
+```
+
+The same entry in a project `.mcp.json`, with the absolute path:
+
+```json
+{
+  "mcpServers": {
+    "events-mcp": {
+      "command": "bun",
+      "args": ["/home/you/.local/share/events-mcp/packages/events-mcp/src/main.ts", "claude"]
+    }
+  }
+}
+```
+
+Channels need the legacy MCP handshake, so start Claude Code with `MCP_PROTOCOL_NEGOTIATION=legacy` and allow the server as a development channel:
+
+```sh
+export MCP_PROTOCOL_NEGOTIATION=legacy
+claude --dangerously-load-development-channels server:events-mcp
+```
+
+The channel confirmation appears on every launch during the preview. Without the flag, Claude Code connects to the server but does not register the channel, so no wake arrives. The flag is ignored in `claude -p` and in the Agent SDK, so a headless session cannot receive wakes.
+
+Claude Code queues channel messages while it is busy and delivers them together on the next turn. It sends no acknowledgement, so use `list_watches` to check that a watch is still armed.
+
+Restart Claude Code after you change the config or environment.
+
 ### Settings
 
 No settings are required to start the server. Each integration needs its own credentials. The decision model has a default and needs setting only to override it.
@@ -114,29 +155,29 @@ No settings are required to start the server. Each integration needs its own cre
 - A watch stays open for 3600 seconds unless `expiresInSeconds` says otherwise. One event's prepare and transform share a 120-second limit, and a watch handles one event at a time, so a slow event delays the ones behind it.
 - Delivery is live only. Events that arrive while no watch is open, or while a connection reconnects, are dropped. The stream reports `cursor: null`, so there is no replay.
 - Duplicate event IDs are dropped within each shared feed. Lark drops events older than an hour.
-- OpenCode ends every watch without a stop message when it reloads, restarts, or unloads an idle location. Set `location_idle_timeout` to `false` for long watches.
+- OpenCode ends every watch without a stop message when it reloads, restarts, or unloads an idle location. Set `location_idle_timeout` to `false` for long watches. Claude Code ends them when the session exits.
 - Lark delivers each app's events to one WebSocket client. Before connecting, the server reads `/open-apis/event/v1/connection`. If another consumer is online, such as `lark-cli event consume` or this server on another machine, the watch fails with a clear error instead of splitting events.
 - GitLab marks the GraphQL subscription fields Experiment. The notes channel is not part of the GraphQL schema and can also change.
 - GitLab access checks cover projects, merge requests, issues, and users. A watch on a pipeline or job ID alone stays silent when the token cannot read it.
 - A delivered event is capped at 16,384 bytes, counted as `{ id, timestamp, data }`. A transform that returns more stops the watch.
-- Every wake starts a session turn and costs tokens. A watch stops after its first wake unless the agent passes `"once": false`.
+- Every wake starts a session turn and costs tokens. A watch stays open until it expires or the agent stops it.
 - Every prepare script and every read tool can read whatever the credentials allow. Grant only the scopes your watches need. HR, payroll, and mail scopes expose personal data to the decision model.
 
 ## For agents: setting up a watch
 
-This section is the whole workflow. It uses OpenCode 2.3.2's watch tool; the server speaks the same events protocol to any client.
+This section is the whole workflow. OpenCode calls `watch_mcp_event`. Claude Code calls `list_events`, then `watch`. Both take the same watch arguments.
 
 Each event passes filter → prepare → transform, and transform's string wakes the session.
 
 ### Arm a watch
 
-1. Call `watch_mcp_event({ "server": "events" })`. It lists the events and each argument's schema and description; read the arguments there, not here.
+1. OpenCode calls `watch_mcp_event({ "server": "events" })`. Claude Code calls `list_events`. Both list the events and each argument's schema and description; read the arguments there, not here.
 2. Read the same endpoints prepare will read, with `lark_get` or `gitlab_get`, and confirm the response shape and IDs.
-3. Call `watch_mcp_event({ "server": "events", "event": "<name>", "arguments": { ... } })`.
+3. OpenCode calls `watch_mcp_event({ "server": "events", "event": "<name>", "arguments": { ... } })`. Claude Code calls `watch({ "event": "<name>", ... })` with the same fields.
 
-A watch stops after its first wake unless you pass `"once": false`.
+A watch stays open until it expires or you stop it. Every event that passes filter and prepare wakes you.
 
-The wake text carries the string transform returned. To stop a watch early, call `stop_watch({ "watchId": "..." })`. `list_watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again. If a watch stops with `<step> failed`, fix that step and arm a new watch.
+The wake text carries the string transform returned. In Claude Code it arrives as a channel message from the server. To stop a watch early, call `stop_watch({ "watchId": "..." })`. `list_watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again. If a watch stops with `<step> failed`, fix that step and arm a new watch.
 
 Each script is at most 64 KB, and both see `input.event = { eventId, timestamp, data }`. The event `data` is the raw integration payload.
 
@@ -305,18 +346,20 @@ return JSON.stringify(input.prepared);
 
 ### Verify
 
-1. Run `opencode mcp list`. The `events` server should show as connected. This checks the MCP connection only.
-2. Call `watch_mcp_event` with server `events` and no event. It should list 22 events, including `lark.im.message.receive_v1` and `gitlab.noteable.notes_changed`.
+1. Run `opencode mcp list` or `claude mcp list`. The events server should show as connected. This checks the MCP connection only.
+2. OpenCode calls `watch_mcp_event` with server `events` and no event. Claude Code calls `list_events`. Either lists 22 events, including `lark.im.message.receive_v1` and `gitlab.noteable.notes_changed`.
 3. For Lark, ask the user to trigger a subscribed event, such as a message to the bot. The wake confirms delivery.
 4. For GitLab, call `gitlab_get` with `{ "path": "/user" }` to check the token. Then arm a watch on a project the user can read and wait for the next pipeline status change.
+5. In Claude Code, the wake appears as a channel message from the configured server. If it never arrives, check the channel setup below.
 
 ### Troubleshoot
 
 | Symptom                                                           | Cause                                                                                                                                                                                                                                                         |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Server code changes do not take effect after a reload             | With `pool: true`, the server process outlives OpenCode reloads. Stop the `events-mcp` process; OpenCode starts a fresh one on the next reload.                                                                                                               |
-| Server fails to start                                             | `GITLAB_HOST` is empty, `EVENTS_DECISIONS_MODEL` is not valid JSON in the model shape, or the committed event catalog is invalid. Server logs go to stderr.                                                                                                   |
-| A Lark watch fails to start with "No Lark app credentials"        | Set `LARK_APP_ID` and `LARK_APP_SECRET` for the OpenCode service and arm a new watch.                                                                                                                                                                         |
+| Server fails to start                                             | The harness argument is missing or unknown (use `events-mcp opencode` or `events-mcp claude`), `GITLAB_HOST` is empty, `EVENTS_DECISIONS_MODEL` is not valid JSON in the model shape, or the committed event catalog is invalid. Server logs go to stderr.    |
+| Claude Code shows the server but no wake arrives                  | Start Claude Code with `MCP_PROTOCOL_NEGOTIATION=legacy` and `--dangerously-load-development-channels server:<name>`, using the name from `claude mcp list`. Channels also need claude.ai or Console API key auth.                                            |
+| A Lark watch fails to start with "No Lark app credentials"        | Set `LARK_APP_ID` and `LARK_APP_SECRET` for the service and arm a new watch.                                                                                                                                                                                  |
 | Watch fails with "Another connection for this Lark app is online" | Another consumer of the same app holds a connection, such as `lark-cli event consume` or this server elsewhere. Stop it and arm a new watch.                                                                                                                  |
 | Some events arrive, others do not                                 | The app lacks the subscription, or the event arrived while the connection was reconnecting.                                                                                                                                                                   |
 | An event never arrives                                            | The app lacks the permission or subscription, or Lark does not deliver that event over WebSocket.                                                                                                                                                             |
@@ -330,12 +373,12 @@ return JSON.stringify(input.prepared);
 | A notes watch stops with "exceeds 16384 bytes"                    | Transform returned an event bigger than OpenCode accepts. Return less data.                                                                                                                                                                                   |
 | A watch stops with a timeout                                      | The event exceeded the 120-second limit for prepare and transform together. Inspect the named step or shorten the work.                                                                                                                                       |
 | A watch stops with "Watch state exceeds 65536 bytes"              | Prepare stores too much in `tools.watch.state`. Keep less, or derive it again on each event.                                                                                                                                                                  |
-| A watch disappears without a stop message                         | OpenCode reloaded, restarted, or unloaded the idle location. Set `location_idle_timeout` to `false` and arm a new watch.                                                                                                                                      |
+| A watch disappears without a stop message                         | OpenCode reloaded, restarted, or unloaded the idle location, or the Claude Code session exited. For OpenCode, set `location_idle_timeout` to `false` and arm a new watch.                                                                                     |
 | Memory grows over time                                            | Watches and their buffers live in one long-running server process, and buffers are unbounded. Run `list_watches` and stop unused watches.                                                                                                                     |
 
 ### Update
 
-Run this at the repository root, then restart the OpenCode service.
+Run this at the repository root, then restart OpenCode or Claude Code.
 
 ```sh
 git pull --ff-only
