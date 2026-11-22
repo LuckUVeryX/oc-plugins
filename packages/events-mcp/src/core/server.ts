@@ -8,7 +8,6 @@ import {
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import {
   Clock,
-  Config,
   Context,
   Deferred,
   Effect,
@@ -22,7 +21,6 @@ import type { JsonSchema } from "effect";
 import { isObject } from "effect/Predicate";
 import { decodeArguments, inputSchemaDocument } from "./arguments.ts";
 import { Registry, type RegisteredEventKind } from "./registry.ts";
-import { stepTimeoutSeconds, watchDefaultSeconds } from "./config.ts";
 import { DecisionModel, type Decide } from "./decision-model.ts";
 import { bytes, MAX_SCRIPT_BYTES } from "./limits.ts";
 import { makePrepare, makeWatchState } from "./prepare.ts";
@@ -35,6 +33,9 @@ import { runWatch, type NotificationType } from "./watch.ts";
 const EVENTS_EXTENSION = "io.modelcontextprotocol/events";
 
 const CLIENT_WATCH_TOOL = "watch_mcp_event";
+
+const DEFAULT_WATCH_SECONDS = 3600;
+const DEFAULT_STEP_TIMEOUT_SECONDS = 120;
 
 interface ServerOptions {
   readonly registry: Registry.Interface;
@@ -334,24 +335,24 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/Server") {}
 
-export const make: Effect.Effect<
-  McpServer,
-  Config.ConfigError,
-  Registry.Service | Feeds.Service | DecisionModel.Service
-> = Effect.gen(function* () {
-  const registry = yield* Registry.Service;
-  const feeds = yield* Feeds.Service;
-  const decisionModel = yield* DecisionModel.Service;
-  const defaultExpiresInSeconds = yield* watchDefaultSeconds;
-  const eventTimeoutSeconds = yield* stepTimeoutSeconds;
-  return buildServer({
-    registry,
-    feeds,
-    decide: decisionModel.decide,
-    defaultExpiresInSeconds,
-    eventTimeoutSeconds,
+export const make = (
+  options: {
+    readonly defaultExpiresInSeconds?: number;
+    readonly eventTimeoutSeconds?: number;
+  } = {},
+): Effect.Effect<McpServer, never, Registry.Service | Feeds.Service | DecisionModel.Service> =>
+  Effect.gen(function* () {
+    const registry = yield* Registry.Service;
+    const feeds = yield* Feeds.Service;
+    const decisionModel = yield* DecisionModel.Service;
+    return buildServer({
+      registry,
+      feeds,
+      decide: decisionModel.decide,
+      defaultExpiresInSeconds: options.defaultExpiresInSeconds ?? DEFAULT_WATCH_SECONDS,
+      eventTimeoutSeconds: options.eventTimeoutSeconds ?? DEFAULT_STEP_TIMEOUT_SECONDS,
+    });
   });
-});
 
 // Stdout carries MCP messages, so transport errors must go to stderr.
 const logError = (error: unknown): void => {
@@ -360,12 +361,12 @@ const logError = (error: unknown): void => {
 
 export const layer: Layer.Layer<
   Service,
-  Config.ConfigError,
+  never,
   Registry.Service | Feeds.Service | DecisionModel.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const server = yield* make;
+    const server = yield* make();
     yield* Effect.acquireRelease(
       Effect.sync(() =>
         serveStdio(() => server, {
