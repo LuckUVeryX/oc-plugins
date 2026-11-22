@@ -1,11 +1,17 @@
 import type { ServerCapabilities } from "@modelcontextprotocol/server";
-import type { Effect, Schema } from "effect";
+import { type Effect, Schema } from "effect";
 import type { Integration } from "../core/integration.ts";
 
+/** Sends a notification on the MCP connection that serves this harness. */
 export type Send = (notification: {
   readonly method: string;
   readonly params: Record<string, unknown>;
 }) => Effect.Effect<void>;
+
+/** A harness could not deliver a wake, so the watch cannot continue. */
+export class WakeFailed extends Schema.TaggedError<WakeFailed>()("Harness.WakeFailed", {
+  message: Schema.String,
+}) {}
 
 export interface Wake {
   /** The decoded watch args that this harness added, empty when it adds none. */
@@ -29,7 +35,9 @@ export interface Tools {
   readonly instructions: (integrations: ReadonlyArray<Integration>) => string;
   /** Extra watch args, such as a session or thread to wake. */
   readonly watchParams: Schema.Struct<Schema.Struct.Fields>;
-  readonly wake: (send: Send, wake: Wake) => Effect.Effect<void>;
+  /** Runs once after the watch input decodes, before the watch arms. */
+  readonly check?: (session: Record<string, Schema.Json>) => Effect.Effect<void, WakeFailed>;
+  readonly wake: (send: Send, wake: Wake) => Effect.Effect<void, WakeFailed>;
 }
 
 export type Harness = Events | Tools;
