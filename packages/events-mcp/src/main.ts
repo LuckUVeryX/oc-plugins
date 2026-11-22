@@ -16,9 +16,12 @@ import { LarkSocket } from "./lark/socket.ts";
 import { Lark } from "./lark/integration.ts";
 
 const name = process.argv[2];
-if (name === undefined || !isName(name)) {
-  const shown = name === undefined ? "" : ` "${name}"`;
-  console.error(`events-mcp: unknown harness${shown}. Use one of: ${names.join(", ")}.`);
+if (name === undefined) {
+  console.error(`events-mcp: no harness given. Use one of: ${names.join(", ")}.`);
+  process.exit(1);
+}
+if (!isName(name)) {
+  console.error(`events-mcp: unknown harness "${name}". Use one of: ${names.join(", ")}.`);
   process.exit(1);
 }
 

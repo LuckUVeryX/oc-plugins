@@ -12,7 +12,7 @@ export type WatchId = typeof WatchId.Type;
 const Scalar = Schema.Union([Schema.String, Schema.Number, Schema.Boolean]);
 type Scalar = typeof Scalar.Type;
 const isScalar = Schema.is(Scalar);
-const WatchArguments = Schema.Struct({
+export const WatchArguments = Schema.Struct({
   watchId: WatchId,
   params: Schema.optionalKey(Schema.JsonObject),
   filter: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
@@ -58,9 +58,55 @@ export const compileFilter = (payload: unknown): CompiledFilter => {
   return paths;
 };
 
-const leafDocument = (leaf: FilterPath): Record<string, unknown> => ({
+const leafDocument = (leaf: FilterPath): JsonSchema.JsonSchema => ({
   type: leaf.type,
   ...(leaf.values === undefined ? {} : { enum: leaf.values }),
+});
+
+export const watchIdProperty = {
+  type: "string",
+  minLength: 1,
+  description:
+    "Your name for this watch, unique among open watches. It appears in list_watches and stop_watch.",
+};
+
+export const prepareProperty = (toolPaths: ReadonlyArray<string>) => {
+  const tools = [
+    ...toolPaths,
+    "tools.watch.state.get",
+    "tools.watch.state.set",
+    "tools.events.decide",
+  ].join(", ");
+  return {
+    type: "string",
+    description: `JavaScript that runs for each payload passing filter and decides whether to wake you. Read the payload at input.event.data and its metadata at input.event.eventId and input.event.timestamp. It can await any of ${tools}. Return JSON for transform, or null to drop this event. Prepare and transform share the step time limit, and a slow event delays the ones behind it. Pass the payload through with \`return input.event.data\`.`,
+  };
+};
+
+export const transformProperty = {
+  type: "string",
+  description: `JavaScript that turns prepare's result into the text that wakes you. Read input.prepared and input.event, then return a string, or null to drop this event. It runs without tools. The delivered event is capped at ${MAX_EVENT_BYTES} bytes, so return only what the session needs. Pass everything through with \`return JSON.stringify(input.prepared)\`.`,
+};
+
+export const expiresInSecondsProperty = (defaultExpiresInSeconds: number) => ({
+  type: "integer",
+  minimum: 1,
+  description: `How long the watch stays open, in seconds. When it elapses the watch closes and sends nothing more. Defaults to ${defaultExpiresInSeconds} seconds.`,
+});
+
+export const filterProperty = (options: {
+  readonly properties?: Record<string, JsonSchema.JsonSchema>;
+  readonly hint?: string;
+}) => ({
+  type: "object",
+  description: [
+    "Continue only with payloads that match. Each key is a dot path into this event's payload with one value or a list of accepted values, and every key you set must match. A payload that fails is dropped before prepare runs, and paths inside arrays cannot be filtered.",
+    ...(options.hint === undefined ? [] : [options.hint]),
+    "Omit it to accept every payload.",
+  ].join(" "),
+  ...(options.properties === undefined
+    ? {}
+    : { properties: options.properties, additionalProperties: false }),
 });
 
 export const inputSchemaDocument = (options: {
@@ -69,28 +115,17 @@ export const inputSchemaDocument = (options: {
   readonly toolPaths: ReadonlyArray<string>;
   readonly defaultExpiresInSeconds: number;
 }): Record<string, unknown> => {
-  const properties: Record<string, unknown> = {};
+  const properties: Record<string, JsonSchema.JsonSchema> = {};
   for (const [path, leaf] of options.filter)
     properties[path] = {
       anyOf: [leafDocument(leaf), { type: "array", items: leafDocument(leaf), minItems: 1 }],
     };
-  const tools = [
-    ...options.toolPaths,
-    "tools.watch.state.get",
-    "tools.watch.state.set",
-    "tools.events.decide",
-  ].join(", ");
   const paramsProperties = options.params["properties"];
   const paramsCount = isObject(paramsProperties) ? Object.keys(paramsProperties).length : 0;
   return {
     type: "object",
     properties: {
-      watchId: {
-        type: "string",
-        minLength: 1,
-        description:
-          "Your name for this watch, unique among open watches. It appears in list_watches and stop_watch.",
-      },
+      watchId: watchIdProperty,
       params: {
         ...options.params,
         description:
@@ -99,26 +134,10 @@ export const inputSchemaDocument = (options: {
             ? "This event takes no params."
             : "Selects the resource to watch. The schema lists the fields."),
       },
-      filter: {
-        type: "object",
-        description:
-          "Continue only with payloads that match. Each key is a dot path into this event's payload with one value or a list of accepted values, and every key you set must match. A payload that fails is dropped before prepare runs, and paths inside arrays cannot be filtered. Omit it to accept every payload.",
-        properties,
-        additionalProperties: false,
-      },
-      prepare: {
-        type: "string",
-        description: `JavaScript that runs for each payload passing filter and decides whether to wake you. Read the payload at input.event.data and its metadata at input.event.eventId and input.event.timestamp. It can await any of ${tools}. Return JSON for transform, or null to drop this event. Prepare and transform share the step time limit, and a slow event delays the ones behind it. Pass the payload through with \`return input.event.data\`.`,
-      },
-      transform: {
-        type: "string",
-        description: `JavaScript that turns prepare's result into the text that wakes you. Read input.prepared and input.event, then return a string, or null to drop this event. It runs without tools. The delivered event is capped at ${MAX_EVENT_BYTES} bytes, so return only what the session needs. Pass everything through with \`return JSON.stringify(input.prepared)\`.`,
-      },
-      expiresInSeconds: {
-        type: "integer",
-        minimum: 1,
-        description: `How long the watch stays open, in seconds. When it elapses the watch closes and sends nothing more. Defaults to ${options.defaultExpiresInSeconds} seconds.`,
-      },
+      filter: filterProperty({ properties }),
+      prepare: prepareProperty(options.toolPaths),
+      transform: transformProperty,
+      expiresInSeconds: expiresInSecondsProperty(options.defaultExpiresInSeconds),
     },
     required: ["watchId", "prepare", "transform"],
     additionalProperties: false,

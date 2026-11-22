@@ -135,6 +135,7 @@ export async function connect(
   const server = await Effect.runPromise(
     Server.make({
       harness: options.harness ?? "opencode",
+      scope,
       defaultExpiresInSeconds: options.defaultExpiresInSeconds ?? 60,
       eventTimeoutSeconds: options.eventTimeoutSeconds ?? 30,
     }).pipe(Effect.provide(context)),
@@ -175,6 +176,21 @@ export async function connect(
       });
     });
   }
+  const channel: Array<{ content: string; meta?: Record<string, string> }> = [];
+  client.setNotificationHandler(
+    "notifications/claude/channel",
+    {
+      params: Schema.toStandardSchemaV1(
+        Schema.Struct({
+          content: Schema.String,
+          meta: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+        }),
+      ),
+    },
+    (value) => {
+      channel.push(value);
+    },
+  );
   const [a, b] = InMemoryTransport.createLinkedPair();
   options.transport?.(b);
   await server.connect(b);
@@ -186,6 +202,7 @@ export async function connect(
   return {
     client,
     notifications,
+    channel,
     stream(args: Record<string, unknown>, name: string = larkMessage) {
       const controller = new AbortController();
       controllers.push(controller);
