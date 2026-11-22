@@ -67,7 +67,6 @@ export const inputSchemaDocument = (options: {
   readonly filter: CompiledFilter;
   readonly params: JsonSchema.JsonSchema;
   readonly toolPaths: ReadonlyArray<string>;
-  readonly decide: boolean;
   readonly defaultExpiresInSeconds: number;
 }): Record<string, unknown> => {
   const properties: Record<string, unknown> = {};
@@ -79,7 +78,7 @@ export const inputSchemaDocument = (options: {
     ...options.toolPaths,
     "tools.watch.state.get",
     "tools.watch.state.set",
-    ...(options.decide ? ["tools.events.decide"] : []),
+    "tools.events.decide",
   ].join(", ");
   const paramsProperties = options.params["properties"];
   const paramsCount = isObject(paramsProperties) ? Object.keys(paramsProperties).length : 0;

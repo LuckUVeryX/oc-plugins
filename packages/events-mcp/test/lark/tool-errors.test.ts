@@ -1,10 +1,10 @@
-import { Effect, Layer, Option } from "effect";
+import { Effect, Layer } from "effect";
 import { expect, test } from "vitest";
 import { LarkAuth } from "../../src/lark/auth.ts";
 import { LarkSocket } from "../../src/lark/socket.ts";
 import { Lark } from "../../src/lark/integration.ts";
 import { makePrepare, makeWatchState } from "../../src/core/prepare.ts";
-import { connect } from "../harness.ts";
+import { connect, unusedDecide } from "../harness.ts";
 
 const credentialMessage = "No Lark app credentials";
 
@@ -42,7 +42,7 @@ test("a Lark credential failure reaches a prepare failure", async () => {
   const prepare = makePrepare({
     integrations: [larkSource],
     state: await Effect.runPromise(makeWatchState),
-    decide: Option.none(),
+    decide: unusedDecide,
   });
   const failure = await Effect.runPromise(
     prepare('return await tools.lark.get({ path: "/im/v1/messages" })', {
