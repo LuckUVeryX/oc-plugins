@@ -2,7 +2,7 @@
   "name": "events-mcp",
   "version": "0.0.0",
   "private": true,
-  "description": "Standalone MCP events server for Lark and GitLab over stdio",
+  "description": "Local Lark and GitLab MCP events server, shared by every agent session on the machine",
   "bin": {
     "events-mcp": "./src/main.ts"
   },
@@ -25,6 +25,7 @@
     "@opencode/client": "2.3.0",
     "@opencode/codemode": "2.3.0",
     "@opencode/schema": "2.3.0",
+    "@opencode/util": "2.3.0",
     "effect": "4.1.0"
   },
   "engines": {

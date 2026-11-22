@@ -31,6 +31,22 @@ async function dependency(from, name, entry) {
   }
 }
 
+async function located(from, name) {
+  let directory = dirname(from);
+  while (true) {
+    const candidate = join(directory, "node_modules", name, "package.json");
+    try {
+      await readFile(candidate);
+      return candidate;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    const parent = dirname(directory);
+    assert.notEqual(parent, directory, `${name}: package not installed`);
+    directory = parent;
+  }
+}
+
 async function verifyExecutable(name) {
   const signal = AbortSignal.timeout(10_000);
   const child = Bun.spawn(
@@ -134,7 +150,7 @@ for (const manifest of expected.packages) {
     const entry = fileURLToPath(import.meta.resolve(`${manifest.name}/package.json`));
     for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
       for (const name of Object.keys(manifest[field] ?? {})) {
-        await dependency(entry, name, name);
+        await dependency(entry, name, await located(entry, name));
       }
     }
     for (const name of Object.keys(manifest.bin)) await verifyExecutable(name);
