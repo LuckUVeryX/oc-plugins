@@ -1,15 +1,12 @@
 import type { Harness } from "../core/harness.ts";
+import { harness as claude } from "./claude.ts";
 import { harness as opencode } from "./opencode.ts";
 
-export const names = ["opencode"] as const;
-export type Name = (typeof names)[number];
+export const harnesses = { opencode, claude } satisfies Record<string, Harness>;
+export type Name = keyof typeof harnesses;
 
-export const isName = (value: string): value is Name =>
-  (names as ReadonlyArray<string>).includes(value);
+export const isName = (value: string): value is Name => Object.hasOwn(harnesses, value);
 
-export const get = (name: Name): Harness => {
-  switch (name) {
-    case "opencode":
-      return opencode;
-  }
-};
+export const names = Object.keys(harnesses).filter(isName);
+
+export const get = (name: Name): Harness => harnesses[name];

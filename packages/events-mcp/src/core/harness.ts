@@ -28,7 +28,7 @@ export interface Tools {
   readonly capabilities: ServerCapabilities;
   readonly instructions: (integrations: ReadonlyArray<Integration>) => string;
   /** Extra watch args, such as a session or thread to wake. */
-  readonly watchParams: Schema.Codec<Record<string, Schema.Json>>;
+  readonly watchParams: Schema.Struct<Schema.Struct.Fields>;
   readonly wake: (send: Send, wake: Wake) => Effect.Effect<void>;
 }
 
