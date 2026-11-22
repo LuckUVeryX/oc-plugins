@@ -40,6 +40,8 @@ interface WatchRunOptions {
   readonly prepare: PrepareRunner;
   readonly transform: TransformRunner;
   readonly notify: (type: NotificationType, body?: Record<string, unknown>) => Effect.Effect<void>;
+  /** Succeeds with undefined once the feed is subscribed, or with the reason the watch ended before that. */
+  readonly ready?: Deferred.Deferred<string | undefined, IntegrationError>;
 }
 
 const errorBody = (message: string) => ({ error: { code: -32000, message } });
@@ -113,6 +115,7 @@ export const runWatch = Effect.fn("Watch.run")(function* (
       eventKind: options.eventKind,
       params: options.params,
     });
+    if (options.ready) yield* Deferred.succeed(options.ready, undefined);
     const firstHealthAnnounced = yield* Deferred.make<void>();
     return yield* Effect.raceFirst(
       feed.events.pipe(

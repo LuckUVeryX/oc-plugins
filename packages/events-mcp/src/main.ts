@@ -6,6 +6,7 @@ import { Registry } from "./core/registry.ts";
 import { DecisionModel } from "./core/decision-model.ts";
 import { Server } from "./core/server.ts";
 import { Feeds } from "./core/feeds.ts";
+import { isName, names } from "./harness/index.ts";
 import { GitlabSocket } from "./gitlab/socket.ts";
 import { GitlabClient } from "./gitlab/client.ts";
 import { GitlabAuth } from "./gitlab/auth.ts";
@@ -13,6 +14,16 @@ import { Gitlab } from "./gitlab/integration.ts";
 import { LarkAuth } from "./lark/auth.ts";
 import { LarkSocket } from "./lark/socket.ts";
 import { Lark } from "./lark/integration.ts";
+
+const name = process.argv[2];
+if (name === undefined) {
+  console.error(`events-mcp: no harness given. Use one of: ${names.join(", ")}.`);
+  process.exit(1);
+}
+if (!isName(name)) {
+  console.error(`events-mcp: unknown harness "${name}". Use one of: ${names.join(", ")}.`);
+  process.exit(1);
+}
 
 const LarkLayers = LarkSocket.layer.pipe(Layer.provideMerge(LarkAuth.layer));
 const GitlabLayers = Layer.merge(GitlabSocket.layer, GitlabClient.layer).pipe(
@@ -25,7 +36,7 @@ const RegistryLayer = Registry.layer(Effect.all([Lark.integration, Gitlab.integr
   Layer.provide(IntegrationLayers),
 );
 const CoreLayer = Layer.mergeAll(Feeds.layer, DecisionModel.layer, RegistryLayer);
-const AppLayer = Server.layer.pipe(Layer.provide(CoreLayer));
+const AppLayer = Server.layer(name).pipe(Layer.provide(CoreLayer));
 
 const program = Effect.gen(function* () {
   const server = yield* Server.Service;
