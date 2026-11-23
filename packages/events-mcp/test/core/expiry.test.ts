@@ -31,7 +31,7 @@ it.effect("keeps a watch for its chosen expiry", () =>
           ended,
           prepare: () => Effect.succeed(null),
           transform: () => Effect.succeed(null),
-          notify: (type) => Ref.update(seen, (all) => [...all, type]),
+          notify: (n) => Ref.update(seen, (all) => [...all, n.type]),
         }).pipe(
           Effect.provideService(
             Feeds.Service,
@@ -74,7 +74,7 @@ it.effect("stop and expiry end a watch whose feed never becomes ready", () =>
           ended,
           prepare: () => Effect.succeed(null),
           transform: () => Effect.succeed(null),
-          notify: (type) => Ref.update(seen, (all) => [...all, type]),
+          notify: (n) => Ref.update(seen, (all) => [...all, n.type]),
         }).pipe(
           Effect.provideService(Feeds.Service, Feeds.Service.of({ acquire: () => Effect.never })),
           Effect.forkScoped,

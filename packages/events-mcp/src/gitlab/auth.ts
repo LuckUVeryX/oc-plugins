@@ -10,13 +10,6 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/GitlabAuth") {}
 
-const cached = <A, E, R>(
-  effect: Effect.Effect<A, E, R>,
-): Effect.Effect<Effect.Effect<A, E, R>, never, R> =>
-  Effect.cachedWithTTL(effect, (exit) =>
-    Exit.isSuccess(exit) ? Duration.infinity : Duration.zero,
-  );
-
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -26,8 +19,9 @@ export const layer = Layer.effect(
       Effect.orDie,
     );
     if (host.trim() === "") yield* Effect.die(new Error("GITLAB_HOST must not be empty"));
-    const identity = yield* cached(
+    const identity = yield* Effect.cachedWithTTL(
       resolveIdentity(host).pipe(Effect.provideService(HttpClient.HttpClient, http)),
+      (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero),
     );
     return Service.of({ host, identity });
   }),

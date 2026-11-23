@@ -5,6 +5,8 @@ import { AppServer } from "../codex/app-server.ts";
 import {
   commonInstructions,
   integrationInstructions,
+  listEventsInstructions,
+  liveWatchInstructions,
   WakeFailed,
   type Tools,
 } from "../core/harness.ts";
@@ -12,8 +14,8 @@ import type { Integration } from "../core/integration.ts";
 
 const instructions = (integrations: ReadonlyArray<Integration>) =>
   [
-    "Call list_events to see what this server can watch, with each event's arguments and payload. Arm one with the watch tool. The watch runs filter, prepare, and transform in turn, and transform's returned string reaches this session.",
-    "A watch is live. It sees events from the moment it arms until it expires or you stop it, and nothing older is replayed. Choose a watchId. list_watches shows the arguments of every open watch, and stop_watch ends one early.",
+    listEventsInstructions,
+    liveWatchInstructions,
     ...integrationInstructions(integrations),
     ...commonInstructions,
     'Pass threadId to the watch tool. Read it in this thread\'s shell with printf %s "$CODEX_THREAD_ID" and pass the exact value. Codex does not tell this server which thread it serves, and a watch with a missing or unknown threadId fails.',
