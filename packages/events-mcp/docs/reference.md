@@ -73,10 +73,7 @@ The same server entry in a project `.mcp.json`, with the absolute path:
   "mcpServers": {
     "events-mcp": {
       "command": "bun",
-      "args": [
-        "/home/you/.local/share/events-mcp/packages/events-mcp/src/main.ts",
-        "claude"
-      ]
+      "args": ["/home/you/.local/share/events-mcp/packages/events-mcp/src/main.ts", "claude"]
     }
   }
 }
@@ -208,19 +205,15 @@ Before arming, set `START` to the newest non-system note id from `GET /projects/
 ```js
 const START = 0;
 const { projectId, noteableType, noteableIid } = input.event.data;
-const collection =
-  noteableType === "merge_request" ? "merge_requests" : "issues";
+const collection = noteableType === "merge_request" ? "merge_requests" : "issues";
 const notes = await tools.gitlab.get({
-  path:
-    "/projects/" + projectId + "/" + collection + "/" + noteableIid + "/notes",
+  path: "/projects/" + projectId + "/" + collection + "/" + noteableIid + "/notes",
   query: { sort: "desc", order_by: "created_at", per_page: 20 },
 });
 const comments = notes.filter((note) => !note.system);
 const previous = (await tools.watch.state.get()) ?? START;
 const fresh = comments.filter((note) => note.id > previous);
-await tools.watch.state.set(
-  comments.reduce((max, note) => Math.max(max, note.id), previous),
-);
+await tools.watch.state.set(comments.reduce((max, note) => Math.max(max, note.id), previous));
 return fresh.length === 0 ? null : { notes: fresh };
 ```
 
@@ -283,8 +276,7 @@ const { answers } = await tools.events.decide({
   ],
 });
 const answer = answers.find((item) => item.name === "needs_me");
-if (!answer || answer.type !== "predicate" || answer.probability < 0.7)
-  return null;
+if (!answer || answer.type !== "predicate" || answer.probability < 0.7) return null;
 return { message, context, answers };
 ```
 
