@@ -43,7 +43,7 @@ Keep implementation details out of the map. Name only user paths, stable handles
 
 ## Features
 
-- [Claude Code channel wake](./claude-channel.md) covers arming a GitLab pipeline watch and receiving the wake as a channel message.
+- [Claude Code channel wake](./claude-channel.md) covers arming a GitLab pipeline watch from a target and receiving the wake as a channel message.
 - [Codex thread wake](./codex-thread.md) covers arming a watch with a thread id and receiving the wake as a new turn in that thread.
 - [OpenCode events stream](./opencode-stream.md) covers the `opencode` harness over stdio: event list, stream arm, and wake notification.
 - [Shared hub](./shared-hub.md) covers several sessions sharing one hub process, one socket, and one upstream connection.

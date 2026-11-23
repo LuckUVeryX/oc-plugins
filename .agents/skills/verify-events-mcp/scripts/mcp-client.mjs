@@ -101,9 +101,10 @@ const list = async () => {
   const { client } = await connect("list");
   const events = await call(client, "events/list", {});
   const tools = await call(client, "tools/list", {});
+  const protocol = client.getNegotiatedProtocolVersion();
   await client.close();
   const record = {
-    protocol: client.getNegotiatedProtocolVersion?.(),
+    protocol,
     events: events.events.map((event) => event.name),
     tools: tools.tools.map((item) => item.name),
   };
@@ -145,7 +146,7 @@ const readTools = async () => {
     const chat = await tool(client, "lark_get", {
       path: `/im/v1/chats/${encodeURIComponent(process.env.VERIFY_LARK_CHAT_ID)}`,
     });
-    record.lark = { code: chat.code, chat_mode: chat.data?.chat_mode };
+    record.lark = { chat_mode: chat.chat_mode };
   }
   await client.close();
   write("read-tools.json", record);
@@ -153,8 +154,8 @@ const readTools = async () => {
   if (!record.user.username) throw new Error("gitlab_get /user returned no username");
   if (record.project.path_with_namespace.toLowerCase() !== project.toLowerCase())
     throw new Error(`project read returned ${record.project.path_with_namespace}`);
-  if (record.lark !== null && record.lark.code !== 0)
-    throw new Error("lark_get returned a nonzero code");
+  if (record.lark !== null && record.lark.chat_mode !== "p2p")
+    throw new Error(`lark_get read a ${record.lark.chat_mode} chat; expected p2p`);
 };
 
 const trigger = () => {
