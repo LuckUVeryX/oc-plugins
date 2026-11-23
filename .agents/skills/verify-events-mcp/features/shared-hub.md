@@ -6,7 +6,7 @@ Every harness session for this user connects to one hub, so one Lark WebSocket a
 
 - `hub-single` starts one hub per hub directory and binds one socket.
 - `hub-share` serves several simultaneous sessions from that one process.
-- `hub-forward` gives every session its own watches and its own `list_watches`.
+- `hub-forward` gives every session its own watches, and `watches` lists only that session's.
 - `hub-exit` ends the hub after the last session closes.
 - `hub-log` records the listen line with the hub pid, which is what cleanup and proof read.
 

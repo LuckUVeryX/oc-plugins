@@ -6,7 +6,7 @@ An agent in Claude Code arms a watch on GitLab, a pipeline changes, and the wake
 
 - `claude-arm` lists the 22 events and arms one pipeline watch through the `list_events` and `watch` tools.
 - `claude-wake` delivers a pipeline status change as a `notifications/claude/channel` message and starts a turn while the session is idle.
-- `claude-stop` ends the watch with `stop_watch`, and `list_watches` no longer lists it.
+- `claude-stop` ends the watch with `unwatch`, and `watches` no longer lists it.
 - `claude-transcript` records the channel text and the turn in the session JSONL, the durable receipt Claude Code gives.
 
 ## How to get to it (user POV)
@@ -30,7 +30,7 @@ Preconditions:
 
   ```sh
   scripts/tui.sh prompt <<'EOF'
-  Use the events-mcp list_events tool, then the events-mcp watch tool. Arm watchId claude-verify, event gitlab.ciPipelineStatusesUpdated, params {"projectFullPath": "<project path>"}, filter {"status": ["SUCCESS", "FAILED", "CANCELED"]}, prepare `return input.event.data`, transform `return input.prepared.id`, expiresInSeconds 600. Then call list_watches and reply with one line: ARMED-OK <watchId> <expiresAt>. Do nothing else.
+  Use the events-mcp list_events tool, then the events-mcp watch tool. Arm watchId claude-verify, event gitlab.ciPipelineStatusesUpdated, params {"projectFullPath": "<project path>"}, filter {"status": ["SUCCESS", "FAILED", "CANCELED"]}, prepare `return input.event.data`, transform `return input.prepared.id`, expiresInSeconds 600. Then call watches and reply with one line: ARMED-OK <watchId> <expiresAt>. Do nothing else.
   EOF
   ```
 
@@ -40,7 +40,7 @@ Preconditions:
 - **Trigger.** Create one pipeline. Run `bun scripts/target.ts trigger | tee "$VERIFY_EVIDENCE/trigger.json"`. Note the `id`.
 - **Wake.** Wait for the pipeline id in the pane. Run `scripts/tui.sh expect '<pipeline id>' 600`. The pane gains `← events-mcp: gid://gitlab/Ci::Pipeline/<pipeline id>` followed by the agent's turn, for example `● Pipeline gid://gitlab/Ci::Pipeline/<pipeline id> in <project> reached SUCCESS, FAILED or CANCELED`.
 - **Wake proof.** Capture the pane after the turn, then copy the transcript. Run `scripts/tui.sh capture "$VERIFY_EVIDENCE/pane-final.txt"`, then `cp "$VERIFY_HOME/.claude/projects"/*/*.jsonl "$VERIFY_EVIDENCE/claude-session.jsonl"`. The JSONL contains `<channel>` and the same pipeline id.
-- **Stop.** Send `Call the events-mcp stop_watch tool with watchId claude-verify, then call list_watches and reply STOPPED <count>.` Run it through `scripts/tui.sh prompt`. The pane shows `STOPPED 0`.
+- **Stop.** Send `Call the events-mcp unwatch tool with watchId claude-verify, then call watches and reply STOPPED <count>.` Run it through `scripts/tui.sh prompt`. The pane shows `STOPPED 0`.
 - **Cleanup.** Run `scripts/run.sh cleanup "$VERIFY_RUN_DIR"`. `hub.log`, both panes, `trigger.json`, and the JSONL remain under `$VERIFY_EVIDENCE`.
 
 ## Gotchas
@@ -48,7 +48,7 @@ Preconditions:
 - The trust dialog and the development-channel warning both appear on a fresh home. The first Enter on the trust dialog exits; `tui.sh claude` selects Yes deliberately. Do not hand-type through the dialogs.
 - `--dangerously-load-development-channels` is ignored in `claude -p` and in the Agent SDK. A headless run cannot prove a channel wake; the TUI is the surface.
 - Without `MCP_PROTOCOL_NEGOTIATION=legacy` the channel registers nothing and the server logs no wake. The banner then reads that channel messages are unavailable.
-- Claude sends no acknowledgement for a channel message, and it queues messages while busy. `list_watches` is the only proof that the watch is still live.
+- Claude sends no acknowledgement for a channel message, and it queues messages while busy. `watches` is the only proof that the watch is still live.
 - The composer can show a gray suggestion such as `stop the claude-verify watch`. It is not typed input and does not affect the run.
 - `transform` must return a string or `null`. Returning a number or object makes the watch stop with `transform failed`.
 - The isolated home holds copies of the real `~/.claude.json` and credentials. Cleanup deletes them; never copy the run home into evidence.

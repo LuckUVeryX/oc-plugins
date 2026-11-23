@@ -67,7 +67,7 @@ export const watchIdProperty = {
   type: "string",
   minLength: 1,
   description:
-    "Your name for this watch, unique among open watches. It appears in list_watches and stop_watch.",
+    "Your name for this watch, unique among open watches. The `watches` tool lists it, and `unwatch` takes it.",
 };
 
 export const prepareProperty = (toolPaths: ReadonlyArray<string>) => {

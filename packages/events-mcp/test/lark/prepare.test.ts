@@ -84,7 +84,7 @@ test("Lark failure stops the watch without leaking content to stderr", async () 
     expect(await terminated(h)).toContain(
       "prepare failed on scope-event: ToolFailure: Lark API 99991672: fake secret scope message",
     );
-    expect((await h.call("list_watches")).watches).toEqual([]);
+    expect((await h.call("watches")).watches).toEqual([]);
     const output = JSON.stringify(log.mock.calls);
     expect(output).toContain('"step":"prepare"');
     expect(output).not.toContain("fake secret");

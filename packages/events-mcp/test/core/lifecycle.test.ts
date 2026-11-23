@@ -42,7 +42,7 @@ test(
   },
 );
 
-test("a failed watch wakes the session, and stop_watch does not", async () => {
+test("a failed watch wakes the session, and unwatch does not", async () => {
   const h = await connect({ harness: "claude" });
   try {
     await h.call("watch", {
@@ -65,7 +65,7 @@ test("a failed watch wakes the session, and stop_watch does not", async () => {
       prepare: "return null",
       transform: "return 'unused'",
     });
-    await h.call("stop_watch", { watchId: "stopped" });
+    await h.call("unwatch", { watchId: "stopped" });
     expect(h.channel).toHaveLength(1);
   } finally {
     await h.close();
