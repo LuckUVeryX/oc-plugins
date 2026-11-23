@@ -23,18 +23,19 @@ Preconditions:
 - The run's hub directory exists; `run.sh init` created it.
 - No OpenCode TUI is launched. The client speaks the same MCP connection with the `opencode` harness.
 
-- **List the catalogue.** Run `bun scripts/mcp-client.mjs list`. It prints `events: 22`, `lark: 14`, `gitlab: 8`, and the tools `lark_get`, `gitlab_get`, `watches`, `unwatch`. It writes `opencode-list.json`.
+- **List the catalogue.** Run `bun scripts/mcp-client.mjs list`. It prints `protocol: 2026-07-28`, `events: 22`, `lark: 14`, `gitlab: 8`, and the tools `lark_get`, `gitlab_get`, `watches`, `unwatch`. It writes `opencode-list.json`.
 - **Arm, trigger, and wait.** Run `bun scripts/mcp-client.mjs watch --watch-id stream-verify --timeout 600 --trigger`. It arms the watch on `gitlab.ciPipelineStatusesUpdated` for `$VERIFY_GITLAB_PROJECT`, waits for `active`, creates one pipeline, and waits for the first event. For a pipeline triggered separately, omit `--trigger` and run `bun scripts/target.ts trigger` after the armed record appears.
-- **Armed output.** The command prints `{"armed": {"watchId": "stream-verify", "subscriptionId": 0, ...}}` and writes `opencode-armed.json`.
+- **Armed output.** The command prints `{"armed": {"watchId": "stream-verify", "subscriptionId": <n>, ...}}` and writes `opencode-armed.json`. The subscription id is the `events/stream` request id.
 - **Wake output.** It prints `receivedAt` and `event.data` of the form `pipeline gid://gitlab/Ci::Pipeline/<id> status SUCCESS` and writes `opencode-wake.json`. The exit code is 0 only when the event names the pipeline it triggered.
-- **Proof.** `opencode-wake.json` holds the subscription id, the `active` and `event` notification times, and the event id. Compare `event.data` with the `id` in `trigger.json` when the pipeline was triggered separately.
+- **Proof.** `opencode-wake.json` holds the subscription id, the `active` and `event` notification times, and the event id. With `--trigger`, the client writes the pipeline to `opencode-trigger.json`; compare `event.data` with its `id`. For a pipeline triggered separately, run `bun scripts/target.ts trigger | tee "$VERIFY_EVIDENCE/trigger.json"` and compare with that `id`.
 - **Cleanup.** Run `scripts/run.sh cleanup "$VERIFY_RUN_DIR"`. The hub exits on its own when the client disconnects; cleanup copies its log into evidence.
 
 ## Gotchas
 
 - Do not launch the operator's OpenCode. Its server, storage, and provider config are live state, and a second copy can corrupt them. This recipe drives the protocol below the TUI deliberately; record that the `watch_mcp_event` wrapper itself was not exercised.
-- OpenCode pins `2026-07-28` in its server config. The client negotiates it; a connection on another revision fails `events/list`.
+- OpenCode pins `2026-07-28` in its server config. The client negotiates the revision automatically and can fall back to a legacy one, so check `protocol` in the `list` output. Any other value means the drive did not use the revision OpenCode requires.
 - OpenCode cancels a feed after 60 seconds without a notification, so the server sends `notifications/events/heartbeat` every 20 seconds. A long watch with no heartbeats means the connection is gone.
+- `events/stream` accepts a `target` in its arguments, as the `watch` tool does, but its result is `{}`. Call `watches` to see the resolved `params`. `mcp-client.mjs watch` arms with `params` only; the [Claude Code channel](./claude-channel.md) recipe covers `target`.
 - Events are live only. `cursor` must be absent or `null`, and nothing is replayed after a reconnect.
 - `events/stream` stays open for the life of the watch. Aborting the request ends the watch without a `terminated` notification.
 - The stream id is `_meta["io.modelcontextprotocol/subscriptionId"]`. Match events to the watch through it when more than one stream is open.

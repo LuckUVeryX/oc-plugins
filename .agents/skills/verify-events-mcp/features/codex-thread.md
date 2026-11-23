@@ -44,8 +44,16 @@ Preconditions:
 - **Wake proof.** Capture the pane with `scripts/tui.sh capture "$VERIFY_EVIDENCE/pane-final.txt"`. Copy the newest rollout that names the pipeline:
 
   ```sh
-  cp "$(grep -rl '<pipeline id>' "$VERIFY_CODEX_HOME/sessions" | head -1)" "$VERIFY_EVIDENCE/codex-session.jsonl"
+  cp "$(grep -rl '<pipeline id>' "$VERIFY_CODEX_HOME/sessions" | sort | tail -1)" "$VERIFY_EVIDENCE/codex-session.jsonl"
   ```
+
+- **Reject.** Arm a second watch with a thread id Codex has never seen. Run it through `scripts/tui.sh prompt`:
+
+  ```text
+  Call the events watch tool with watchId codex-reject, event gitlab.ciPipelineStatusesUpdated, params {"projectFullPath": "<project path>"}, prepare `return null`, transform `return "x"`, expiresInSeconds 60, and threadId 00000000-0000-4000-8000-000000000000. Reply with REJECT followed by the exact error text. Then call watches and reply LISTED <count>.
+  ```
+
+  The watch fails with `Codex does not know thread "<id>"`, and `watches` lists only the watches armed before it. `prepare` is required; a prompt without it fails schema validation before the thread check runs.
 
 - **Cleanup.** Run `scripts/run.sh cleanup "$VERIFY_RUN_DIR"`. It stops the session on the run's own socket, then that socket's server, the daemon recorded under the isolated home, and the run's hub. It keeps the evidence and removes the rest of the run directory, `auth.json` copy included.
 

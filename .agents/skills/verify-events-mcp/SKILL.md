@@ -66,7 +66,7 @@ Every artifact goes to `$VERIFY_EVIDENCE` (`/tmp/verify-events-mcp/<run-id>/evid
 - The harness transcript: `$VERIFY_HOME/.claude/projects/*/*.jsonl` for Claude, `$VERIFY_CODEX_HOME/sessions/*/*/*/rollout-*.jsonl` for Codex. Copy it into evidence before cleanup.
 - `trigger.json` from `target.ts trigger`, and the pipeline read back from the API if the status matters.
 - `hub.log`, copied by cleanup, which shows the one hub the sessions shared.
-- For the stdio drives, `mcp-client.mjs` writes `opencode-list.json`, `opencode-armed.json`, `opencode-wake.json`, `read-tools.json`, or `shared-hub.json` itself.
+- For the stdio drives, `mcp-client.mjs` writes `opencode-list.json`, `opencode-armed.json`, `opencode-trigger.json`, `opencode-wake.json`, `read-tools.json`, or `shared-hub.json` itself.
 
 A claim needs the wake text in the transcript and the same pipeline id in `trigger.json`. A pending request, a green server log, or a tool that returned without an error is not a wake. Do not tidy a transcript; copy it whole.
 
