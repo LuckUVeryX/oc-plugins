@@ -5,7 +5,7 @@ import type { GetInput } from "../../src/core/tool.ts";
 import { GitlabClient, type GraphqlRequest } from "../../src/gitlab/client.ts";
 import { GitlabAuth } from "../../src/gitlab/auth.ts";
 import { Gitlab } from "../../src/gitlab/integration.ts";
-import type { GitlabIdentity as TokenIdentity } from "../../src/gitlab/token.ts";
+import type { GitlabIdentity } from "../../src/gitlab/token.ts";
 import {
   Health,
   Rejected,
@@ -14,7 +14,7 @@ import {
 } from "../../src/core/integration.ts";
 import { connect } from "../harness.ts";
 
-const identity: TokenIdentity = {
+const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),
   userId: 256,
   username: "tester",
@@ -84,7 +84,7 @@ const makeFakeClient = (
 const integrationWith = (options: {
   readonly client: GitlabClient.Interface;
   readonly socket: GitlabSocket.Interface;
-  readonly identity?: Effect.Effect<TokenIdentity, IntegrationError> | undefined;
+  readonly identity?: Effect.Effect<GitlabIdentity, IntegrationError> | undefined;
 }): Effect.Effect<Integration> =>
   Gitlab.integration.pipe(
     Effect.provide(
@@ -106,7 +106,7 @@ const runIntegration = <A, E>(
   options: {
     readonly client: GitlabClient.Interface;
     readonly socket: GitlabSocket.Interface;
-    readonly identity?: Effect.Effect<TokenIdentity, IntegrationError> | undefined;
+    readonly identity?: Effect.Effect<GitlabIdentity, IntegrationError> | undefined;
   },
   body: (integration: Integration) => Effect.Effect<A, E, Scope.Scope>,
 ): Promise<A> =>
