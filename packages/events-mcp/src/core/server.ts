@@ -38,7 +38,7 @@ import type { IntegrationError } from "./integration.ts";
 import { inputJsonSchema } from "./tool.ts";
 import { makeTransform } from "./transform.ts";
 import { Feeds } from "./feeds.ts";
-import { runWatch, type NotificationType } from "./watch.ts";
+import { runWatch, type Notification } from "./watch.ts";
 import type { Harness, Send, Tools } from "./harness.ts";
 import { get, type Name as HarnessName } from "../harness/index.ts";
 
@@ -415,23 +415,20 @@ const buildServer = (options: ServerOptions): McpServer => {
                 ready,
                 prepare: (delivered) => prepare(decoded.prepare, delivered),
                 transform: (transformInput) => transformEvent(decoded.transform, transformInput),
-                notify: (type, body = {}) => {
-                  if (type === "event")
+                notify: (notification) => {
+                  if (notification.type === "event")
                     return wake(
-                      typeof body.data === "string" ? body.data : JSON.stringify(body.data),
+                      typeof notification.data === "string"
+                        ? notification.data
+                        : JSON.stringify(notification.data),
                       (error) =>
                         Deferred.succeed(ended, `Wake failed: ${error.message}`).pipe(
                           Effect.as(undefined),
                         ),
                     );
-                  if (type !== "terminated") return Effect.void;
-                  const error = body["error"];
-                  const reason =
-                    isObject(error) && typeof error["message"] === "string"
-                      ? error["message"]
-                      : "Watch ended";
-                  if (reason === "Stopped") return Effect.void;
-                  return wake(`Watch ${decoded.watchId} ended: ${reason}`, (error) =>
+                  if (notification.type !== "terminated") return Effect.void;
+                  if (notification.reason === "Stopped") return Effect.void;
+                  return wake(`Watch ${decoded.watchId} ended: ${notification.reason}`, (error) =>
                     Effect.logWarning(`Termination wake failed: ${error.message}`),
                   );
                 },
@@ -480,12 +477,33 @@ const buildServer = (options: ServerOptions): McpServer => {
     );
 
     server.server.setRequestHandler("events/stream", { params: streamParams }, (params, ctx) => {
-      const notify = (type: NotificationType, body: Record<string, unknown> = {}) =>
+      const body = (notification: Notification): Record<string, unknown> => {
+        switch (notification.type) {
+          case "event":
+            return {
+              eventId: notification.eventId,
+              name: notification.name,
+              timestamp: notification.timestamp,
+              data: notification.data,
+            };
+          case "error":
+          case "terminated":
+            return { error: { code: -32000, message: notification.reason } };
+          case "active":
+          case "heartbeat":
+            return {};
+          default: {
+            const _exhaustive: never = notification;
+            return _exhaustive;
+          }
+        }
+      };
+      const notify = (notification: Notification) =>
         Effect.promise(() =>
           ctx.mcpReq.notify({
-            method: `notifications/events/${type}`,
+            method: `notifications/events/${notification.type}`,
             params: {
-              ...body,
+              ...body(notification),
               cursor: null,
               _meta: { [SUBSCRIPTION_ID_META_KEY]: ctx.mcpReq.id },
             },
