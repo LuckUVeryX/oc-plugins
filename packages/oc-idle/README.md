@@ -3,7 +3,7 @@
 An Effect v4 port of [vimtor's opencode-idle-compaction](https://github.com/vimtor/opencode-plugins/blob/main/packages/opencode-idle-compaction/plugin/src/server.ts).
 
 Compacts OpenCode sessions after 54 idle minutes when their token estimate exceeds 200,000.
-The tested baseline is OpenCode 2.3.0 and Effect 4.1.0.
+The tested baseline is OpenCode 2.4.0 and Effect 4.1.0.
 
 ## Install
 
