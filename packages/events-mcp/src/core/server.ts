@@ -123,6 +123,7 @@ interface Watch {
     readonly startedAt: string;
     readonly expiresAt: string;
     readonly arguments: Record<string, unknown>;
+    readonly params?: Schema.JsonObject;
   };
   readonly ended: Deferred.Deferred<string>;
   readonly finished: Deferred.Deferred<void>;
@@ -215,7 +216,7 @@ const buildServer = (options: ServerOptions): McpServer => {
     "watches",
     {
       description:
-        "List open watches with their event, arguments, and expiry, so you can reuse the arguments or find a watchId. A watch that already ended is not listed.",
+        "List open watches with their event, arguments, and expiry, so you can reuse the arguments or find a watchId. A watch armed with target also lists the params the target resolved to. A watch that already ended is not listed.",
     },
     () =>
       text({
@@ -316,6 +317,7 @@ const buildServer = (options: ServerOptions): McpServer => {
   const newWatch = (watch: {
     readonly event: string;
     readonly arguments: Record<string, unknown>;
+    readonly params: Schema.JsonObject | undefined;
     readonly expiresInSeconds: number;
   }) =>
     Effect.gen(function* () {
@@ -328,6 +330,7 @@ const buildServer = (options: ServerOptions): McpServer => {
           startedAt: new Date(startedAt).toISOString(),
           expiresAt: new Date(startedAt + watch.expiresInSeconds * 1000).toISOString(),
           arguments: watch.arguments,
+          ...(watch.params === undefined ? {} : { params: watch.params }),
         },
         ended,
         finished,
@@ -436,6 +439,7 @@ const buildServer = (options: ServerOptions): McpServer => {
               const watch = yield* newWatch({
                 event: event.name,
                 arguments: input,
+                params: target === undefined ? undefined : eventParams,
                 expiresInSeconds,
               });
               const ready = yield* Deferred.make<string | undefined, IntegrationError>();
@@ -581,6 +585,7 @@ const buildServer = (options: ServerOptions): McpServer => {
           const watch = yield* newWatch({
             event: params.name,
             arguments: params.arguments ?? {},
+            params: decoded.target === undefined ? undefined : eventParams,
             expiresInSeconds,
           });
           yield* Effect.acquireRelease(

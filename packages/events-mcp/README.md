@@ -40,7 +40,7 @@ All 8 events arrive over one Action Cable connection to `/-/cable`.
 | `gitlab.mergeRequestApprovalStateUpdated` | `issuableId`                                     | merge request link or `group/project!123`                               | A merge request, when its approval state changes.                        |
 | `gitlab.noteable.notes_changed`           | `projectId`, `noteableType`, `noteableId`        | merge request or issue link, `group/project!123` or `group/project#123` | A merge request or issue, when any note changes.                         |
 
-An event with a target takes `target` instead of `params`. Pass a link on the configured GitLab host, a project path such as `group/project`, or a shorthand such as `group/project!123`, `group/project#123`, or `group/project@<full sha>`. The server reads the resource to prove the token can read it, then fills the params. In Claude Code and Codex, `watch` also returns the resolved params. In OpenCode, prepare reads the ids from the payload. Pass `params` or `target`, not both.
+An event with a target takes `target` instead of `params`. Pass a link on the configured GitLab host, a project path such as `group/project`, or a shorthand such as `group/project!123`, `group/project#123`, or `group/project@<full sha>`. The server reads the resource to prove the token can read it, then fills the params. `watches` lists the resolved params beside the target, and in Claude Code and Codex `watch` also returns them. Pass `params` or `target`, not both.
 
 ## Setup
 
@@ -207,11 +207,11 @@ Each event passes filter → prepare → transform, and transform's string wakes
 
 1. OpenCode calls `watch_mcp_event({ "server": "events" })`. Claude Code and Codex call `list_events`. All of them list the events and each argument's schema and description; read the arguments there, not here.
 2. Read the same endpoints prepare will read, with `lark_get` or `gitlab_get`, and confirm the response shape and IDs.
-3. OpenCode calls `watch_mcp_event({ "server": "events", "event": "<name>", "arguments": { ... } })`. Claude Code and Codex call `watch({ "event": "<name>", ... })` with the same fields. For GitLab, pass `target` instead of `params` when `list_events` lists one, and `watch` returns the resolved params. Codex also passes `"threadId": "<the value of $CODEX_THREAD_ID>"`.
+3. OpenCode calls `watch_mcp_event({ "server": "events", "event": "<name>", "arguments": { ... } })`. Claude Code and Codex call `watch({ "event": "<name>", ... })` with the same fields. For GitLab, pass `target` instead of `params` when `list_events` lists one. `watches` shows the resolved params in every harness, and in Claude Code and Codex `watch` also returns them. Codex also passes `"threadId": "<the value of $CODEX_THREAD_ID>"`.
 
 A watch stays open until it expires or you stop it. Every event that passes filter and prepare wakes you.
 
-The wake text carries the string transform returned. In Claude Code it arrives as a channel message from the server, and in Codex as a new user turn in the same thread. To stop a watch early, call `unwatch({ "watchId": "..." })`. `watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again. If a watch stops with `<step> failed`, fix that step and arm a new watch.
+The wake text carries the string transform returned. In Claude Code it arrives as a channel message from the server, and in Codex as a new user turn in the same thread. To stop a watch early, call `unwatch({ "watchId": "..." })`. `watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again, and the params a target resolved to. If a watch stops with `<step> failed`, fix that step and arm a new watch.
 
 Each script is at most 64 KB, and both see `input.event = { eventId, timestamp, data }`. The event `data` is the raw integration payload.
 
@@ -241,7 +241,7 @@ Use `decide` in prepare when `filter` cannot tell whether an event deserves a wa
 
 ### GitLab targets and IDs
 
-Arm a GitLab watch from a link or shorthand with `target` where `list_events` lists one. Pass a merge request link such as `https://gitlab.example.com/group/project/-/merge_requests/123`, an issue link, a pipeline link, a job link, a commit link, a project path such as `group/project`, or a shorthand such as `group/project!123`, `group/project#123`, or `group/project@<full sha>`. The server reads the resource to prove access and to fill the params. In Claude Code and Codex, `watch` returns those params. In OpenCode, prepare reads the ids from the payload.
+Arm a GitLab watch from a link or shorthand with `target` where `list_events` lists one. Pass a merge request link such as `https://gitlab.example.com/group/project/-/merge_requests/123`, an issue link, a pipeline link, a job link, a commit link, a project path such as `group/project`, or a shorthand such as `group/project!123`, `group/project#123`, or `group/project@<full sha>`. The server reads the resource to prove access and to fill the params. `watches` lists those params, and in Claude Code and Codex `watch` also returns them.
 
 Without a target, params take GitLab global IDs such as `gid://gitlab/MergeRequest/1234`, which are not the numbers in the web URL. `gitlab.noteable.notes_changed` takes database ids instead. Each event's params schema carries its ID format.
 
@@ -321,7 +321,7 @@ return fresh.length === 0 ? null : { notes: fresh };
 }
 ```
 
-In Claude Code and Codex, `watch` returns the resolved `projectId`, `noteableType`, and `noteableId`. In OpenCode, prepare reads them from the payload. Without a target, pass those three params as database ids.
+`watches` lists the resolved `projectId`, `noteableType`, and `noteableId`, and in Claude Code and Codex `watch` also returns them. Without a target, pass those three params as database ids.
 
 A signal that finds nothing newer than the stored id returns null. If more than 20 comments arrive between two signals, the older ones in that burst are skipped.
 
