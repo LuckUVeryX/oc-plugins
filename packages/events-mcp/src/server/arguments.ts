@@ -7,10 +7,12 @@ export class Invalid extends Schema.TaggedError<Invalid>()("Arguments.Invalid", 
 
 const WatchId = Schema.NonEmptyString.pipe(Schema.brand("WatchId"));
 
+const Target = Schema.Struct({ target: Schema.optionalKey(Schema.NonEmptyString) });
+
 const WatchArguments = Schema.Struct({
-  id: WatchId,
-  target: Schema.optionalKey(Schema.NonEmptyString),
+  ...Target.fields,
   code: Schema.String,
+  id: WatchId,
   expiresInSeconds: Schema.optionalKey(
     Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
   ),
@@ -32,7 +34,7 @@ const codeProperty = (toolPaths: ReadonlyArray<string>) => {
   ].join(", ");
   return {
     type: "string",
-    description: `JavaScript that runs for each event and decides whether to wake you. Read the payload at input.event.data and its metadata at input.event.eventId and input.event.timestamp. It can await any of ${tools}. Return null to drop the event, or a string or JSON value to wake you with it. JSON is sent as JSON.stringify of the value. The delivered event is capped at ${MAX_EVENT_BYTES} bytes, so return only what the session needs. One event's code has a time limit, and a slow event delays the ones behind it. Wake on every event with \`return input.event.data\`.`,
+    description: `JavaScript that runs for each event and decides whether to wake you. Read the payload at input.event.data and its metadata at input.event.eventId and input.event.timestamp. It can await any of ${tools}. Return null to drop the event, or a string or JSON value to wake you with it. The delivered event is capped at ${MAX_EVENT_BYTES} bytes, so return only what the session needs. One event's code has a time limit, and a slow event delays the ones behind it. Wake on every event with \`return input.event.data\`.`,
   };
 };
 
@@ -42,26 +44,42 @@ const expiresInSecondsProperty = (defaultExpiresInSeconds: number) => ({
   description: `How long the watch stays open, in seconds. When it elapses the watch closes and sends nothing more. Defaults to ${defaultExpiresInSeconds} seconds.`,
 });
 
-/** The JSON Schema for one watch's arguments, without the event name. */
-export const inputSchemaDocument = (options: {
-  readonly target: { readonly description: string; readonly required: boolean } | undefined;
-  readonly toolPaths: ReadonlyArray<string>;
-  readonly defaultExpiresInSeconds: number;
-}) => ({
+export const targetSchemaDocument = (
+  target: { readonly description: string; readonly required: boolean } | undefined,
+) => ({
   type: "object",
-  properties: {
-    id: idProperty,
-    ...(options.target === undefined
+  properties:
+    target === undefined
       ? {}
-      : { target: { type: "string", minLength: 1, description: options.target.description } }),
-    code: codeProperty(options.toolPaths),
-    expiresInSeconds: expiresInSecondsProperty(options.defaultExpiresInSeconds),
-  },
-  required: options.target?.required === true ? ["id", "target", "code"] : ["id", "code"],
+      : { target: { type: "string", minLength: 1, description: target.description } },
+  required: target?.required === true ? ["target"] : [],
   additionalProperties: false,
 });
 
-export const decodeArguments = (value: unknown) =>
-  Schema.decodeUnknownEffect(WatchArguments)(value, { onExcessProperty: "error" }).pipe(
-    Effect.mapError((issue) => new Invalid({ message: issue.message })),
-  );
+/** Adds what a client without automations needs. */
+export const watchSchemaDocument = (
+  target: ReturnType<typeof targetSchemaDocument>,
+  options: {
+    readonly toolPaths: ReadonlyArray<string>;
+    readonly defaultExpiresInSeconds: number;
+  },
+) => ({
+  ...target,
+  properties: {
+    id: idProperty,
+    ...target.properties,
+    code: codeProperty(options.toolPaths),
+    expiresInSeconds: expiresInSecondsProperty(options.defaultExpiresInSeconds),
+  },
+  required: ["id", ...target.required, "code"],
+});
+
+const decode =
+  <A>(schema: Schema.Codec<A, unknown>) =>
+  (value: unknown) =>
+    Schema.decodeUnknownEffect(schema)(value, { onExcessProperty: "error" }).pipe(
+      Effect.mapError((issue) => new Invalid({ message: issue.message })),
+    );
+
+export const decodeTarget = decode(Target);
+export const decodeWatch = decode(WatchArguments);

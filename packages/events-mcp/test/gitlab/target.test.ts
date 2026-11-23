@@ -1,4 +1,4 @@
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
 import { GitlabSocket } from "../../src/gitlab/socket.ts";
 import type { GetInput } from "../../src/source/tool.ts";
@@ -100,7 +100,7 @@ const rejectionOf = async (
   try {
     const failure = Schema.decodeUnknownSync(
       Schema.Struct({ code: Schema.Number, message: Schema.String }),
-    )(await h.stream({ ...dropCode, ...args }, event).done);
+    )(await h.stream(args, event).done);
     return { failure, identifiers: socket.identifiers };
   } finally {
     await h.close();
@@ -186,7 +186,6 @@ test("a target that cannot arm the watch is rejected before subscribing", async 
     {
       event: "gitlab.noteable.notes_changed",
       args: {
-        id: "foreign-host",
         target: "https://gitlab.com/group/project/-/merge_requests/32",
       },
       message: ["gitlab.com", "gitlab.test"],
@@ -194,7 +193,6 @@ test("a target that cannot arm the watch is rejected before subscribing", async 
     {
       event: "gitlab.ciJobStatusUpdated",
       args: {
-        id: "wrong-kind",
         target: "https://gitlab.test/group/project/-/merge_requests/32",
       },
       message: ["gitlab.ciJobStatusUpdated takes a job link", "not a merge request link"],
@@ -202,47 +200,45 @@ test("a target that cannot arm the watch is rejected before subscribing", async 
     {
       event: "gitlab.ciPipelineStatusesUpdated",
       args: {
-        id: "missing-commit",
         target: `https://gitlab.test/group/project/-/commit/${"f".repeat(40)}`,
       },
       message: ["404", "repository/commits"],
     },
     {
       event: "gitlab.ciPipelineStatusesUpdated",
-      args: { id: "private-project", target: "group/private" },
+      args: { target: "group/private" },
       message: ["404", "/projects/group%2Fprivate"],
     },
     {
       event: "gitlab.noteable.notes_changed",
-      args: { id: "file-scheme", target: "file:///group/project/-/merge_requests/32" },
+      args: { target: "file:///group/project/-/merge_requests/32" },
       message: ["must be an http or https link"],
     },
     {
       event: "gitlab.noteable.notes_changed",
       args: {
-        id: "protocol-relative",
         target: "//gitlab.test/group/project/-/merge_requests/32",
       },
       message: ["must be an http or https link"],
     },
     {
       event: "gitlab.noteable.notes_changed",
-      args: { id: "space", target: "group/project #30" },
+      args: { target: "group/project #30" },
       message: ["not valid for gitlab.noteable.notes_changed"],
     },
     {
       event: "gitlab.noteable.notes_changed",
-      args: { id: "empty-suffix", target: "group/project#" },
+      args: { target: "group/project#" },
       message: ["needs an iid or sha"],
     },
     {
       event: "gitlab.mergeRequestApprovalStateUpdated",
-      args: { id: "missing" },
+      args: {},
       message: ["gitlab.mergeRequestApprovalStateUpdated needs a target", "group/project!123"],
     },
     {
       event: "gitlab.userMergeRequestUpdated",
-      args: { id: "no-target", target: "group/project" },
+      args: { target: "group/project" },
       message: ["gitlab.userMergeRequestUpdated does not take a target"],
     },
   ] as const;
@@ -257,7 +253,7 @@ test("a target that cannot arm the watch is rejected before subscribing", async 
 test("a target that GitLab cannot answer for is an internal error", async () => {
   const { failure, identifiers } = await rejectionOf(
     "gitlab.noteable.notes_changed",
-    { id: "unavailable", target: "https://gitlab.test/group/project/-/merge_requests/32" },
+    { target: "https://gitlab.test/group/project/-/merge_requests/32" },
     new Unavailable({ message: "GitLab is restarting" }),
   );
   expect(failure.code).toBe(-32603);
@@ -278,26 +274,6 @@ test("the watch tool returns the params a target resolved to", async () => {
     expect(armed).toMatchObject({ id: "mr-comments", params: mergeRequest });
     expect(armed.expiresAt).toEqual(expect.any(String));
     expect(socket.identifiers).toHaveLength(1);
-  } finally {
-    await h.close();
-  }
-});
-
-test("watches shows the params a target resolved to in OpenCode", async () => {
-  const { source, socket } = await setup();
-  const h = await connect({ sources: [source] });
-  try {
-    h.stream(
-      { id: "by-target", target: "group/project!32", ...dropCode },
-      "gitlab.noteable.notes_changed",
-    );
-    await vi.waitFor(() => expect(socket.identifiers).toHaveLength(1));
-    const [watch] = (await h.call("watches")).watches;
-    expect(watch).toMatchObject({
-      id: "by-target",
-      arguments: { target: "group/project!32" },
-      params: mergeRequest,
-    });
   } finally {
     await h.close();
   }

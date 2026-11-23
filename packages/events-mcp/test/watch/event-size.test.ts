@@ -1,34 +1,35 @@
 import { expect, test, vi } from "vitest";
 import { connect } from "../support.ts";
 
-// OpenCode measures the delivered event as { id, timestamp, data } and rejects one above 16,384 bytes.
+// The cap counts { id, timestamp, data } with data as the code returned it.
 const timestamp = new Date().toISOString();
 const overhead = Buffer.byteLength(JSON.stringify({ id: "size", timestamp, data: "" }));
 
-test("stops a watch whose delivered event exceeds the OpenCode envelope", async () => {
+test("stops a watch whose wake exceeds the cap", async () => {
+  const h = await connect({ harness: "claude" });
+  try {
+    await h.watch("fits", `return "x".repeat(${16_384 - overhead})`);
+    await h.watch("over", `return "x".repeat(${16_385 - overhead})`);
+    h.publish({ eventId: "size", occurredAt: timestamp, payload: {} });
+    await vi.waitFor(() => expect(h.channel).toHaveLength(2));
+    const of = (id: string) => h.channel.find((wake) => wake.meta?.["watch_id"] === id)?.content;
+    expect(of("fits")).toHaveLength(16_384 - overhead);
+    expect(of("over")).toContain("exceeds 16384 bytes");
+  } finally {
+    await h.close();
+  }
+});
+
+test("OpenCode gets a raw event of any size", async () => {
   const h = await connect();
   try {
-    const watch = (id: string, size: number) =>
-      h.stream({
-        id,
-        code: `return "x".repeat(${size})`,
-      });
-    watch("fits", 16_384 - overhead);
-    watch("over", 16_385 - overhead);
+    h.stream({});
+    await vi.waitFor(() => expect(h.notifications.some((n) => n.type === "active")).toBe(true));
+    const payload = { text: "x".repeat(40_000) };
+    h.publish({ eventId: "large", payload });
     await vi.waitFor(() =>
-      expect(h.notifications.filter((n) => n.type === "active")).toHaveLength(2),
+      expect(h.notifications.find((n) => n.type === "event")?.data).toEqual(payload),
     );
-    await h.publish({ eventId: "size", occurredAt: timestamp, payload: {} });
-    await vi.waitFor(() =>
-      expect(
-        h.notifications.some(
-          (n) => n.type === "terminated" && n.reason?.includes("exceeds 16384 bytes"),
-        ),
-      ).toBe(true),
-    );
-    const delivered = h.notifications.filter((n) => n.type === "event");
-    expect(delivered).toHaveLength(1);
-    expect(String(delivered[0]?.data)).toHaveLength(16_384 - overhead);
   } finally {
     await h.close();
   }

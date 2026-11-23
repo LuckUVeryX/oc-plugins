@@ -1,93 +1,50 @@
-import { it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Ref, Stream } from "effect";
-import { TestClock } from "effect/testing";
-import { expect } from "vitest";
-import { Health, type EventType } from "../../src/source/contract.ts";
-import { Feeds } from "../../src/watch/feeds.ts";
-import { runWatch } from "../../src/watch/watch.ts";
+import { expect, test, vi } from "vitest";
+import { connect } from "../support.ts";
 
-const tick: EventType = {
-  name: "tick",
-  description: "A tick.",
-  payload: {},
-  subscribe: () => Effect.die(new Error("The test feeds are never used")),
-};
+test("a watch stays open until its chosen expiry", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const h = await connect({ harness: "claude", defaultExpiresInSeconds: 3600 });
+  const open = async () =>
+    (await h.call("watches")).watches.map((watch: { id: string }) => watch.id);
+  try {
+    const watch = { event: "lark.im.message.receive_v1", code: "return null" };
+    await h.call("watch", { ...watch, id: "long", expiresInSeconds: 28_800 });
+    await h.call("watch", { ...watch, id: "standard" });
+    await vi.advanceTimersByTimeAsync(2 * 3_600_000);
+    expect(await open()).toEqual(["long"]);
+    await vi.advanceTimersByTimeAsync(6 * 3_600_000);
+    expect(await open()).toEqual([]);
+  } finally {
+    await h.close();
+    vi.useRealTimers();
+  }
+});
 
-it.effect("keeps a watch for its chosen expiry", () =>
-  Effect.gen(function* () {
-    const health = Stream.succeed<Health>(Health.Live());
-    const start = (expiresInSeconds: number) =>
-      Effect.gen(function* () {
-        const ended = yield* Deferred.make<string>();
-        const seen = yield* Ref.make<ReadonlyArray<string>>([]);
-        const fiber = yield* runWatch({
-          id: "watch",
-          eventType: tick,
-          params: {},
-          expiresInSeconds,
-          eventTimeoutSeconds: 30,
-          ended,
-          runCode: () => Effect.succeed(null),
-          notify: (n) => Ref.update(seen, (all) => [...all, n.type]),
-        }).pipe(
-          Effect.provideService(
-            Feeds.Service,
-            Feeds.Service.of({
-              acquire: () => Effect.succeed({ events: Stream.never, health }),
-            }),
-          ),
-          Effect.forkScoped,
-        );
-        return { fiber, seen };
-      });
+test("OpenCode owns a watch's lifetime", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const h = await connect({ defaultExpiresInSeconds: 3600 });
+  const ofType = (type: string) => h.notifications.filter((n) => n.type === type);
+  try {
+    h.stream({});
+    await vi.waitFor(() => expect(ofType("active")).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(8 * 3_600_000);
+    expect(ofType("terminated")).toEqual([]);
+  } finally {
+    await h.close();
+    vi.useRealTimers();
+  }
+});
 
-    const long = yield* start(28800);
-    const standard = yield* start(3600);
-    yield* TestClock.adjust("2 hours");
-    expect(long.fiber.pollUnsafe()).toBeUndefined();
-    expect(yield* Fiber.join(standard.fiber)).toBe("Expired");
-    expect(long.fiber.pollUnsafe()).toBeUndefined();
-    yield* TestClock.adjust("6 hours");
-    expect(yield* Fiber.join(long.fiber)).toBe("Expired");
-    const notable = (types: ReadonlyArray<string>) => types.filter((type) => type !== "heartbeat");
-    expect(notable(yield* Ref.get(standard.seen))).toEqual(["active", "terminated"]);
-    expect(notable(yield* Ref.get(long.seen))).toEqual(["active", "terminated"]);
-  }),
-);
-
-it.effect("stop and expiry end a watch whose feed never becomes ready", () =>
-  Effect.gen(function* () {
-    const start = (expiresInSeconds: number) =>
-      Effect.gen(function* () {
-        const ended = yield* Deferred.make<string>();
-        const seen = yield* Ref.make<ReadonlyArray<string>>([]);
-        const fiber = yield* runWatch({
-          id: "never-ready",
-          eventType: tick,
-          params: {},
-          expiresInSeconds,
-          eventTimeoutSeconds: 30,
-          ended,
-          runCode: () => Effect.succeed(null),
-          notify: (n) => Ref.update(seen, (all) => [...all, n.type]),
-        }).pipe(
-          Effect.provideService(Feeds.Service, Feeds.Service.of({ acquire: () => Effect.never })),
-          Effect.forkScoped,
-        );
-        return { ended, seen, fiber };
-      });
-
-    const stopped = yield* start(3600);
-    const expired = yield* start(60);
-    yield* TestClock.adjust("30 seconds");
-    expect(stopped.fiber.pollUnsafe()).toBeUndefined();
-    yield* Deferred.succeed(stopped.ended, "Stopped");
-    expect(yield* Fiber.join(stopped.fiber)).toBe("Stopped");
-    expect(expired.fiber.pollUnsafe()).toBeUndefined();
-    yield* TestClock.adjust("30 seconds");
-    expect(yield* Fiber.join(expired.fiber)).toBe("Expired");
-    const notable = (types: ReadonlyArray<string>) => types.filter((type) => type !== "heartbeat");
-    expect(notable(yield* Ref.get(stopped.seen))).toEqual(["terminated"]);
-    expect(notable(yield* Ref.get(expired.seen))).toEqual(["terminated"]);
-  }),
-);
+test("OpenCode passes a target and gets no second way to filter, name, expire or stop a watch", async () => {
+  const h = await connect();
+  try {
+    expect((await h.client.listTools()).tools.map((tool) => tool.name)).toEqual([
+      "lark_get",
+      "decide",
+    ]);
+    for (const extra of [{ code: "return null" }, { expiresInSeconds: 60 }, { id: "named" }])
+      expect(await h.stream(extra).done).toMatchObject({ code: -32602 });
+  } finally {
+    await h.close();
+  }
+});

@@ -11,50 +11,31 @@ const questions = [
 ];
 const answer = { answers: [{ type: "predicate", name: "needs_me", probability: 0.9 }] };
 
-async function active(h: Awaited<ReturnType<typeof connect>>, count = 1) {
-  await vi.waitFor(() =>
-    expect(h.notifications.filter((n) => n.type === "active")).toHaveLength(count),
-  );
-}
-async function terminated(h: Awaited<ReturnType<typeof connect>>) {
-  await vi.waitFor(() => expect(h.notifications.some((n) => n.type === "terminated")).toBe(true), {
-    timeout: 3000,
-  });
-  return h.notifications.find((n) => n.type === "terminated")?.reason;
-}
-
 test("a watch's code wakes with what decide answers", async () => {
   const calls: Array<DecisionModel.DecideInput> = [];
   const h = await connect({
+    harness: "claude",
     decide: (input) => {
       calls.push(input);
       return Effect.succeed(answer);
     },
   });
   try {
-    h.stream({
-      id: "decided",
-      code: `if (input.event.eventId === "drop") return null; const { answers } = await tools.events.decide({ questions: ${JSON.stringify(questions)}, input: [{ type: "json", value: { parent: "memes" } }] }); return answers[0].name`,
-    });
-    h.stream({
-      id: "without-decide-call",
-      code: 'return "plain"',
-    });
-    await active(h, 2);
+    await h.watch(
+      "first",
+      `if (input.event.eventId === "drop") return null; const { answers } = await tools.events.decide({ questions: ${JSON.stringify(questions)}, input: [{ type: "json", value: { parent: "memes" } }] }); return answers[0].name`,
+    );
+    await h.watch("second", 'return "plain"');
     await h.publish({ eventId: "drop", payload: {} });
     await h.publish({ eventId: "sentinel", payload: { text: "hello" } });
-    await vi.waitFor(() =>
-      expect(h.notifications.filter((n) => n.eventId === "sentinel")).toHaveLength(2),
-    );
+    await vi.waitFor(() => expect(h.channel).toHaveLength(3));
     expect(calls).toEqual([
       {
         questions,
         input: [{ type: "json", value: { parent: "memes" } }],
       },
     ]);
-    expect(h.notifications.filter((n) => n.eventId === "sentinel").map((n) => n.data)).toEqual(
-      expect.arrayContaining(["needs_me", "plain"]),
-    );
+    expect(h.channel.map((wake) => wake.content).sort()).toEqual(["needs_me", "plain", "plain"]);
   } finally {
     await h.close();
   }
@@ -63,21 +44,18 @@ test("a watch's code wakes with what decide answers", async () => {
 test("Lark failure stops the watch without leaking content to stderr", async () => {
   const log = vi.spyOn(console, "error").mockImplementation(() => {});
   const h = await connect({
+    harness: "claude",
     request: async () => {
       throw { response: { data: { code: 99991672, msg: "fake secret scope message" } } };
     },
   });
   try {
-    h.stream({
-      id: "scope",
-      code: 'return await tools.lark.get({path:"/im/v1/messages"})',
-    });
-    await active(h);
+    await h.watch("first", 'return await tools.lark.get({path:"/im/v1/messages"})');
     await h.publish({ eventId: "scope-event", payload: { text: "private message" } });
-    expect(await terminated(h)).toContain(
+    await vi.waitFor(() => expect(h.channel).toHaveLength(1), { timeout: 3000 });
+    expect(h.channel[0]?.content).toContain(
       "code failed on scope-event: ToolFailure: Lark API 99991672: fake secret scope message",
     );
-    expect((await h.call("watches")).watches).toEqual([]);
     const output = JSON.stringify(log.mock.calls);
     expect(output).toContain('"eventId":"scope-event"');
     expect(output).not.toContain("fake secret");
@@ -92,6 +70,7 @@ test("timeout aborts an in-flight Lark request", async () => {
   const started = Promise.withResolvers<void>();
   const aborted = Promise.withResolvers<void>();
   const h = await connect({
+    harness: "claude",
     eventTimeoutSeconds: 1,
     request: (_input, signal) =>
       new Promise((_resolve, reject) => {
@@ -107,15 +86,12 @@ test("timeout aborts an in-flight Lark request", async () => {
       }),
   });
   try {
-    h.stream({
-      id: "abort-timeout",
-      code: 'return await tools.lark.get({path:"/im/v1/messages"})',
-    });
-    await active(h);
+    await h.watch("first", 'return await tools.lark.get({path:"/im/v1/messages"})');
     await h.publish({ eventId: "blocked-request", payload: {} });
     await started.promise;
-    expect(await terminated(h)).toBe(
-      "code failed on blocked-request: TimeoutError: Operation timed out after '1s'",
+    await vi.waitFor(() => expect(h.channel).toHaveLength(1), { timeout: 3000 });
+    expect(h.channel[0]?.content).toBe(
+      "Watch first ended: code failed on blocked-request: TimeoutError: Operation timed out after '1s'",
     );
     await Promise.race([
       aborted.promise,

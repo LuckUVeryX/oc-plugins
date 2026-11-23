@@ -16,12 +16,11 @@ You tell the agent what to wait for. The agent arms a watch, and the next turn s
 ```text
 Lark WebSocket, GitLab Action Cable
   hub: one per user, shares connections and drops duplicates
-    watch code: written by the agent, runs on each event
-      returns null    -> event dropped
-      returns a value -> the value wakes the session
+    OpenCode:           an automation filters each event and wakes the session
+    Claude Code, Codex: the hub runs the watch's code, which filters and wakes
 ```
 
-A watch is a short piece of JavaScript the agent writes. On each event it can:
+The filter is a short piece of JavaScript the agent writes. On each event it can:
 
 - read more from Lark or GitLab, such as the failed jobs or the rest of a thread,
 - keep a little JSON state between events, such as the last comment it saw,
@@ -38,7 +37,7 @@ The server only reads. The agent replies with its own tools, such as `lark-cli` 
 
 ## Setup
 
-You need Git, Bun 1.4.4, and one of OpenCode 2.3.2, Claude Code 2.1.330, or Codex 0.171.0. For each source you use:
+You need Git, Bun 1.4.4, and one of OpenCode 2.4.0, Claude Code 2.1.330, or Codex 0.171.0. For each source you use:
 
 - **Lark.** An app in WebSocket event mode, with `LARK_APP_ID` and `LARK_APP_SECRET`.
 - **GitLab.** `GITLAB_TOKEN` with `read_api` and `read_repository`, or `glab` logged in. Set `GITLAB_HOST` for self-managed GitLab.
@@ -117,7 +116,7 @@ Restart your sessions, then ask the agent something like "wake me when the pipel
 ## Before you rely on it
 
 - **Watches are live and in memory.** Nothing is replayed. Events that arrive while no watch is open are lost, and a restart of the hub or the session ends its watches.
-- **A watch lasts an hour** unless the agent asks for longer.
+- **A watch lasts an hour** in Claude Code and Codex unless the agent asks for longer. In OpenCode it lasts until its automation expires or is deleted.
 - **Every wake costs a turn.** Filter in the watch code so only events that matter wake the session.
 - **One Lark consumer per app.** A watch fails if `lark-cli event consume` or another copy of this server holds the app's connection.
 - **Watch code reads whatever your credentials allow.** Grant only the scopes you need.

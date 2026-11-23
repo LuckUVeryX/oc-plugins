@@ -42,22 +42,20 @@ export interface Tools {
 
 export type Harness = Events | Tools;
 
-const liveWatchInstructions =
-  "A watch is live. It sees events from the moment it arms until it expires or you stop it, and nothing older is replayed. Choose an id. The `watches` tool shows the arguments of every open watch, and `unwatch` ends one early.";
-
-export const listEventsInstructions =
-  "Call list_events to see what this server can watch, with each event's arguments and payload. Arm one with the watch tool. The watch runs its code on each event, and whatever the code returns, unless null, reaches this session.";
+export const listEventsInstructions = [
+  "Call list_events to see what this server can watch, with each event's arguments and payload. Arm one with the watch tool. The watch runs its code on each event, and whatever the code returns, unless null, reaches this session.",
+  "A watch is live. It sees events from the moment it arms until it expires or you stop it, and nothing older is replayed. Choose an id. The `watches` tool shows the arguments of every open watch, and `unwatch` ends one early.",
+  "When plain code cannot tell whether an event deserves a wake, ask the decision model from the code with tools.events.decide.",
+  'When a watch ends with "code failed", fix the code and arm a new watch.',
+].join("\n\n");
 
 export const instructions =
   (options: { readonly arm: string; readonly wakes?: ReadonlyArray<string> }) =>
   (sources: ReadonlyArray<Source>): string =>
     [
       options.arm,
-      liveWatchInstructions,
       ...sources.flatMap((source) =>
         source.instructions === undefined ? [] : [source.instructions],
       ),
-      "When plain code cannot tell whether an event deserves a wake, ask the decision model from the code with tools.events.decide.",
-      'When a watch ends with "code failed", fix the code and arm a new watch.',
       ...(options.wakes ?? []),
     ].join("\n\n");

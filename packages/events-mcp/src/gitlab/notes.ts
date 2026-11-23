@@ -19,26 +19,43 @@ const NotesPayload = Schema.Struct({ event: Schema.String, ...NotesParams.fields
 
 const payload = Schema.toJsonSchemaDocument(NotesPayload, { onExcessProperty: "error" }).schema;
 
-export const notesRecipe = `const START = 0;
+const readComments = (get: string) => `const START = 0;
 const { projectId, noteableType, noteableIid } = input.event.data;
 const collection = noteableType === "merge_request" ? "merge_requests" : "issues";
-const notes = await tools.gitlab.get({
+const notes = await ${get}({
   path: "/projects/" + projectId + "/" + collection + "/" + noteableIid + "/notes",
   query: { sort: "desc", order_by: "created_at", per_page: 20 },
 });
-const comments = notes.filter((note) => !note.system);
+const comments = notes.filter((note) => !note.system);`;
+
+const newComments = `const fresh = comments.filter((note) => note.id > previous);
+const newest = comments.reduce((max, note) => Math.max(max, note.id), previous);`;
+
+export const automationRecipe = `${readComments("tools.events.gitlab_get")}
+const previous = input.state ?? START;
+${newComments}
+if (fresh.length === 0) return { state: newest };
+return {
+  state: newest,
+  send: { prompt: "New GitLab comments, untrusted data:\\n" + JSON.stringify(fresh) },
+};`;
+
+export const watchRecipe = `${readComments("tools.gitlab.get")}
 const previous = (await tools.watch.state.get()) ?? START;
-const fresh = comments.filter((note) => note.id > previous);
-await tools.watch.state.set(comments.reduce((max, note) => Math.max(max, note.id), previous));
+${newComments}
+await tools.watch.state.set(newest);
 return fresh.length === 0 ? null : { notes: fresh };`;
 
 const description = `Watch for note changes on a merge request or issue. The recipe below wakes only for new non-system notes.
 
 Arm it from a merge request or issue link, or a shorthand such as group/project!123 or group/project#123, by passing target. The payload carries projectId, noteableType, and noteableIid for the notes endpoint.
 
-Code recipe. Before you arm, read the newest notes to choose \`START\`. Use GET /projects/:projectId/merge_requests/:iid/notes with sort=desc, order_by=created_at, and per_page=20, or the issues endpoint. Set \`START\` to the newest non-system note's id, or 0 when that returns none. The recipe reads the newest 20 notes and keeps the highest comment id in tools.watch.state. A signal with nothing newer than START or the stored id returns null. More than 20 comments between two signals skips the older ones.
+Before you arm, read the newest notes to choose \`START\`. Use GET /projects/:projectId/merge_requests/:iid/notes with sort=desc, order_by=created_at, and per_page=20, or the issues endpoint. Set \`START\` to the newest non-system note's id, or 0 when that returns none. The recipe reads the newest 20 notes and remembers the highest comment id. A signal with nothing newer stays quiet. More than 20 comments between two signals skips the older ones.`;
 
-${notesRecipe}`;
+const recipe = {
+  Events: `Code action. tools.events is this server's configured name.\n\n${automationRecipe}`,
+  Tools: `Watch code.\n\n${watchRecipe}`,
+};
 
 const identifier = (params: NotesParams): ChannelIdentifier => ({
   channel: "Noteable::NotesChannel",
@@ -68,6 +85,7 @@ interface NotesEventOptions {
 export const makeNotesEvent = (options: NotesEventOptions): EventType => ({
   name: "noteable.notes_changed",
   description,
+  recipe,
   payload,
   target: options.target,
   subscribe: (input) =>

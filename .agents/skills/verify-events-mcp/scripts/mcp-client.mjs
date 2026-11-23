@@ -172,7 +172,6 @@ const trigger = () => {
 const watch = async (options) => {
   const { client } = await connect("watch");
   const project = projectPath();
-  const id = options.id;
   const timeout = Number(options.timeout ?? 900) * 1000;
   const notifications = [];
   for (const type of ["active", "heartbeat", "event", "error", "terminated"])
@@ -194,9 +193,7 @@ const watch = async (options) => {
         params: {
           name: "gitlab.ciPipelineStatusesUpdated",
           arguments: {
-            id,
             target: project,
-            code: 'const { id, status } = input.event.data; if (!["SUCCESS", "FAILED", "CANCELED"].includes(status)) return null; return "pipeline " + id + " status " + status',
           },
         },
       },
@@ -220,7 +217,7 @@ const watch = async (options) => {
 
   await waitFor((item) => item.type === "active", 60_000, "active");
   const subscriptionId = notifications.find((item) => item.type === "active")?.subscriptionId;
-  const armed = { id, armedAt, subscriptionId, project };
+  const armed = { armedAt, subscriptionId, project };
   write("opencode-armed.json", armed);
   console.log(JSON.stringify({ armed }, null, 2));
 
@@ -233,13 +230,13 @@ const watch = async (options) => {
   const event = await waitFor(
     (item) =>
       item.type === "event" &&
+      (started === null || String(item.params?.data?.id).endsWith(`/${started.id}`)) &&
       (subscriptionId === undefined || item.subscriptionId === subscriptionId),
     timeout,
     "event",
   );
   const receivedAt = new Date().toISOString();
   const record = {
-    id,
     project,
     subscriptionId,
     armedAt,
@@ -260,7 +257,7 @@ const watch = async (options) => {
   await done;
   await sleep(500);
   await client.close();
-  if (started && !String(record.event.data).includes(String(started.id)))
+  if (started && !String(record.event.data?.id).endsWith(`/${started.id}`))
     throw new Error(`event does not name the triggered pipeline ${started.id}`);
 };
 
@@ -279,11 +276,9 @@ const hub = async (options) => {
     const sessions = [];
     for (const [index, entry] of clients.entries()) {
       const events = await call(entry.client, "events/list", {});
-      const watches = await tool(entry.client, "watches", {});
       sessions.push({
         session: index + 1,
         events: events.events.length,
-        watches: watches.watches.length,
       });
     }
     await sleep(1000);
@@ -331,14 +326,13 @@ if (mode === "list") await list();
 else if (mode === "read-tools") await readTools();
 else if (mode === "watch")
   await watch({
-    id: flag("id", "verify-pipeline"),
     timeout: flag("timeout", "900"),
     trigger: process.argv.includes("--trigger"),
   });
 else if (mode === "hub") await hub({ sessions: flag("sessions", "2") });
 else {
   console.error(
-    "usage: mcp-client.mjs list | read-tools | watch [--id ID] [--timeout SECONDS] [--trigger] | hub [--sessions N]",
+    "usage: mcp-client.mjs list | read-tools | watch [--timeout SECONDS] [--trigger] | hub [--sessions N]",
   );
   process.exit(2);
 }

@@ -37,7 +37,7 @@ const answer = {
   native: { fixture: true },
 };
 
-test("decide sends its input and surfaces model failures through the code", async () => {
+test("decide sends its input and surfaces model failures through the code and the tool", async () => {
   const bodies: unknown[] = [];
   let fail = false;
   const http = Bun.serve({
@@ -60,22 +60,31 @@ test("decide sends its input and surfaces model failures through the code", asyn
     expect(bodies).toContainEqual({ model, questions, input: context });
     fail = true;
     await expect(Effect.runPromise(decide({ questions }))).rejects.toThrow("provider down");
-    const h = await connect({ decide });
+    const h = await connect({ decide, harness: "claude" });
     try {
-      h.stream({
-        id: "model-failure",
-        code: `await tools.events.decide({ questions: ${JSON.stringify(questions)} }); return "ok"`,
-      });
-      await vi.waitFor(() => expect(h.notifications.some((n) => n.type === "active")).toBe(true));
-      await h.publish({ eventId: "model-event", payload: {} });
-      await vi.waitFor(() =>
-        expect(h.notifications.some((n) => n.type === "terminated")).toBe(true),
+      await h.watch(
+        "model-failure",
+        `await tools.events.decide({ questions: ${JSON.stringify(questions)} }); return "ok"`,
       );
-      const reason = h.notifications.find((n) => n.type === "terminated")?.reason;
-      expect(reason).toContain("code failed on model-event:");
-      expect(reason).toContain("provider down");
+      h.publish({ eventId: "model-event", payload: {} });
+      await vi.waitFor(() => expect(h.channel).toHaveLength(1));
+      expect(h.channel[0]?.content).toContain("code failed on model-event:");
+      expect(h.channel[0]?.content).toContain("provider down");
     } finally {
       await h.close();
+    }
+    fail = false;
+    const opencode = await connect({ decide });
+    try {
+      expect(await opencode.call("decide", { questions, input: context })).toMatchObject({
+        answers: answer.answers,
+      });
+      fail = true;
+      const failed = await opencode.callRaw("decide", { questions });
+      expect(failed.isError).toBe(true);
+      expect(failed.text).toContain("provider down");
+    } finally {
+      await opencode.close();
     }
   } finally {
     http.stop(true);
