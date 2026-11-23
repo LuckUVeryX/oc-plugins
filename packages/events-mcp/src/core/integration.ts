@@ -38,6 +38,12 @@ export interface EventKind {
   /** An object JSON Schema in the Effect-supported Draft 2020-12 subset. */
   readonly params: JsonSchema.JsonSchema;
   readonly payload: JsonSchema.JsonSchema;
+  readonly target?:
+    | {
+        readonly description: string;
+        readonly resolve: (target: string) => Effect.Effect<Schema.JsonObject, IntegrationError>;
+      }
+    | undefined;
   subscribe(params: Schema.JsonObject): Effect.Effect<Feed, IntegrationError, Scope.Scope>;
 }
 
