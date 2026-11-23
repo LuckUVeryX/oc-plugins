@@ -4,11 +4,11 @@ import { GitlabSocket } from "../../src/gitlab/socket.ts";
 import { GitlabClient } from "../../src/gitlab/client.ts";
 import { GitlabAuth } from "../../src/gitlab/auth.ts";
 import { Gitlab } from "../../src/gitlab/integration.ts";
-import type { GitlabIdentity as TokenIdentity } from "../../src/gitlab/token.ts";
+import type { GitlabIdentity } from "../../src/gitlab/token.ts";
 import { Health, type IntegrationError } from "../../src/core/integration.ts";
 import { connect } from "../harness.ts";
 
-const identity: TokenIdentity = {
+const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),
   userId: 256,
   username: "tester",

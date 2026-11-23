@@ -14,7 +14,7 @@ import {
 } from "../core/integration.ts";
 import { GetInput, makeTool } from "../core/tool.ts";
 import { GitlabAuth } from "./auth.ts";
-import type { GitlabIdentity as TokenIdentity } from "./token.ts";
+import type { GitlabIdentity } from "./token.ts";
 
 export interface GraphqlRequest {
   readonly query: string;
@@ -28,9 +28,9 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/GitlabClient") {}
 
-export interface GitlabClientOptions {
+interface GitlabClientOptions {
   readonly host: string;
-  readonly identity: Effect.Effect<TokenIdentity, IntegrationError>;
+  readonly identity: Effect.Effect<GitlabIdentity, IntegrationError>;
   readonly http?: HttpClient.HttpClient | undefined;
 }
 

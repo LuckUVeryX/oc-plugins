@@ -5,16 +5,13 @@ import {
   SUBSCRIPTION_ID_META_KEY,
   McpServer,
 } from "@modelcontextprotocol/server";
-import { serveStdio, StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import {
   Cause,
   Clock,
   ConfigProvider,
-  Context,
   Deferred,
   Effect,
   Exit,
-  Layer,
   Logger,
   Schema,
   SchemaIssue,
@@ -41,7 +38,7 @@ import type { IntegrationError } from "./integration.ts";
 import { inputJsonSchema } from "./tool.ts";
 import { makeTransform } from "./transform.ts";
 import { Feeds } from "./feeds.ts";
-import { runWatch, type NotificationType } from "./watch.ts";
+import { runWatch, type Notification } from "./watch.ts";
 import type { Harness, Send, Tools } from "./harness.ts";
 import { get, type Name as HarnessName } from "../harness/index.ts";
 
@@ -59,6 +56,8 @@ interface ServerOptions {
   readonly eventTimeoutSeconds: number;
 }
 
+type DecodedArguments = Effect.Success<ReturnType<typeof decodeArguments>>;
+
 const streamParams = Schema.toStandardSchemaV1(
   Schema.Struct({
     name: Schema.String,
@@ -66,18 +65,6 @@ const streamParams = Schema.toStandardSchemaV1(
     cursor: Schema.optionalKey(Schema.Unknown),
   }),
 );
-
-// Stdout carries MCP messages, so handler logs must go to stderr.
-const makeRun =
-  (config: ConfigProvider.ConfigProvider) =>
-  <A, E>(effect: Effect.Effect<A, E>, options?: Effect.RunOptions) =>
-    Effect.runPromise(
-      effect.pipe(
-        Effect.provideService(Logger.LogToStderr, true),
-        Effect.provideService(ConfigProvider.ConfigProvider, config),
-      ),
-      options,
-    );
 
 const invalidParams = (message: string) => new ProtocolError(INVALID_PARAMS, message);
 
@@ -176,7 +163,15 @@ const watchInputSchema = (options: {
 };
 
 const buildServer = (options: ServerOptions): McpServer => {
-  const run = makeRun(options.config);
+  // Stdout carries MCP messages, so handler logs must go to stderr.
+  const run = <A, E>(effect: Effect.Effect<A, E>, runOptions?: Effect.RunOptions) =>
+    Effect.runPromise(
+      effect.pipe(
+        Effect.provideService(Logger.LogToStderr, true),
+        Effect.provideService(ConfigProvider.ConfigProvider, options.config),
+      ),
+      runOptions,
+    );
   const transformEvent = makeTransform();
   const watches = new Map<string, Watch>();
   const toolPaths = options.registry.integrations.flatMap((integration) =>
@@ -316,6 +311,43 @@ const buildServer = (options: ServerOptions): McpServer => {
       } satisfies Watch;
     });
 
+  const release = (watchId: string, watch: Watch) =>
+    Effect.gen(function* () {
+      watches.delete(watchId);
+      yield* Deferred.succeed(watch.finished, undefined);
+    });
+
+  const finish = (watchId: string, watch: Watch) => Effect.ensuring(release(watchId, watch));
+
+  const startWatch = (input: {
+    readonly event: RegisteredEventKind;
+    readonly decoded: DecodedArguments;
+    readonly eventParams: Schema.JsonObject;
+    readonly watch: Watch;
+    readonly notify: (notification: Notification) => Effect.Effect<void>;
+    readonly ready?: Deferred.Deferred<string | undefined, IntegrationError> | undefined;
+  }) =>
+    Effect.gen(function* () {
+      const prepare = makePrepare({
+        integrations: options.registry.integrations,
+        state: yield* makeWatchState,
+        decide: options.decide,
+      });
+      return yield* runWatch({
+        watchId: input.decoded.watchId,
+        eventKind: input.event,
+        params: input.eventParams,
+        filter: input.decoded.filter,
+        expiresInSeconds: input.decoded.expiresInSeconds ?? options.defaultExpiresInSeconds,
+        eventTimeoutSeconds: options.eventTimeoutSeconds,
+        ended: input.watch.ended,
+        ready: input.ready,
+        prepare: (delivered) => prepare(input.decoded.prepare, delivered),
+        transform: (transformInput) => transformEvent(input.decoded.transform, transformInput),
+        notify: input.notify,
+      }).pipe(Effect.provideService(Feeds.Service, options.feeds));
+    });
+
   if (options.harness._tag === "Tools") {
     const harness = options.harness;
     const send: Send = (notification) =>
@@ -376,7 +408,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                   : { expiresInSeconds: requestedExpiresInSeconds }),
               });
               const expiresInSeconds = decoded.expiresInSeconds ?? options.defaultExpiresInSeconds;
-              const { view, ended, finished } = yield* newWatch({
+              const watch = yield* newWatch({
                 eventName: event.name,
                 arguments: input,
                 expiresInSeconds,
@@ -384,7 +416,7 @@ const buildServer = (options: ServerOptions): McpServer => {
               const ready = yield* Deferred.make<string | undefined, IntegrationError>();
               const claimed = yield* Effect.sync(() => {
                 if (watches.has(decoded.watchId)) return false;
-                watches.set(decoded.watchId, { view, ended, finished });
+                watches.set(decoded.watchId, watch);
                 return true;
               });
               if (!claimed)
@@ -393,12 +425,6 @@ const buildServer = (options: ServerOptions): McpServer => {
                     message: "watchId is already active; choose another ID or stop the watch",
                   }),
                 );
-              const state = yield* makeWatchState;
-              const prepare = makePrepare({
-                integrations: options.registry.integrations,
-                state,
-                decide: options.decide,
-              });
               const wake = (
                 text: string,
                 onFailure: (error: { readonly message: string }) => Effect.Effect<void>,
@@ -411,39 +437,30 @@ const buildServer = (options: ServerOptions): McpServer => {
                     text,
                   })
                   .pipe(Effect.catchTag("Harness.WakeFailed", onFailure));
-              yield* runWatch({
-                watchId: decoded.watchId,
-                eventKind: event,
-                params: eventParams,
-                filter: decoded.filter,
-                expiresInSeconds,
-                eventTimeoutSeconds: options.eventTimeoutSeconds,
-                ended,
+              yield* startWatch({
+                event,
+                decoded,
+                eventParams,
+                watch,
                 ready,
-                prepare: (delivered) => prepare(decoded.prepare, delivered),
-                transform: (transformInput) => transformEvent(decoded.transform, transformInput),
-                notify: (type, body = {}) => {
-                  if (type === "event")
+                notify: (notification) => {
+                  if (notification.type === "event")
                     return wake(
-                      typeof body.data === "string" ? body.data : JSON.stringify(body.data),
+                      typeof notification.data === "string"
+                        ? notification.data
+                        : JSON.stringify(notification.data),
                       (error) =>
-                        Deferred.succeed(ended, `Wake failed: ${error.message}`).pipe(
+                        Deferred.succeed(watch.ended, `Wake failed: ${error.message}`).pipe(
                           Effect.as(undefined),
                         ),
                     );
-                  if (type !== "terminated") return Effect.void;
-                  const error = body["error"];
-                  const reason =
-                    isObject(error) && typeof error["message"] === "string"
-                      ? error["message"]
-                      : "Watch ended";
-                  if (reason === "Stopped") return Effect.void;
-                  return wake(`Watch ${decoded.watchId} ended: ${reason}`, (error) =>
+                  if (notification.type !== "terminated") return Effect.void;
+                  if (notification.reason === "Stopped") return Effect.void;
+                  return wake(`Watch ${decoded.watchId} ended: ${notification.reason}`, (error) =>
                     Effect.logWarning(`Termination wake failed: ${error.message}`),
                   );
                 },
               }).pipe(
-                Effect.provideService(Feeds.Service, options.feeds),
                 Effect.onExit((exit) => {
                   const warn =
                     Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)
@@ -456,12 +473,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                       : Effect.void;
                   return warn.pipe(Effect.andThen(Deferred.done(ready, exit)));
                 }),
-                Effect.ensuring(
-                  Effect.gen(function* () {
-                    watches.delete(decoded.watchId);
-                    yield* Deferred.succeed(finished, undefined);
-                  }),
-                ),
+                finish(decoded.watchId, watch),
                 Effect.scoped,
                 Effect.forkIn(options.scope),
               );
@@ -469,7 +481,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                 Effect.mapError((error) => new Invalid({ message: error.message })),
               );
               return outcome === undefined
-                ? { watchId: decoded.watchId, expiresAt: view.expiresAt }
+                ? { watchId: decoded.watchId, expiresAt: watch.view.expiresAt }
                 : { watchId: decoded.watchId, ended: outcome };
             }),
             {
@@ -487,12 +499,33 @@ const buildServer = (options: ServerOptions): McpServer => {
     );
 
     server.server.setRequestHandler("events/stream", { params: streamParams }, (params, ctx) => {
-      const notify = (type: NotificationType, body: Record<string, unknown> = {}) =>
+      const body = (notification: Notification): Record<string, unknown> => {
+        switch (notification.type) {
+          case "event":
+            return {
+              eventId: notification.eventId,
+              name: notification.name,
+              timestamp: notification.timestamp,
+              data: notification.data,
+            };
+          case "error":
+          case "terminated":
+            return { error: { code: -32000, message: notification.reason } };
+          case "active":
+          case "heartbeat":
+            return {};
+          default: {
+            const _exhaustive: never = notification;
+            return _exhaustive;
+          }
+        }
+      };
+      const notify = (notification: Notification) =>
         Effect.promise(() =>
           ctx.mcpReq.notify({
-            method: `notifications/events/${type}`,
+            method: `notifications/events/${notification.type}`,
             params: {
-              ...body,
+              ...body(notification),
               cursor: null,
               _meta: { [SUBSCRIPTION_ID_META_KEY]: ctx.mcpReq.id },
             },
@@ -522,31 +555,9 @@ const buildServer = (options: ServerOptions): McpServer => {
                 );
               watches.set(decoded.watchId, watch);
             }),
-            () =>
-              Effect.gen(function* () {
-                watches.delete(decoded.watchId);
-                yield* Deferred.succeed(watch.finished, undefined);
-              }),
+            () => release(decoded.watchId, watch),
           );
-          const state = yield* makeWatchState;
-          const prepare = makePrepare({
-            integrations: options.registry.integrations,
-            state,
-            decide: options.decide,
-          });
-          yield* runWatch({
-            watchId: decoded.watchId,
-            eventKind: event,
-            params: eventParams,
-            filter: decoded.filter,
-            expiresInSeconds,
-            eventTimeoutSeconds: options.eventTimeoutSeconds,
-            ended: watch.ended,
-            prepare: (event) => prepare(decoded.prepare, event),
-            transform: (input) => transformEvent(decoded.transform, input),
-            notify,
-          }).pipe(
-            Effect.provideService(Feeds.Service, options.feeds),
+          yield* startWatch({ event, decoded, eventParams, watch, notify }).pipe(
             Effect.mapError((error: IntegrationError) => {
               const code = error._tag === "Integration.Rejected" ? -32024 : -32603;
               return new ProtocolError(code, error.message);
@@ -561,12 +572,6 @@ const buildServer = (options: ServerOptions): McpServer => {
 
   return server;
 };
-
-export interface Interface {
-  readonly done: Effect.Effect<void>;
-}
-
-export class Service extends Context.Service<Service, Interface>()("@events-mcp/Server") {}
 
 export const make = (options: {
   readonly harness: HarnessName;
@@ -591,45 +596,5 @@ export const make = (options: {
       eventTimeoutSeconds: options.eventTimeoutSeconds ?? DEFAULT_STEP_TIMEOUT_SECONDS,
     });
   });
-
-// Stdout carries MCP messages, so transport errors must go to stderr.
-const logError = (error: unknown): void => {
-  Effect.runSync(Effect.logError(error).pipe(Effect.provideService(Logger.LogToStderr, true)));
-};
-
-export const layer = (
-  name: HarnessName,
-): Layer.Layer<Service, never, Registry.Service | Feeds.Service | DecisionModel.Service> =>
-  Layer.effect(
-    Service,
-    Effect.gen(function* () {
-      const scope = yield* Scope.make();
-      yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
-      const closed = yield* Deferred.make<void>();
-      const transport = new StdioServerTransport();
-      const server = yield* make({ harness: name, scope });
-      yield* Effect.acquireRelease(
-        Effect.sync(() => {
-          const handle = serveStdio(() => server, {
-            legacy: "serve",
-            transport,
-            onerror: logError,
-          });
-          const onclose = transport.onclose;
-          transport.onclose = () => {
-            onclose?.();
-            Deferred.doneUnsafe(closed, Effect.void);
-          };
-          return handle;
-        }),
-        (handle) => Effect.promise(() => handle.close()),
-      );
-      const done = Effect.gen(function* () {
-        yield* Deferred.await(closed);
-        yield* Scope.close(scope, Exit.void);
-      }).pipe(Effect.asVoid);
-      return Service.of({ done });
-    }),
-  );
 
 export * as Server from "./server.ts";

@@ -76,7 +76,7 @@ const validate = Effect.fn("GitlabToken.validate")(function* (input: {
   return { token: input.token, userId: user.id, username: user.username };
 });
 
-const resolve = Effect.fn("GitlabToken.resolve")(function* (host: string) {
+export const resolveIdentity = Effect.fn("GitlabToken.resolve")(function* (host: string) {
   const configured = yield* Config.Redacted("GITLAB_TOKEN").pipe(
     Config.option,
     Effect.orElseSucceed(() => Option.none()),
@@ -88,8 +88,3 @@ const resolve = Effect.fn("GitlabToken.resolve")(function* (host: string) {
       : Redacted.make(Redacted.value(value).trim());
   return yield* validate({ host, token });
 });
-
-export const resolveIdentity: (
-  host: string,
-) => Effect.Effect<GitlabIdentity, IntegrationError, HttpClient.HttpClient> = (host) =>
-  resolve(host);

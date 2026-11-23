@@ -107,7 +107,7 @@ test("announces active before delivering the first event of a short stream", asy
           ended: yield* Deferred.make<string>(),
           prepare: () => Effect.succeed({}),
           transform: () => Effect.succeed("delivered"),
-          notify: (type) => Effect.sync(() => types.push(type)),
+          notify: (n) => Effect.sync(() => types.push(n.type)),
         }).pipe(
           Effect.provideService(
             Feeds.Service,

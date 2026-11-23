@@ -23,7 +23,16 @@ export type TransformInput = {
 
 type TransformRunner = (input: TransformInput) => Effect.Effect<string | null, Failed>;
 
-export type NotificationType = "active" | "heartbeat" | "event" | "error" | "terminated";
+export type Notification =
+  | { readonly type: "active" | "heartbeat" }
+  | {
+      readonly type: "event";
+      readonly eventId: string;
+      readonly name: string;
+      readonly timestamp: string;
+      readonly data: Schema.Json;
+    }
+  | { readonly type: "error" | "terminated"; readonly reason: string };
 
 class StepFailed extends Schema.TaggedError<StepFailed>()("Watch.StepFailed", {
   message: Schema.String,
@@ -39,12 +48,10 @@ interface WatchRunOptions {
   readonly ended: Deferred.Deferred<string>;
   readonly prepare: PrepareRunner;
   readonly transform: TransformRunner;
-  readonly notify: (type: NotificationType, body?: Record<string, unknown>) => Effect.Effect<void>;
+  readonly notify: (notification: Notification) => Effect.Effect<void>;
   /** Succeeds with undefined once the feed is subscribed, or with the reason the watch ended before that. */
-  readonly ready?: Deferred.Deferred<string | undefined, IntegrationError>;
+  readonly ready?: Deferred.Deferred<string | undefined, IntegrationError> | undefined;
 }
-
-const errorBody = (message: string) => ({ error: { code: -32000, message } });
 
 const messageOf = (cause: Cause.Cause<unknown>): string => {
   const failure = Cause.squash(cause);
@@ -56,8 +63,8 @@ export const runWatch = Effect.fn("Watch.run")(function* (
 ): Effect.fn.Return<string, IntegrationError, Feeds.Service | Scope.Scope> {
   const feeds = yield* Feeds.Service;
   const announce = Health.$match({
-    Live: () => options.notify("active"),
-    Degraded: ({ reason }) => options.notify("error", errorBody(reason)),
+    Live: () => options.notify({ type: "active" }),
+    Degraded: ({ reason }) => options.notify({ type: "error", reason }),
   });
   const deliver = (input: Event) =>
     Effect.gen(function* () {
@@ -103,7 +110,8 @@ export const runWatch = Effect.fn("Watch.run")(function* (
             message: `transform failed on ${eventId}: the delivered event exceeds ${MAX_EVENT_BYTES} bytes; return a shorter string`,
           }),
         );
-      yield* options.notify("event", {
+      yield* options.notify({
+        type: "event",
         eventId,
         name: options.eventKind.name,
         timestamp: delivered.timestamp,
@@ -134,7 +142,7 @@ export const runWatch = Effect.fn("Watch.run")(function* (
     );
   });
   const heartbeat = Effect.sleep(HEARTBEAT_INTERVAL).pipe(
-    Effect.andThen(options.notify("heartbeat")),
+    Effect.andThen(options.notify({ type: "heartbeat" })),
     Effect.forever,
   );
   const reason = yield* Effect.raceAllFirst([
@@ -143,6 +151,6 @@ export const runWatch = Effect.fn("Watch.run")(function* (
     Effect.scoped(session),
     heartbeat,
   ]);
-  yield* options.notify("terminated", errorBody(reason));
+  yield* options.notify({ type: "terminated", reason });
   return reason;
 });
