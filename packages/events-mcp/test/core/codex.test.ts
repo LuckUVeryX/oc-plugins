@@ -26,7 +26,6 @@ const reply = (socket: WebSocket, frame: Frame, body: Record<string, unknown>) =
 const watchParams = {
   event: "lark.im.message.receive_v1",
   watchId: "pipeline",
-  params: { group: "mine" },
   script: "return 'wake'",
 };
 

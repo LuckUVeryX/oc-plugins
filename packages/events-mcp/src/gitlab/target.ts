@@ -7,6 +7,8 @@ import {
 } from "../core/integration.ts";
 import type { GitlabClient } from "./client.ts";
 
+export const NoteableType = Schema.Literals(["merge_request", "issue"]);
+
 type Target = Data.TaggedEnum<{
   Project: { readonly project: string };
   Commit: { readonly project: string; readonly sha: string };
@@ -220,7 +222,7 @@ interface EventTarget {
 }
 
 const mergeRequestTarget = (host: string): string =>
-  `Instead of params, pass a merge request link such as https://${host}/group/project/-/merge_requests/123, or the shorthand group/project!123.`;
+  `A merge request link such as https://${host}/group/project/-/merge_requests/123, or the shorthand group/project!123.`;
 
 const mergeRequest: EventTarget = {
   takes: () => "a merge request link, or the shorthand group/project!123",
@@ -241,9 +243,12 @@ const events: Readonly<Record<string, EventTarget>> = {
     takes: (host) =>
       `a project path such as group/project, a project link such as https://${host}/group/project, or a commit link such as https://${host}/group/project/-/commit/<full sha>`,
     description: (host) =>
-      `Instead of params, pass a project path such as group/project, or a project link such as https://${host}/group/project, to follow every pipeline in the project. Pass a commit link such as https://${host}/group/project/-/commit/<full sha> to follow that commit's pipelines.`,
+      `A project path such as group/project, or a project link such as https://${host}/group/project, follows every pipeline in the project. A commit link such as https://${host}/group/project/-/commit/<full sha>, or the shorthand group/project@<full sha>, follows that commit's pipelines.`,
     resolve: {
-      Project: (target) => Effect.succeed({ projectFullPath: target.project }),
+      Project: (target, client) =>
+        read(client, IdResponse, `/projects/${encodeURIComponent(target.project)}`, "project").pipe(
+          Effect.as({ projectFullPath: target.project }),
+        ),
       Commit: (target, client) =>
         read(
           client,
@@ -260,8 +265,7 @@ const events: Readonly<Record<string, EventTarget>> = {
   },
   ciPipelineStatusUpdated: {
     takes: (host) => `a pipeline link such as https://${host}/group/project/-/pipelines/123`,
-    description: (host) =>
-      `Instead of params, pass a pipeline link such as https://${host}/group/project/-/pipelines/123.`,
+    description: (host) => `A pipeline link such as https://${host}/group/project/-/pipelines/123.`,
     resolve: {
       Pipeline: (target, client) =>
         read(
@@ -274,8 +278,7 @@ const events: Readonly<Record<string, EventTarget>> = {
   },
   ciJobStatusUpdated: {
     takes: (host) => `a job link such as https://${host}/group/project/-/jobs/123`,
-    description: (host) =>
-      `Instead of params, pass a job link such as https://${host}/group/project/-/jobs/123.`,
+    description: (host) => `A job link such as https://${host}/group/project/-/jobs/123.`,
     resolve: {
       Job: (target, client) =>
         read(client, IdResponse, projectPath(target.project, `jobs/${target.id}`), "job").pipe(
@@ -290,7 +293,7 @@ const events: Readonly<Record<string, EventTarget>> = {
     takes: () =>
       "a merge request link, an issue link, the shorthand group/project!123, or the shorthand group/project#123",
     description: () =>
-      `Instead of params, pass a merge request or issue link, or a shorthand such as group/project!123 or group/project#123. An issue also works as a work item link under /-/work_items/.`,
+      `A merge request or issue link, or a shorthand such as group/project!123 or group/project#123. An issue also works as a work item link under /-/work_items/.`,
     resolve: {
       MergeRequest: (target, client) =>
         read(
@@ -303,6 +306,7 @@ const events: Readonly<Record<string, EventTarget>> = {
             projectId: value.project_id,
             noteableType: "merge_request",
             noteableId: value.id,
+            noteableIid: target.iid,
           })),
         ),
       Issue: (target, client) =>
@@ -316,6 +320,7 @@ const events: Readonly<Record<string, EventTarget>> = {
             projectId: value.project_id,
             noteableType: "issue",
             noteableId: value.id,
+            noteableIid: target.iid,
           })),
         ),
     },

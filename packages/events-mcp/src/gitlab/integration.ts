@@ -2,26 +2,33 @@ import { Effect, Option, Schema } from "effect";
 import {
   type EventKind,
   type Event,
-  Rejected,
   type Integration,
   type IntegrationError,
   IntegrationName,
+  Rejected,
 } from "../core/integration.ts";
 import generated from "./events.json";
 import { GitlabSocket, type ChannelIdentifier } from "./socket.ts";
 import { type GitlabEvent, decodeGitlabCatalog } from "./catalog.ts";
-import { GitlabClient, GraphqlResult, graphqlFailure, makeGetTool } from "./client.ts";
+import { GitlabClient, makeGetTool } from "./client.ts";
 import { GitlabAuth } from "./auth.ts";
-import { globalIdHint, readNoteable } from "./noteable.ts";
 import { makeNotesEvent } from "./notes.ts";
 import { targetFor, type TargetSupport } from "./target.ts";
 import { subscribeToChannel } from "./channel.ts";
-import type { GitlabIdentity } from "./token.ts";
 
 const catalog = decodeGitlabCatalog(generated);
 
 const GraphqlMessage = Schema.Struct({
-  result: Schema.optionalKey(Schema.NullOr(GraphqlResult)),
+  result: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        data: Schema.optionalKey(Schema.NullOr(Schema.JsonObject)),
+        errors: Schema.optionalKey(
+          Schema.NullOr(Schema.Array(Schema.Struct({ message: Schema.String }))),
+        ),
+      }),
+    ),
+  ),
 });
 
 const toEvent = (
@@ -37,7 +44,10 @@ const toEvent = (
     const result = decoded.value.result;
     if (result === null || result === undefined) return Option.none();
     const errors = result.errors ?? [];
-    if (errors.length > 0) return yield* Effect.fail(graphqlFailure(errors));
+    if (errors.length > 0)
+      return yield* Effect.fail(
+        new Rejected({ message: errors.map((error) => error.message).join("; ") }),
+      );
     const data = result.data;
     if (data === null || data === undefined) return Option.none();
     const payload = data[event.name];
@@ -50,72 +60,32 @@ const toEvent = (
     return Option.some({ payload: object.value });
   });
 
-const identifierFor = (event: GitlabEvent, params: Schema.JsonObject): ChannelIdentifier => ({
+const identifierFor = (event: GitlabEvent, variables: Schema.JsonObject): ChannelIdentifier => ({
   channel: "GraphqlChannel",
   query: event.query,
-  variables: params,
+  variables,
   operationName: null,
   nonce: crypto.randomUUID(),
 });
-
-const databaseId = (globalId: string): string => globalId.slice(globalId.lastIndexOf("/") + 1);
-
-const AccessParams = Schema.Struct({
-  projectFullPath: Schema.optionalKey(Schema.String),
-  projectId: Schema.optionalKey(Schema.String),
-  userId: Schema.optionalKey(Schema.String),
-  issuableId: Schema.optionalKey(Schema.String),
-});
-
-const checkProject = (
-  client: GitlabClient.Interface,
-  project: { readonly fullPath: string } | { readonly id: string },
-): Effect.Effect<void, IntegrationError> => {
-  const label = "fullPath" in project ? project.fullPath : project.id;
-  const path =
-    "fullPath" in project
-      ? `/projects/${encodeURIComponent(project.fullPath)}`
-      : `/projects/${databaseId(project.id)}`;
-  return client.get({ path }).pipe(
-    Effect.catchTag("Integration.Rejected", (error) =>
-      Effect.fail(
-        new Rejected({
-          message: `Project ${label} is not accessible with this GitLab token: ${error.message}`,
-        }),
-      ),
-    ),
-  );
-};
-
-const checkUser = (
-  identity: GitlabIdentity,
-  userId: string,
-): Effect.Effect<void, IntegrationError> => {
-  if (databaseId(userId) === String(identity.userId)) return Effect.void;
-  return Effect.fail(
-    new Rejected({
-      message: `userId ${userId} is not the token's user, @${identity.username} (gid://gitlab/User/${identity.userId}). GitLab delivers this event to the merge request's author, assignees, and reviewers.`,
-    }),
-  );
-};
 
 const graphqlEvent = (options: {
   readonly event: GitlabEvent;
   readonly socket: GitlabSocket.Interface;
   readonly target: TargetSupport | undefined;
-  readonly checkAccess: (params: Schema.JsonObject) => Effect.Effect<void, IntegrationError>;
+  readonly variables: (
+    params: Schema.JsonObject,
+  ) => Effect.Effect<Schema.JsonObject, IntegrationError>;
 }): EventKind => ({
   name: options.event.name,
   description: options.event.description,
-  params: options.event.params,
   payload: options.event.payload,
   target: options.target,
   subscribe: (params) =>
     Effect.gen(function* () {
-      yield* options.checkAccess(params);
+      const variables = yield* options.variables(params);
       return yield* subscribeToChannel({
         socket: options.socket,
-        identifier: identifierFor(options.event, params),
+        identifier: identifierFor(options.event, variables),
         toEvent: (message) => toEvent(options.event, message),
       });
     }),
@@ -129,24 +99,9 @@ export const integration: Effect.Effect<
   const identity = yield* GitlabAuth.Service;
   const client = yield* GitlabClient.Service;
   const socket = yield* GitlabSocket.Service;
-  const checkAccess = Effect.fn("Gitlab.checkAccess")(function* (params: Schema.JsonObject) {
-    const access = yield* Schema.decodeUnknownEffect(AccessParams)(params).pipe(
-      Effect.mapError((error) => new Rejected({ message: error.message })),
-    );
-    const token = yield* identity.identity;
-    if (access.projectFullPath !== undefined)
-      return yield* checkProject(client, { fullPath: access.projectFullPath });
-    if (access.projectId !== undefined)
-      return yield* checkProject(client, { id: access.projectId });
-    if (access.userId !== undefined) return yield* checkUser(token, access.userId);
-    if (access.issuableId !== undefined)
-      return yield* readNoteable(
-        client,
-        "merge_request",
-        access.issuableId,
-        globalIdHint("merge_request"),
-      ).pipe(Effect.asVoid);
-  });
+  const tokenUser = identity.identity.pipe(
+    Effect.map((user) => ({ userId: `gid://gitlab/User/${user.userId}` })),
+  );
   const supportFor = (event: string) =>
     Effect.gen(function* () {
       const support = targetFor({ event, host: identity.host, client });
@@ -164,18 +119,18 @@ export const integration: Effect.Effect<
             event,
             socket,
             target: yield* supportFor(event.name),
-            checkAccess,
+            // GitLab sends this event only to the token's user, so the server fills userId itself.
+            variables:
+              event.name === "userMergeRequestUpdated"
+                ? () => tokenUser
+                : (params) => Effect.succeed(params),
           });
         }),
       )),
-      makeNotesEvent({
-        client,
-        socket,
-        target: yield* supportFor("noteable.notes_changed"),
-      }),
+      makeNotesEvent({ socket, target: yield* supportFor("noteable.notes_changed") }),
     ],
     instructions:
-      "GitLab: most events take target. Pass a link or shorthand, and the server reads it into params. list_events shows which events take one. Otherwise read with gitlab_get to find a project, pipeline, or merge request id before arming a watch, or from inside the script. Most params take a global id, and each param description says how to build it. noteable.notes_changed takes database ids instead.",
+      "GitLab: every event except userMergeRequestUpdated takes a target, a link or shorthand such as group/project!123. The server reads the resource to check access, and `watches` lists the params it resolved to. Read more with gitlab_get, before arming a watch or from inside the script.",
   };
 });
 

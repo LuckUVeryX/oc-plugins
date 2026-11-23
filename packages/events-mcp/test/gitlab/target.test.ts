@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest";
 import { Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
 import { GitlabSocket } from "../../src/gitlab/socket.ts";
 import type { GetInput } from "../../src/core/tool.ts";
-import { GitlabClient, type GraphqlRequest } from "../../src/gitlab/client.ts";
+import { GitlabClient } from "../../src/gitlab/client.ts";
 import { GitlabAuth } from "../../src/gitlab/auth.ts";
 import { Gitlab } from "../../src/gitlab/integration.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
@@ -22,8 +22,13 @@ const identity: GitlabIdentity = {
 };
 
 const sha = "0123456789abcdef0123456789abcdef01234567";
-const mergeRequest = { projectId: 599, noteableType: "merge_request", noteableId: 48090 };
-const issue = { projectId: 599, noteableType: "issue", noteableId: 1183 };
+const mergeRequest = {
+  projectId: 599,
+  noteableType: "merge_request",
+  noteableId: 48090,
+  noteableIid: 32,
+};
+const issue = { projectId: 599, noteableType: "issue", noteableId: 1183, noteableIid: 30 };
 
 const resources: Readonly<Record<string, Schema.Json>> = {
   "/projects/group%2Fproject": { id: 599 },
@@ -50,7 +55,6 @@ const makeFakeSocket = () => {
 
 const makeFakeClient = (getError?: IntegrationError) => {
   const gets: Array<GetInput> = [];
-  const graphqls: Array<GraphqlRequest> = [];
   const client: GitlabClient.Interface = {
     get: (input) => {
       gets.push(input);
@@ -60,23 +64,8 @@ const makeFakeClient = (getError?: IntegrationError) => {
         ? Effect.fail(new Rejected({ message: `GitLab HTTP 404 on ${input.path}: Not found` }))
         : Effect.succeed(body);
     },
-    graphql: (request) => {
-      graphqls.push(request);
-      return Effect.succeed({
-        mergeRequest: {
-          id: "gid://gitlab/MergeRequest/48090",
-          iid: "32",
-          projectId: 599,
-        },
-        issue: {
-          id: "gid://gitlab/Issue/1183",
-          iid: "30",
-          projectId: 599,
-        },
-      });
-    },
   };
-  return { client, gets, graphqls };
+  return { client, gets };
 };
 
 const setup = async (getError?: IntegrationError) => {
@@ -101,27 +90,6 @@ const setup = async (getError?: IntegrationError) => {
 
 const scripts = { script: "return null" };
 
-const subscriptionOf = async (event: string, args: Record<string, unknown>) => {
-  const { integration, socket } = await setup();
-  const h = await connect({ integrations: [integration] });
-  try {
-    h.stream({ ...scripts, ...args }, event);
-    await vi.waitFor(() => expect(socket.identifiers).toHaveLength(1));
-    const identifier = socket.identifiers[0];
-    if (identifier === undefined) throw new Error("missing subscription identifier");
-    return identifier;
-  } finally {
-    await h.close();
-  }
-};
-
-const withoutNonce = (identifier: Schema.Json) => {
-  if (typeof identifier !== "object" || identifier === null || Array.isArray(identifier))
-    throw new Error("expected an object subscription identifier");
-  const { nonce: _, ...rest } = identifier as Record<string, Schema.Json>;
-  return rest;
-};
-
 const rejectionOf = async (
   event: string,
   args: Record<string, unknown>,
@@ -139,7 +107,7 @@ const rejectionOf = async (
   }
 };
 
-const equivalent = [
+const resolved = [
   [
     "gitlab.noteable.notes_changed",
     "https://gitlab.test/group/project/-/merge_requests/32",
@@ -192,11 +160,24 @@ const equivalent = [
   ],
 ] as const;
 
-test("a target arms the same subscription as the params it resolves to", async () => {
-  for (const [event, target, params] of equivalent) {
-    const fromTarget = await subscriptionOf(event, { watchId: "from-target", target });
-    const fromParams = await subscriptionOf(event, { watchId: "from-params", params });
-    expect(withoutNonce(fromTarget)).toEqual(withoutNonce(fromParams));
+test("a target resolves to the params its event subscribes with", async () => {
+  const { integration, socket } = await setup();
+  const h = await connect({ integrations: [integration], harness: "claude" });
+  try {
+    for (const [index, [event, target, params]] of resolved.entries()) {
+      const armed = await h.call("watch", {
+        event,
+        watchId: `target-${index}`,
+        target,
+        ...scripts,
+      });
+      expect(armed.params).toEqual(params);
+    }
+    // Watches whose targets resolve to the same params share one subscription.
+    const feeds = new Set(resolved.map(([event, , params]) => JSON.stringify([event, params])));
+    expect(socket.identifiers).toHaveLength(feeds.size);
+  } finally {
+    await h.close();
   }
 });
 
@@ -227,6 +208,11 @@ test("a target that cannot arm the watch is rejected before subscribing", async 
       message: ["404", "repository/commits"],
     },
     {
+      event: "gitlab.ciPipelineStatusesUpdated",
+      args: { watchId: "private-project", target: "group/private" },
+      message: ["404", "/projects/group%2Fprivate"],
+    },
+    {
       event: "gitlab.noteable.notes_changed",
       args: { watchId: "file-scheme", target: "file:///group/project/-/merge_requests/32" },
       message: ["must be an http or https link"],
@@ -251,12 +237,8 @@ test("a target that cannot arm the watch is rejected before subscribing", async 
     },
     {
       event: "gitlab.mergeRequestApprovalStateUpdated",
-      args: {
-        watchId: "both",
-        params: { issuableId: "gid://gitlab/MergeRequest/48090" },
-        target: "group/project!32",
-      },
-      message: ["Pass params or target, not both"],
+      args: { watchId: "missing" },
+      message: ["gitlab.mergeRequestApprovalStateUpdated needs a target", "group/project!123"],
     },
     {
       event: "gitlab.userMergeRequestUpdated",
@@ -309,29 +291,26 @@ test("watches shows the params a target resolved to in OpenCode", async () => {
       { watchId: "by-target", target: "group/project!32", ...scripts },
       "gitlab.noteable.notes_changed",
     );
-    h.stream({ watchId: "by-params", params: issue, ...scripts }, "gitlab.noteable.notes_changed");
-    await vi.waitFor(() => expect(socket.identifiers).toHaveLength(2));
-    const listed = await h.call("watches");
-    const byId = new Map(
-      listed.watches.map((watch: { watchId: string }) => [watch.watchId, watch]),
-    );
-    expect(byId.get("by-target")).toMatchObject({
+    await vi.waitFor(() => expect(socket.identifiers).toHaveLength(1));
+    const [watch] = (await h.call("watches")).watches;
+    expect(watch).toMatchObject({
+      watchId: "by-target",
       arguments: { target: "group/project!32" },
       params: mergeRequest,
     });
-    expect(byId.get("by-params")).not.toHaveProperty("params");
   } finally {
     await h.close();
   }
 });
 
-test("list_events offers target only where the event can resolve one", async () => {
+test("list_events requires target only where the event can resolve one", async () => {
   const { integration } = await setup();
   const h = await connect({ integrations: [integration], harness: "claude" });
   try {
     const listed = await h.call("list_events");
     type InputSchema = {
       properties?: Record<string, { description?: string }>;
+      required?: ReadonlyArray<string>;
     };
     const byName = new Map<string, InputSchema>(
       listed.events.map((event: { name: string; inputSchema: InputSchema }) => [
@@ -340,8 +319,9 @@ test("list_events offers target only where the event can resolve one", async () 
       ]),
     );
     expect(byName.get("gitlab.ciJobStatusUpdated")?.properties?.target?.description).toContain(
-      "Instead of params, pass a job link",
+      "A job link",
     );
+    expect(byName.get("gitlab.ciJobStatusUpdated")?.required).toContain("target");
     expect(byName.get("gitlab.userMergeRequestUpdated")?.properties?.target).toBeUndefined();
   } finally {
     await h.close();

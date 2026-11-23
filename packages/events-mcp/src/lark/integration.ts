@@ -24,7 +24,6 @@ export const integration: Effect.Effect<Integration, never, LarkAuth.Service | L
     const events: ReadonlyArray<EventKind> = catalog.events.map((event) => ({
       name: event.name,
       description: event.description ?? event.name,
-      params: { type: "object", properties: {}, additionalProperties: false },
       payload: event.payloadSchema,
       subscribe: () => socket.subscribe({ event: event.name }),
     }));

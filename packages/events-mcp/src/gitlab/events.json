@@ -2,38 +2,7 @@
   "events": [
     {
       "name": "ciPipelineStatusesUpdated",
-      "description": "Watch a project's pipeline status changes. Pass projectFullPath, such as group/project, or projectId. Pass sha to follow one commit.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "projectId": {
-            "type": "string",
-            "pattern": "^gid://gitlab/Project/\\d+$",
-            "description": "Use gid://gitlab/Project/<id>. Replace <id> with the numeric id from GET /projects/:id."
-          },
-          "projectFullPath": {
-            "type": "string",
-            "description": "Project path as it appears in the web URL, such as group/project."
-          },
-          "sha": {
-            "type": "string",
-            "description": "Filter updates to pipelines run for the given commit SHA."
-          }
-        },
-        "anyOf": [
-          {
-            "required": [
-              "projectId"
-            ]
-          },
-          {
-            "required": [
-              "projectFullPath"
-            ]
-          }
-        ],
-        "additionalProperties": false
-      },
+      "description": "Watch the pipeline status changes in a project, or for one commit.",
       "query": "subscription($projectId: ProjectID, $projectFullPath: ID, $sha: String) { ciPipelineStatusesUpdated(projectId: $projectId, projectFullPath: $projectFullPath, sha: $sha) { id iid name status ref sha source path duration failureReason createdAt updatedAt finishedAt detailedStatus { name label text } project { id fullPath name webUrl } mergeRequest { id iid title state webUrl } user { username name } } }",
       "payload": {
         "type": "object",
@@ -122,11 +91,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "fullPath",
-              "name"
-            ]
+            "required": ["id", "fullPath", "name"]
           },
           "mergeRequest": {
             "type": "object",
@@ -142,24 +107,13 @@
               },
               "state": {
                 "type": "string",
-                "enum": [
-                  "merged",
-                  "opened",
-                  "closed",
-                  "locked",
-                  "all"
-                ]
+                "enum": ["merged", "opened", "closed", "locked", "all"]
               },
               "webUrl": {
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "iid",
-              "title",
-              "state"
-            ]
+            "required": ["id", "iid", "title", "state"]
           },
           "user": {
             "type": "object",
@@ -171,39 +125,15 @@
                 "type": "string"
               }
             },
-            "required": [
-              "username",
-              "name"
-            ]
+            "required": ["username", "name"]
           }
         },
-        "required": [
-          "id",
-          "iid",
-          "status",
-          "createdAt",
-          "updatedAt",
-          "detailedStatus"
-        ]
+        "required": ["id", "iid", "status", "createdAt", "updatedAt", "detailedStatus"]
       }
     },
     {
       "name": "ciPipelineStatusUpdated",
-      "description": "Follow one pipeline through its status changes. Pass its global id as pipelineId.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "pipelineId": {
-            "type": "string",
-            "pattern": "^gid://gitlab/Ci::Pipeline/\\d+$",
-            "description": "Use gid://gitlab/Ci::Pipeline/<id>. Replace <id> with the pipeline's numeric id from GET /projects/:id/pipelines/:pipeline_id."
-          }
-        },
-        "required": [
-          "pipelineId"
-        ],
-        "additionalProperties": false
-      },
+      "description": "Follow one pipeline through its status changes.",
       "query": "subscription($pipelineId: CiPipelineID!) { ciPipelineStatusUpdated(pipelineId: $pipelineId) { id iid name status ref sha source path duration failureReason createdAt updatedAt finishedAt detailedStatus { name label text } project { id fullPath name webUrl } mergeRequest { id iid title state webUrl } user { username name } } }",
       "payload": {
         "type": "object",
@@ -292,11 +222,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "fullPath",
-              "name"
-            ]
+            "required": ["id", "fullPath", "name"]
           },
           "mergeRequest": {
             "type": "object",
@@ -312,24 +238,13 @@
               },
               "state": {
                 "type": "string",
-                "enum": [
-                  "merged",
-                  "opened",
-                  "closed",
-                  "locked",
-                  "all"
-                ]
+                "enum": ["merged", "opened", "closed", "locked", "all"]
               },
               "webUrl": {
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "iid",
-              "title",
-              "state"
-            ]
+            "required": ["id", "iid", "title", "state"]
           },
           "user": {
             "type": "object",
@@ -341,39 +256,15 @@
                 "type": "string"
               }
             },
-            "required": [
-              "username",
-              "name"
-            ]
+            "required": ["username", "name"]
           }
         },
-        "required": [
-          "id",
-          "iid",
-          "status",
-          "createdAt",
-          "updatedAt",
-          "detailedStatus"
-        ]
+        "required": ["id", "iid", "status", "createdAt", "updatedAt", "detailedStatus"]
       }
     },
     {
       "name": "ciJobStatusUpdated",
-      "description": "Follow one job through its status changes, for example while a retry runs. Pass its global id as jobId.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "jobId": {
-            "type": "string",
-            "pattern": "^gid://gitlab/Ci::Build/\\d+$",
-            "description": "Use gid://gitlab/Ci::Build/<id>. Replace <id> with the job's numeric id from GET /projects/:id/jobs/:job_id."
-          }
-        },
-        "required": [
-          "jobId"
-        ],
-        "additionalProperties": false
-      },
+      "description": "Follow one job through its status changes, for example while a retry runs.",
       "query": "subscription($jobId: CiBuildID!) { ciJobStatusUpdated(jobId: $jobId) { id name status kind refName shortSha webPath duration queuedDuration failureMessage allowFailure retryable manualJob createdAt startedAt finishedAt stage { name status } project { id fullPath name webUrl } pipeline { id iid path } } }",
       "payload": {
         "type": "object",
@@ -404,10 +295,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "BUILD",
-              "BRIDGE"
-            ]
+            "enum": ["BUILD", "BRIDGE"]
           },
           "refName": {
             "type": "string"
@@ -472,11 +360,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "fullPath",
-              "name"
-            ]
+            "required": ["id", "fullPath", "name"]
           },
           "pipeline": {
             "type": "object",
@@ -493,32 +377,12 @@
             }
           }
         },
-        "required": [
-          "kind",
-          "shortSha",
-          "allowFailure",
-          "retryable",
-          "createdAt"
-        ]
+        "required": ["kind", "shortSha", "allowFailure", "retryable", "createdAt"]
       }
     },
     {
       "name": "userMergeRequestUpdated",
-      "description": "Watch merge requests whose author, assignee, or reviewer is the token's user. Pass the token user's global id as userId.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "userId": {
-            "type": "string",
-            "pattern": "^gid://gitlab/User/\\d+$",
-            "description": "Use gid://gitlab/User/<id>. Replace <id> with the token user's numeric id from GET /user."
-          }
-        },
-        "required": [
-          "userId"
-        ],
-        "additionalProperties": false
-      },
+      "description": "Watch merge requests whose author, assignee, or reviewer is the token's user.",
       "query": "subscription($userId: UserID!) { userMergeRequestUpdated(userId: $userId) { id iid name title state draft mergeStatusEnum detailedMergeStatus mergeable approved approvalsLeft approvalsRequired createdAt updatedAt mergedAt closedAt sourceBranch targetBranch diffHeadSha webUrl project { id fullPath name webUrl } author { username name } headPipeline { id iid status ref sha path updatedAt } } }",
       "payload": {
         "type": "object",
@@ -537,13 +401,7 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "merged",
-              "opened",
-              "closed",
-              "locked",
-              "all"
-            ]
+            "enum": ["merged", "opened", "closed", "locked", "all"]
           },
           "draft": {
             "type": "boolean"
@@ -639,11 +497,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "fullPath",
-              "name"
-            ]
+            "required": ["id", "fullPath", "name"]
           },
           "author": {
             "type": "object",
@@ -655,10 +509,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "username",
-              "name"
-            ]
+            "required": ["username", "name"]
           },
           "headPipeline": {
             "type": "object",
@@ -700,12 +551,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "iid",
-              "status",
-              "updatedAt"
-            ]
+            "required": ["id", "iid", "status", "updatedAt"]
           }
         },
         "required": [
@@ -726,21 +572,7 @@
     },
     {
       "name": "mergeRequestMergeStatusUpdated",
-      "description": "Follow one merge request while GitLab recomputes whether it can merge. Pass its global id as issuableId.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "issuableId": {
-            "type": "string",
-            "pattern": "^gid://gitlab/MergeRequest/\\d+$",
-            "description": "Use gid://gitlab/MergeRequest/<id>. Replace <id> with the merge request's database id from GET /projects/:id/merge_requests/:iid, not the iid."
-          }
-        },
-        "required": [
-          "issuableId"
-        ],
-        "additionalProperties": false
-      },
+      "description": "Follow one merge request while GitLab recomputes whether it can merge.",
       "query": "subscription($issuableId: IssuableID!) { mergeRequestMergeStatusUpdated(issuableId: $issuableId) { ... on MergeRequest { id iid name title state draft mergeStatusEnum detailedMergeStatus mergeable approved approvalsLeft approvalsRequired createdAt updatedAt mergedAt closedAt sourceBranch targetBranch diffHeadSha webUrl project { id fullPath name webUrl } author { username name } headPipeline { id iid status ref sha path updatedAt } } } }",
       "payload": {
         "type": "object",
@@ -759,13 +591,7 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "merged",
-              "opened",
-              "closed",
-              "locked",
-              "all"
-            ]
+            "enum": ["merged", "opened", "closed", "locked", "all"]
           },
           "draft": {
             "type": "boolean"
@@ -861,11 +687,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "fullPath",
-              "name"
-            ]
+            "required": ["id", "fullPath", "name"]
           },
           "author": {
             "type": "object",
@@ -877,10 +699,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "username",
-              "name"
-            ]
+            "required": ["username", "name"]
           },
           "headPipeline": {
             "type": "object",
@@ -922,12 +741,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "iid",
-              "status",
-              "updatedAt"
-            ]
+            "required": ["id", "iid", "status", "updatedAt"]
           }
         },
         "required": [
@@ -948,21 +762,7 @@
     },
     {
       "name": "mergeRequestReviewersUpdated",
-      "description": "Watch one merge request's reviewers, for example while you wait to be added as a reviewer. Pass its global id as issuableId.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "issuableId": {
-            "type": "string",
-            "pattern": "^gid://gitlab/MergeRequest/\\d+$",
-            "description": "Use gid://gitlab/MergeRequest/<id>. Replace <id> with the merge request's database id from GET /projects/:id/merge_requests/:iid, not the iid."
-          }
-        },
-        "required": [
-          "issuableId"
-        ],
-        "additionalProperties": false
-      },
+      "description": "Watch one merge request's reviewers, for example while you wait to be added as a reviewer.",
       "query": "subscription($issuableId: IssuableID!) { mergeRequestReviewersUpdated(issuableId: $issuableId) { ... on MergeRequest { id iid name title state draft mergeStatusEnum detailedMergeStatus mergeable approved approvalsLeft approvalsRequired createdAt updatedAt mergedAt closedAt sourceBranch targetBranch diffHeadSha webUrl project { id fullPath name webUrl } author { username name } headPipeline { id iid status ref sha path updatedAt } } } }",
       "payload": {
         "type": "object",
@@ -981,13 +781,7 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "merged",
-              "opened",
-              "closed",
-              "locked",
-              "all"
-            ]
+            "enum": ["merged", "opened", "closed", "locked", "all"]
           },
           "draft": {
             "type": "boolean"
@@ -1083,11 +877,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "fullPath",
-              "name"
-            ]
+            "required": ["id", "fullPath", "name"]
           },
           "author": {
             "type": "object",
@@ -1099,10 +889,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "username",
-              "name"
-            ]
+            "required": ["username", "name"]
           },
           "headPipeline": {
             "type": "object",
@@ -1144,12 +931,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "iid",
-              "status",
-              "updatedAt"
-            ]
+            "required": ["id", "iid", "status", "updatedAt"]
           }
         },
         "required": [
@@ -1170,21 +952,7 @@
     },
     {
       "name": "mergeRequestApprovalStateUpdated",
-      "description": "Watch one merge request's approvals, for example while you wait for approval. Pass its global id as issuableId.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "issuableId": {
-            "type": "string",
-            "pattern": "^gid://gitlab/MergeRequest/\\d+$",
-            "description": "Use gid://gitlab/MergeRequest/<id>. Replace <id> with the merge request's database id from GET /projects/:id/merge_requests/:iid, not the iid."
-          }
-        },
-        "required": [
-          "issuableId"
-        ],
-        "additionalProperties": false
-      },
+      "description": "Watch one merge request's approvals, for example while you wait for approval.",
       "query": "subscription($issuableId: IssuableID!) { mergeRequestApprovalStateUpdated(issuableId: $issuableId) { ... on MergeRequest { id iid name title state draft mergeStatusEnum detailedMergeStatus mergeable approved approvalsLeft approvalsRequired createdAt updatedAt mergedAt closedAt sourceBranch targetBranch diffHeadSha webUrl project { id fullPath name webUrl } author { username name } headPipeline { id iid status ref sha path updatedAt } } } }",
       "payload": {
         "type": "object",
@@ -1203,13 +971,7 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "merged",
-              "opened",
-              "closed",
-              "locked",
-              "all"
-            ]
+            "enum": ["merged", "opened", "closed", "locked", "all"]
           },
           "draft": {
             "type": "boolean"
@@ -1305,11 +1067,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "fullPath",
-              "name"
-            ]
+            "required": ["id", "fullPath", "name"]
           },
           "author": {
             "type": "object",
@@ -1321,10 +1079,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "username",
-              "name"
-            ]
+            "required": ["username", "name"]
           },
           "headPipeline": {
             "type": "object",
@@ -1366,12 +1121,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "iid",
-              "status",
-              "updatedAt"
-            ]
+            "required": ["id", "iid", "status", "updatedAt"]
           }
         },
         "required": [

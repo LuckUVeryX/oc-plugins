@@ -14,10 +14,8 @@ import {
   Exit,
   Logger,
   Schema,
-  SchemaIssue,
   Scope,
 } from "effect";
-import type { JsonSchema } from "effect";
 import { isObject } from "effect/Predicate";
 import {
   decodeArguments,
@@ -28,10 +26,10 @@ import {
   watchIdProperty,
   WatchArguments,
 } from "./arguments.ts";
-import { Registry, type RegisteredEventKind } from "./registry.ts";
+import { Registry } from "./registry.ts";
 import { DecisionModel, type Decide } from "./decision-model.ts";
 import { bytes, MAX_SCRIPT_BYTES } from "./limits.ts";
-import type { IntegrationError } from "./integration.ts";
+import type { EventKind, IntegrationError } from "./integration.ts";
 import { makeRunScript, makeWatchState } from "./script.ts";
 import { inputJsonSchema } from "./tool.ts";
 import { Feeds } from "./feeds.ts";
@@ -64,49 +62,6 @@ const streamParams = Schema.toStandardSchemaV1(
 );
 
 const invalidParams = (message: string) => new ProtocolError(INVALID_PARAMS, message);
-
-const patternedParamHint = (params: JsonSchema.JsonSchema, name: string): string | undefined => {
-  if (!isObject(params)) return undefined;
-  const properties = params["properties"];
-  if (!isObject(properties)) return undefined;
-  const property = properties[name];
-  if (!isObject(property) || typeof property["pattern"] !== "string") return undefined;
-  const description = property["description"];
-  return typeof description === "string" ? `${name}: ${description}` : undefined;
-};
-
-const paramsError = (
-  event: RegisteredEventKind,
-  error: Schema.SchemaError,
-  args: Schema.JsonObject,
-): string => {
-  const issues = SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues;
-  const paramName = (issue: (typeof issues)[number]): string | undefined => {
-    const path = issue.path ?? [];
-    return path.length === 1 && typeof path[0] === "string" ? path[0] : undefined;
-  };
-  // A union of required params also reports branches the caller did not choose,
-  // so prefer a supplied param that failed over a missing one.
-  const supplied = Object.keys(args);
-  const failed = issues.filter((issue) => {
-    const name = paramName(issue);
-    return name !== undefined && supplied.includes(name);
-  });
-  const details = new Set(
-    (failed.length === 0 ? issues : failed).map((issue) => {
-      const name = paramName(issue);
-      const hint =
-        name === undefined || !supplied.includes(name)
-          ? undefined
-          : patternedParamHint(event.params, name);
-      if (hint !== undefined) return `${hint} (${issue.message})`;
-      const path = issue.path ?? [];
-      const where = path.length === 0 ? "" : `\n  at ${JSON.stringify(path)}`;
-      return `${issue.message}${where}`;
-    }),
-  );
-  return `Invalid params for ${event.name}: ${[...details].join("\n")}`;
-};
 
 const text = (value: unknown) => ({
   content: [
@@ -145,15 +100,11 @@ const watchInputSchema = (options: {
         description: "The event to watch, from list_events.",
       },
       watchId: watchIdProperty,
-      params: {
-        type: "object",
-        description: "Selects the resource to watch. list_events describes this event's params.",
-      },
       target: {
         type: "string",
         minLength: 1,
         description:
-          "Instead of params, a link or shorthand, for events whose list_events entry lists target.",
+          "A link or shorthand that names the resource, required for events whose list_events entry lists target.",
       },
       script: scriptProperty(options.toolPaths),
       expiresInSeconds: expiresInSecondsProperty(options.defaultExpiresInSeconds),
@@ -255,7 +206,6 @@ const buildServer = (options: ServerOptions): McpServer => {
       description: event.description || event.name,
       delivery: ["push"],
       inputSchema: inputSchemaDocument({
-        params: event.params,
         target: event.target?.description,
         toolPaths,
         defaultExpiresInSeconds: options.defaultExpiresInSeconds,
@@ -263,13 +213,16 @@ const buildServer = (options: ServerOptions): McpServer => {
       payloadSchema: { anyOf: [event.payload, { type: "string" }] },
     }));
 
-  const resolveParams = (event: RegisteredEventKind, decoded: DecodedArguments) =>
+  const resolveParams = (event: EventKind, decoded: DecodedArguments) =>
     Effect.gen(function* () {
-      if (decoded.target === undefined) return decoded.params ?? {};
-      if (decoded.params !== undefined)
-        return yield* Effect.fail(new Invalid({ message: "Pass params or target, not both" }));
-      if (event.target === undefined)
+      if (event.target === undefined) {
+        if (decoded.target === undefined) return {};
         return yield* Effect.fail(new Invalid({ message: `${event.name} does not take a target` }));
+      }
+      if (decoded.target === undefined)
+        return yield* Effect.fail(
+          new Invalid({ message: `${event.name} needs a target. ${event.target.description}` }),
+        );
       return yield* event.target
         .resolve(decoded.target)
         .pipe(
@@ -291,12 +244,7 @@ const buildServer = (options: ServerOptions): McpServer => {
         return yield* Effect.fail(
           new Invalid({ message: `script exceeds ${MAX_SCRIPT_BYTES} bytes; shorten it` }),
         );
-      const params = yield* resolveParams(event, decoded);
-      const eventParams = yield* Schema.decodeUnknownEffect(event.paramsSchema)(params, {
-        onExcessProperty: "error",
-      }).pipe(
-        Effect.mapError((error) => new Invalid({ message: paramsError(event, error, params) })),
-      );
+      const eventParams = yield* resolveParams(event, decoded);
       return { event, decoded, eventParams };
     });
 
@@ -332,7 +280,7 @@ const buildServer = (options: ServerOptions): McpServer => {
   const finish = (watchId: string, watch: Watch) => Effect.ensuring(release(watchId, watch));
 
   const startWatch = (input: {
-    readonly event: RegisteredEventKind;
+    readonly event: EventKind;
     readonly decoded: DecodedArguments;
     readonly eventParams: Schema.JsonObject;
     readonly watch: Watch;
@@ -395,7 +343,6 @@ const buildServer = (options: ServerOptions): McpServer => {
               const {
                 event: name,
                 watchId,
-                params,
                 target,
                 script,
                 expiresInSeconds: requestedExpiresInSeconds,
@@ -409,7 +356,6 @@ const buildServer = (options: ServerOptions): McpServer => {
                   .pipe(Effect.mapError((error) => new Invalid({ message: error.message })));
               const { event, decoded, eventParams } = yield* resolveWatch(name, {
                 watchId,
-                ...(params === undefined ? {} : { params }),
                 ...(target === undefined ? {} : { target }),
                 script,
                 ...(requestedExpiresInSeconds === undefined

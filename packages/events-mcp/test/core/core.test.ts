@@ -14,25 +14,6 @@ import { connect } from "../harness.ts";
 
 const pass = { script: "return input.event.data" };
 
-test("each feed receives an event the other feed also saw", async () => {
-  const h = await connect();
-  const events = () => h.notifications.filter((notification) => notification.type === "event");
-  const active = () => h.notifications.filter((notification) => notification.type === "active");
-  try {
-    h.stream({ watchId: "mine", params: { group: "mine" }, ...pass });
-    await vi.waitFor(() => expect(active()).toHaveLength(1));
-    h.stream({ watchId: "all", params: { group: "all" }, ...pass });
-    await vi.waitFor(() => expect(active()).toHaveLength(2));
-    h.publish({ eventId: "shared", payload: { message: { chat_id: "oc_shared" } } });
-    await vi.waitFor(() => expect(events()).toHaveLength(2));
-    expect(events().map((notification) => [notification.id, notification.eventId])).toEqual(
-      active().map((notification) => [notification.id, "shared"]),
-    );
-  } finally {
-    await h.close();
-  }
-});
-
 test("watches exposes each watch's public view without its handles", async () => {
   const h = await connect();
   try {
@@ -86,7 +67,6 @@ test("announces active before delivering the first event of a short stream", asy
   const event = {
     name: "tick",
     description: "A tick.",
-    params: {},
     payload: { type: "object" },
     subscribe: () => Effect.succeed({ events, health }),
   } satisfies EventKind;

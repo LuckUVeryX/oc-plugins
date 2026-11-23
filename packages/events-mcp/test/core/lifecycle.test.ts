@@ -10,7 +10,6 @@ const blocked: Integration = {
     {
       name: "ping",
       description: "A ping.",
-      params: { type: "object", properties: {}, additionalProperties: false },
       payload: { type: "object" },
       subscribe: () => Effect.never,
     },

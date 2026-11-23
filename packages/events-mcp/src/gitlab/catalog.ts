@@ -4,7 +4,6 @@ import { Schema } from "effect";
 export const GitlabEvent = Schema.Struct({
   name: Schema.NonEmptyString,
   description: Schema.NonEmptyString,
-  params: Schema.JsonObject,
   query: Schema.NonEmptyString,
   payload: Schema.JsonObject,
 });

@@ -1,39 +1,14 @@
-import {
-  Context,
-  Effect,
-  JsonSchema,
-  Layer,
-  Schema,
-  SchemaRepresentation,
-  type Scope,
-} from "effect";
+import { Context, Effect, Layer, type Scope } from "effect";
 import type { EventKind, Integration } from "./integration.ts";
-
-export interface RegisteredEventKind extends EventKind {
-  readonly name: string;
-  readonly paramsSchema: ReturnType<typeof compileParams>;
-}
 
 export interface Interface {
   readonly integrations: ReadonlyArray<Integration>;
-  readonly events: ReadonlyArray<RegisteredEventKind>;
-  readonly get: (name: string) => RegisteredEventKind | undefined;
+  /** Each event is named `<integration>.<event>`. */
+  readonly events: ReadonlyArray<EventKind>;
+  readonly get: (name: string) => EventKind | undefined;
 }
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/Registry") {}
-
-const compileParams = (event: EventKind, name: string) => {
-  try {
-    const document = JsonSchema.fromSchemaDraft2020_12(event.params);
-    const schema: Schema.Codec<unknown> = Schema.make(
-      // The catalog is generated and committed here, so its patterns are trusted.
-      SchemaRepresentation.fromJsonSchemaDocument(document, { patterns: "apply" }).ast,
-    );
-    return Schema.decodeTo(Schema.JsonObject)(schema);
-  } catch (error) {
-    throw new Error(`Invalid params schema for ${name}: ${String(error)}`);
-  }
-};
 
 export const layer = <R>(
   integrations: Effect.Effect<ReadonlyArray<Integration>, never, R>,
@@ -42,17 +17,13 @@ export const layer = <R>(
     Service,
     Effect.gen(function* () {
       const built = yield* integrations;
-      const byName = new Map<string, RegisteredEventKind>();
+      const byName = new Map<string, EventKind>();
       for (const integration of built)
         for (const event of integration.events) {
           const name = `${integration.name}.${event.name}`;
           if (byName.has(name))
             return yield* Effect.die(new Error(`Duplicate event names: ${name}`));
-          byName.set(name, {
-            ...event,
-            name,
-            paramsSchema: compileParams(event, name),
-          });
+          byName.set(name, { ...event, name });
         }
       return Service.of({
         integrations: built,

@@ -5,7 +5,7 @@ An agent in Claude Code arms a watch on GitLab, a pipeline changes, and the wake
 ## Sub-features
 
 - `claude-arm` lists the 22 events and arms one pipeline watch through the `list_events` and `watch` tools.
-- `claude-target` arms the watch from a `target`, a project path or a project or commit link, instead of hand-built `params`. `watches` then lists the resolved `params`.
+- `claude-target` arms the watch from a `target`, a project path or a project or commit link. `watches` then lists the resolved `params`.
 - `claude-wake` delivers a pipeline status change as a `notifications/claude/channel` message and starts a turn while the session is idle.
 - `claude-stop` ends the watch with `unwatch`, and `watches` no longer lists it.
 - `claude-transcript` records the channel text and the turn in the session JSONL, the durable receipt Claude Code gives.
@@ -35,7 +35,7 @@ Preconditions:
   EOF
   ```
 
-  Wait for `ARMED-OK claude-verify 20`. Match the timestamp, not the words: the prompt text sits in the pane too and contains `ARMED-OK <watchId>`. The pane shows `Called events-mcp 3 times` and a line such as `● ARMED-OK claude-verify 2026-11-23T03:42:16.643Z {"projectFullPath":"<project path>"}`. The params come from the `target`. To arm with `params {"projectFullPath": "<project path>"}` instead, replace the `target` clause; `watches` then lists no `params`. Pass one or the other, never both.
+  Wait for `ARMED-OK claude-verify 20`. Match the timestamp, not the words: the prompt text sits in the pane too and contains `ARMED-OK <watchId>`. The pane shows `Called events-mcp 3 times` and a line such as `● ARMED-OK claude-verify 2026-11-23T03:42:16.643Z {"projectFullPath":"<project path>"}`. The params come from the `target`.
 
 - **Arm proof.** Capture the pane. Run `scripts/tui.sh capture "$VERIFY_EVIDENCE/pane-armed.txt"`. It contains the `ARMED-OK` line and the expiry.
 - **Trigger.** Create one pipeline. Run `bun scripts/target.ts trigger | tee "$VERIFY_EVIDENCE/trigger.json"`. Note the `id`.

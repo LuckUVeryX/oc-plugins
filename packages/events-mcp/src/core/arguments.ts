@@ -1,5 +1,4 @@
-import { Effect, JsonSchema, Schema } from "effect";
-import { isObject } from "effect/Predicate";
+import { Effect, Schema } from "effect";
 import { MAX_EVENT_BYTES } from "./limits.ts";
 
 export class Invalid extends Schema.TaggedError<Invalid>()("Arguments.Invalid", {
@@ -11,7 +10,6 @@ export type WatchId = typeof WatchId.Type;
 
 export const WatchArguments = Schema.Struct({
   watchId: WatchId,
-  params: Schema.optionalKey(Schema.JsonObject),
   target: Schema.optionalKey(Schema.NonEmptyString),
   script: Schema.String,
   expiresInSeconds: Schema.optionalKey(
@@ -46,41 +44,22 @@ export const expiresInSecondsProperty = (defaultExpiresInSeconds: number) => ({
 });
 
 export const inputSchemaDocument = (options: {
-  readonly params: JsonSchema.JsonSchema;
   readonly target?: string | undefined;
   readonly toolPaths: ReadonlyArray<string>;
   readonly defaultExpiresInSeconds: number;
-}): Record<string, unknown> => {
-  const paramsProperties = options.params["properties"];
-  const paramsCount = isObject(paramsProperties) ? Object.keys(paramsProperties).length : 0;
-  return {
-    type: "object",
-    properties: {
-      watchId: watchIdProperty,
-      params: {
-        ...options.params,
-        description:
-          options.params["description"] ??
-          (paramsCount === 0
-            ? "This event takes no params."
-            : "Selects the resource to watch. The schema lists the fields."),
-      },
-      ...(options.target === undefined
-        ? {}
-        : {
-            target: {
-              type: "string",
-              minLength: 1,
-              description: options.target,
-            },
-          }),
-      script: scriptProperty(options.toolPaths),
-      expiresInSeconds: expiresInSecondsProperty(options.defaultExpiresInSeconds),
-    },
-    required: ["watchId", "script"],
-    additionalProperties: false,
-  };
-};
+}): Record<string, unknown> => ({
+  type: "object",
+  properties: {
+    watchId: watchIdProperty,
+    ...(options.target === undefined
+      ? {}
+      : { target: { type: "string", minLength: 1, description: options.target } }),
+    script: scriptProperty(options.toolPaths),
+    expiresInSeconds: expiresInSecondsProperty(options.defaultExpiresInSeconds),
+  },
+  required: options.target === undefined ? ["watchId", "script"] : ["watchId", "target", "script"],
+  additionalProperties: false,
+});
 
 export const decodeArguments = (value: unknown) =>
   Schema.decodeUnknownEffect(WatchArguments)(value, { onExcessProperty: "error" }).pipe(

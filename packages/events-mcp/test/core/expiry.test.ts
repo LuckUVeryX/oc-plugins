@@ -9,7 +9,6 @@ import { runWatch } from "../../src/core/watch.ts";
 const tick: EventKind = {
   name: "tick",
   description: "A tick.",
-  params: {},
   payload: {},
   subscribe: () => Effect.die(new Error("The test feeds are never used")),
 };
