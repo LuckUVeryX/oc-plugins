@@ -63,7 +63,7 @@ test("decide sends its input and surfaces model failures through the script", as
     const h = await connect({ decide });
     try {
       h.stream({
-        watchId: "model-failure",
+        id: "model-failure",
         script: `await tools.events.decide({ questions: ${JSON.stringify(questions)} }); return "ok"`,
       });
       await vi.waitFor(() => expect(h.notifications.some((n) => n.type === "active")).toBe(true));

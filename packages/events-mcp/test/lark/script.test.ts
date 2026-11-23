@@ -33,11 +33,11 @@ test("a script wakes with what decide answers", async () => {
   });
   try {
     h.stream({
-      watchId: "decided",
+      id: "decided",
       script: `if (input.event.eventId === "drop") return null; const { answers } = await tools.events.decide({ questions: ${JSON.stringify(questions)}, input: [{ type: "json", value: { parent: "memes" } }] }); return answers[0].name`,
     });
     h.stream({
-      watchId: "without-decide-call",
+      id: "without-decide-call",
       script: 'return "plain"',
     });
     await active(h, 2);
@@ -69,7 +69,7 @@ test("Lark failure stops the watch without leaking content to stderr", async () 
   });
   try {
     h.stream({
-      watchId: "scope",
+      id: "scope",
       script: 'return await tools.lark.get({path:"/im/v1/messages"})',
     });
     await active(h);
@@ -108,7 +108,7 @@ test("timeout aborts an in-flight Lark request", async () => {
   });
   try {
     h.stream({
-      watchId: "abort-timeout",
+      id: "abort-timeout",
       script: 'return await tools.lark.get({path:"/im/v1/messages"})',
     });
     await active(h);

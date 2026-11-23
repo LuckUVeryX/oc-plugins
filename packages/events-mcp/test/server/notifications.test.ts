@@ -17,7 +17,7 @@ const pass = { script: "return input.event.data" };
 test("watches exposes each watch's public view without its handles", async () => {
   const h = await connect();
   try {
-    h.stream({ watchId: "listed", ...pass });
+    h.stream({ id: "listed", ...pass });
     const listed = () => h.call("watches");
     await vi.waitFor(async () => expect((await listed()).watches).toHaveLength(1));
     const [watch] = (await listed()).watches;
@@ -25,10 +25,10 @@ test("watches exposes each watch's public view without its handles", async () =>
       "arguments",
       "event",
       "expiresAt",
+      "id",
       "startedAt",
-      "watchId",
     ]);
-    expect(watch).toMatchObject({ watchId: "listed", event: "lark.im.message.receive_v1" });
+    expect(watch).toMatchObject({ id: "listed", event: "lark.im.message.receive_v1" });
   } finally {
     await h.close();
   }
@@ -38,7 +38,7 @@ test("watches exposes each watch's public view without its handles", async () =>
 const subscribeOnce = async (error: SourceError) => {
   const h = await connect({ otherSubscribeError: error });
   try {
-    return await h.stream({ watchId: "subscribe", ...pass }, "other.ping").done;
+    return await h.stream({ id: "subscribe", ...pass }, "other.ping").done;
   } finally {
     await h.close();
   }
@@ -75,7 +75,7 @@ test("announces active before delivering the first event of a short stream", asy
     Effect.scoped(
       Effect.gen(function* () {
         return yield* runWatch({
-          watchId: "short",
+          id: "short",
           eventType: event,
           params: {},
           expiresInSeconds: 60,

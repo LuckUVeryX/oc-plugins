@@ -32,7 +32,7 @@ Preconditions:
 
   ```sh
   scripts/tui.sh prompt <<'EOF'
-  Run the shell command: printf %s "$CODEX_THREAD_ID". Then call the events list_events tool, and call its watch tool with watchId codex-verify, event gitlab.ciPipelineStatusesUpdated, target "<project path>", script `if (!["SUCCESS", "FAILED", "CANCELED"].includes(input.event.data.status)) return null; return input.event.data.id`, expiresInSeconds 600, and threadId set to the exact value you printed. Then call watches and reply with one line: ARMED-OK <threadId> <expiresAt>. Do nothing else.
+  Run the shell command: printf %s "$CODEX_THREAD_ID". Then call the events list_events tool, and call its watch tool with id codex-verify, event gitlab.ciPipelineStatusesUpdated, target "<project path>", script `if (!["SUCCESS", "FAILED", "CANCELED"].includes(input.event.data.status)) return null; return input.event.data.id`, expiresInSeconds 600, and threadId set to the exact value you printed. Then call watches and reply with one line: ARMED-OK <threadId> <expiresAt>. Do nothing else.
   EOF
   ```
 
@@ -50,7 +50,7 @@ Preconditions:
 - **Reject.** Arm a second watch with a thread id Codex has never seen. Run it through `scripts/tui.sh prompt`:
 
   ```text
-  Call the events watch tool with watchId codex-reject, event gitlab.ciPipelineStatusesUpdated, target "<project path>", script `return null`, expiresInSeconds 60, and threadId 00000000-0000-4000-8000-000000000000. Reply with REJECT followed by the exact error text. Then call watches and reply LISTED <count>.
+  Call the events watch tool with id codex-reject, event gitlab.ciPipelineStatusesUpdated, target "<project path>", script `return null`, expiresInSeconds 60, and threadId 00000000-0000-4000-8000-000000000000. Reply with REJECT followed by the exact error text. Then call watches and reply LISTED <count>.
   ```
 
   The watch fails with `Codex does not know thread "<id>"`, and `watches` lists only the watches armed before it. `script` is required; a prompt without it fails schema validation before the thread check runs.

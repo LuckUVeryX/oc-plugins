@@ -8,9 +8,9 @@ const overhead = Buffer.byteLength(JSON.stringify({ id: "size", timestamp, data:
 test("stops a watch whose delivered event exceeds the OpenCode envelope", async () => {
   const h = await connect();
   try {
-    const watch = (watchId: string, size: number) =>
+    const watch = (id: string, size: number) =>
       h.stream({
-        watchId,
+        id,
         script: `return "x".repeat(${size})`,
       });
     watch("fits", 16_384 - overhead);

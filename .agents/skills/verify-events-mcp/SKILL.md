@@ -80,9 +80,9 @@ Cleanup kills this run's tmux session by exact name, then this run's tmux server
 
 ## Helpers
 
-| Helper                   | Invocation                                                       | Purpose                                         |
-| ------------------------ | ---------------------------------------------------------------- | ----------------------------------------------- |
-| `scripts/run.sh`         | `init`, `use <run-dir>`, `status <run-dir>`, `cleanup <run-dir>` | Run layout, isolated homes, launchers, teardown |
-| `scripts/target.ts`      | `doctor [--all] [--codex]`, `trigger`                            | Read-only target checks; the one pipeline write |
-| `scripts/tui.sh`         | `claude`, `codex`, `prompt`, `expect`, `key`, `capture`, `stop`  | tmux driver and measured dialog keys            |
-| `scripts/mcp-client.mjs` | `list`, `read-tools`, `watch [--trigger]`, `hub [--sessions N]`  | OpenCode surface over stdio                     |
+| Helper                   | Invocation                                                                                    | Purpose                                         |
+| ------------------------ | --------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `scripts/run.sh`         | `init`, `use <run-dir>`, `status <run-dir>`, `cleanup <run-dir>`                              | Run layout, isolated homes, launchers, teardown |
+| `scripts/target.ts`      | `doctor [--all] [--codex]`, `trigger`                                                         | Read-only target checks; the one pipeline write |
+| `scripts/tui.sh`         | `claude`, `codex`, `prompt`, `expect`, `key`, `capture`, `stop`                               | tmux driver and measured dialog keys            |
+| `scripts/mcp-client.mjs` | `list`, `read-tools`, `watch [--id ID] [--timeout SECONDS] [--trigger]`, `hub [--sessions N]` | OpenCode surface over stdio                     |

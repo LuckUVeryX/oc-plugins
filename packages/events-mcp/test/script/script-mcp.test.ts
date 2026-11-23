@@ -42,9 +42,9 @@ test("a script drops, rewrites, and fails events independently of raw watches", 
   onTestFinished(() => stdout.mockRestore());
   const h = await connect();
   onTestFinished(() => h.close());
-  h.stream({ watchId: "raw", script: "return input.event.data" });
+  h.stream({ id: "raw", script: "return input.event.data" });
   h.stream({
-    watchId: "scripted",
+    id: "scripted",
     script:
       'const { eventId, data } = input.event; if (data.message.chat_id !== "match" || eventId === "suppressed") return null; if (eventId === "failed") throw new Error("failure"); return data.message.chat_id',
   });
@@ -82,14 +82,14 @@ test("a script drops, rewrites, and fails events independently of raw watches", 
   expect(
     h.notifications.find((n) => n.id === scripted && n.type === "terminated")?.reason,
   ).toContain("script failed on failed:");
-  h.stream({ watchId: "slow", script: "while (true) {}" });
+  h.stream({ id: "slow", script: "while (true) {}" });
   await vi.waitFor(() =>
     expect(h.notifications.filter((n) => n.type === "active")).toHaveLength(3),
   );
   const slow = h.notifications.filter((n) => n.type === "active")[2]?.id;
   await publish("slow-event");
   await observed.entered.promise;
-  await h.call("unwatch", { watchId: "slow" });
+  await h.call("unwatch", { id: "slow" });
   expect(await observed.exited.promise).toBe(true);
   await publish("after-stop");
   await vi.waitFor(() =>

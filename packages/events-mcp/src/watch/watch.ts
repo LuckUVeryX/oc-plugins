@@ -23,7 +23,7 @@ class StepFailed extends Schema.TaggedError<StepFailed>()("Watch.StepFailed", {
 }) {}
 
 interface WatchRunOptions {
-  readonly watchId: string;
+  readonly id: string;
   readonly eventType: EventType;
   readonly params: Schema.JsonObject;
   readonly expiresInSeconds: number;
@@ -62,7 +62,7 @@ export const runWatch = Effect.fn("Watch.run")(function* (
         Effect.catchCause((cause) => {
           if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
           return Effect.logWarning("Event step failed").pipe(
-            Effect.annotateLogs({ watchId: options.watchId, eventId }),
+            Effect.annotateLogs({ id: options.id, eventId }),
             Effect.andThen(
               Effect.fail(
                 new StepFailed({

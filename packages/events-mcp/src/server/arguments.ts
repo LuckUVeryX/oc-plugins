@@ -8,7 +8,7 @@ export class Invalid extends Schema.TaggedError<Invalid>()("Arguments.Invalid", 
 const WatchId = Schema.NonEmptyString.pipe(Schema.brand("WatchId"));
 
 const WatchArguments = Schema.Struct({
-  watchId: WatchId,
+  id: WatchId,
   target: Schema.optionalKey(Schema.NonEmptyString),
   script: Schema.String,
   expiresInSeconds: Schema.optionalKey(
@@ -16,7 +16,7 @@ const WatchArguments = Schema.Struct({
   ),
 });
 
-const watchIdProperty = {
+const idProperty = {
   type: "string",
   minLength: 1,
   description:
@@ -50,15 +50,14 @@ export const inputSchemaDocument = (options: {
 }) => ({
   type: "object",
   properties: {
-    watchId: watchIdProperty,
+    id: idProperty,
     ...(options.target === undefined
       ? {}
       : { target: { type: "string", minLength: 1, description: options.target.description } }),
     script: scriptProperty(options.toolPaths),
     expiresInSeconds: expiresInSecondsProperty(options.defaultExpiresInSeconds),
   },
-  required:
-    options.target?.required === true ? ["watchId", "target", "script"] : ["watchId", "script"],
+  required: options.target?.required === true ? ["id", "target", "script"] : ["id", "script"],
   additionalProperties: false,
 });
 

@@ -25,7 +25,7 @@ const reply = (socket: WebSocket, frame: Frame, body: Record<string, unknown>) =
 
 const watchParams = {
   event: "lark.im.message.receive_v1",
-  watchId: "pipeline",
+  id: "pipeline",
   script: "return 'wake'",
 };
 
@@ -126,7 +126,7 @@ test("a watch wakes the given Codex thread with one queue add carrying the scrip
         threadId: "thread-1",
         script: "return `wake: ${input.event.data.message.chat_id}`",
       });
-      expect(armed.watchId).toBe("pipeline");
+      expect(armed.id).toBe("pipeline");
 
       h.publish({ eventId: "one", payload: { message: { chat_id: "oc_one" } } });
       await vi.waitFor(() => expect(codex.adds).toHaveLength(1));

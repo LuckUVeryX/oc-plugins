@@ -16,7 +16,7 @@ export class WakeFailed extends Schema.TaggedError<WakeFailed>()("Harness.WakeFa
 export interface Wake {
   /** The decoded watch args that this harness added, empty when it adds none. */
   readonly session: Record<string, Schema.Json>;
-  readonly watchId: string;
+  readonly id: string;
   readonly event: string;
   readonly text: string;
 }
@@ -43,7 +43,7 @@ export interface Tools {
 export type Harness = Events | Tools;
 
 const liveWatchInstructions =
-  "A watch is live. It sees events from the moment it arms until it expires or you stop it, and nothing older is replayed. Choose a watchId. The `watches` tool shows the arguments of every open watch, and `unwatch` ends one early.";
+  "A watch is live. It sees events from the moment it arms until it expires or you stop it, and nothing older is replayed. Choose an id. The `watches` tool shows the arguments of every open watch, and `unwatch` ends one early.";
 
 export const listEventsInstructions =
   "Call list_events to see what this server can watch, with each event's arguments and payload. Arm one with the watch tool. The watch runs its script on each event, and whatever the script returns, unless null, reaches this session.";

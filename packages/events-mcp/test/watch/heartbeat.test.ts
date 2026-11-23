@@ -7,7 +7,7 @@ test("heartbeats continue during event traffic and stop on cancellation", async 
   const h = await connect({ defaultExpiresInSeconds: 3600 });
   try {
     const watch = h.stream({
-      watchId: "heartbeat",
+      id: "heartbeat",
       script: "return input.event.data",
     });
     await vi.advanceTimersByTimeAsync(20_000);

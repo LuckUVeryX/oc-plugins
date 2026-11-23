@@ -11,7 +11,7 @@ test("keeps per-watch state between events and rejects state over 64 KB", async 
   const h = await connect();
   try {
     h.stream({
-      watchId: "memory",
+      id: "memory",
       script:
         "const previous = await tools.watch.state.get(); await tools.watch.state.set((previous ?? 0) + 1); return { previous }",
     });
@@ -29,7 +29,7 @@ test("keeps per-watch state between events and rejects state over 64 KB", async 
     ]);
 
     h.stream({
-      watchId: "too-big",
+      id: "too-big",
       script: 'await tools.watch.state.set({ text: "x".repeat(70000) }); return null',
     });
     await active(h, 2);

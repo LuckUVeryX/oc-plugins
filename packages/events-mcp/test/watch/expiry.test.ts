@@ -21,7 +21,7 @@ it.effect("keeps a watch for its chosen expiry", () =>
         const ended = yield* Deferred.make<string>();
         const seen = yield* Ref.make<ReadonlyArray<string>>([]);
         const fiber = yield* runWatch({
-          watchId: "watch",
+          id: "watch",
           eventType: tick,
           params: {},
           expiresInSeconds,
@@ -62,7 +62,7 @@ it.effect("stop and expiry end a watch whose feed never becomes ready", () =>
         const ended = yield* Deferred.make<string>();
         const seen = yield* Ref.make<ReadonlyArray<string>>([]);
         const fiber = yield* runWatch({
-          watchId: "never-ready",
+          id: "never-ready",
           eventType: tick,
           params: {},
           expiresInSeconds,

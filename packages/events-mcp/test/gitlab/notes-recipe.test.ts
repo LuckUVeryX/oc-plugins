@@ -77,7 +77,7 @@ test("the notes recipe delivers the first new comment after START and nothing el
   try {
     h.stream(
       {
-        watchId: "comments",
+        id: "comments",
         target: "group/project!32",
         script: recipe,
         expiresInSeconds: 60,

@@ -211,7 +211,7 @@ Each event runs the watch's script. A null result drops the event, and anything 
 
 A watch stays open until it expires or you stop it. Every event the script does not drop wakes you.
 
-The wake text is the script's result: a string as is, or JSON as `JSON.stringify` of the value. In Claude Code it arrives as a channel message from the server, and in Codex as a new user turn in the same thread. To stop a watch early, call `unwatch({ "watchId": "..." })`. `watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again, and the params a target resolved to. If a watch stops with `script failed`, fix the script and arm a new watch.
+The wake text is the script's result: a string as is, or JSON as `JSON.stringify` of the value. In Claude Code it arrives as a channel message from the server, and in Codex as a new user turn in the same thread. To stop a watch early, call `unwatch({ "id": "..." })`. `watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again, and the params a target resolved to. If a watch stops with `script failed`, fix the script and arm a new watch.
 
 A script is at most 64 KB and sees `input.event = { eventId, timestamp, data }`. The event `data` is the raw source payload.
 
@@ -275,7 +275,7 @@ return { pipeline: input.event.data, jobs };
 
 ```json
 {
-  "watchId": "pipeline",
+  "id": "pipeline",
   "target": "group/project",
   "script": "…"
 }
@@ -308,7 +308,7 @@ return fresh.length === 0 ? null : { notes: fresh };
 
 ```json
 {
-  "watchId": "mr-comments",
+  "id": "mr-comments",
   "target": "group/project!123",
   "script": "…"
 }

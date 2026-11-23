@@ -85,12 +85,12 @@ interface Watch {
   readonly finished: Deferred.Deferred<void>;
 }
 
-/** A decoded and resolved watch that has not claimed its watchId yet. */
+/** A decoded and resolved watch that has not claimed its id yet. */
 interface Armed {
-  readonly watchId: string;
+  readonly id: string;
   readonly event: string;
   readonly watch: Watch;
-  /** Claims the watchId, runs the watch until it ends, and releases the watchId. */
+  /** Claims the id, runs the watch until it ends, and releases the id. */
   readonly run: (options: {
     readonly notify: (notification: Notification) => Effect.Effect<void>;
     readonly onSubscribed?: Effect.Effect<void>;
@@ -174,41 +174,41 @@ const buildServer = (options: ServerOptions): McpServer => {
     "watches",
     {
       description:
-        "List open watches with their event, arguments, and expiry, so you can reuse the arguments or find a watchId. A watch armed with target also lists the params the target resolved to. A watch that already ended is not listed.",
+        "List open watches with their event, arguments, and expiry, so you can reuse the arguments or find a watch by its id. A watch armed with target also lists the params the target resolved to. A watch that already ended is not listed.",
     },
     () =>
       text({
-        watches: [...watches].map(([watchId, watch]) => ({ watchId, ...watch.view })),
+        watches: [...watches].map(([id, watch]) => ({ id, ...watch.view })),
       }),
   );
   server.registerTool(
     "unwatch",
     {
       description:
-        "End a watch early and wait until it has closed. Returns { watchId, stopped }. stopped is false when no open watch has that id.",
-      inputSchema: fromJsonSchema<{ watchId: string }>({
+        "End a watch early and wait until it has closed. Returns { id, stopped }. stopped is false when no open watch has that id.",
+      inputSchema: fromJsonSchema<{ id: string }>({
         type: "object",
         properties: {
-          watchId: {
+          id: {
             type: "string",
             minLength: 1,
             description:
               "The watch to end, as the `watches` tool lists it or as you named it when you armed it.",
           },
         },
-        required: ["watchId"],
+        required: ["id"],
         additionalProperties: false,
       }),
     },
-    ({ watchId }) =>
+    ({ id }) =>
       run(
         Effect.gen(function* () {
-          const watch = watches.get(watchId);
+          const watch = watches.get(id);
           if (watch) {
             yield* Deferred.succeed(watch.ended, "Stopped");
             yield* Deferred.await(watch.finished);
           }
-          return text({ watchId, stopped: watch !== undefined });
+          return text({ id, stopped: watch !== undefined });
         }),
       ),
   );
@@ -281,29 +281,29 @@ const buildServer = (options: ServerOptions): McpServer => {
       };
       const claim = Effect.acquireRelease(
         Effect.suspend(() => {
-          if (watches.has(decoded.watchId))
+          if (watches.has(decoded.id))
             return Effect.fail(
               new Invalid({
-                message: "watchId is already active; choose another ID or stop the watch",
+                message: "id is already active; choose another id or stop the watch",
               }),
             );
-          watches.set(decoded.watchId, watch);
+          watches.set(decoded.id, watch);
           return Effect.void;
         }),
         () =>
-          Effect.sync(() => watches.delete(decoded.watchId)).pipe(
+          Effect.sync(() => watches.delete(decoded.id)).pipe(
             Effect.andThen(Deferred.succeed(watch.finished, undefined)),
           ),
       );
       return {
-        watchId: decoded.watchId,
+        id: decoded.id,
         event: event.name,
         watch,
         run: ({ notify, onSubscribed }) =>
           Effect.gen(function* () {
             yield* claim;
             return yield* runWatch({
-              watchId: decoded.watchId,
+              id: decoded.id,
               eventType: event,
               params,
               expiresInSeconds,
@@ -371,7 +371,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                 onFailure: (error: { readonly message: string }) => Effect.Effect<void>,
               ) =>
                 harness
-                  .wake(send, { session, watchId: armed.watchId, event: armed.event, text })
+                  .wake(send, { session, id: armed.id, event: armed.event, text })
                   .pipe(Effect.catchTag("Harness.WakeFailed", onFailure));
               const notify = (notification: Notification) => {
                 if (notification.type === "event")
@@ -382,7 +382,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                   );
                 if (notification.type !== "terminated" || notification.reason === "Stopped")
                   return Effect.void;
-                return wake(`Watch ${armed.watchId} ended: ${notification.reason}`, (error) =>
+                return wake(`Watch ${armed.id} ended: ${notification.reason}`, (error) =>
                   Effect.logWarning(`Termination wake failed: ${error.message}`),
                 );
               };
@@ -394,7 +394,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                     Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)
                       ? Effect.logWarning("Watch failed").pipe(
                           Effect.annotateLogs({
-                            watchId: armed.watchId,
+                            id: armed.id,
                             error: String(Cause.squash(exit.cause)),
                           }),
                         )
@@ -407,7 +407,7 @@ const buildServer = (options: ServerOptions): McpServer => {
               const ended = yield* Deferred.await(ready);
               const params = armed.watch.view.params;
               return {
-                watchId: armed.watchId,
+                id: armed.id,
                 ...(ended === undefined ? { expiresAt: armed.watch.view.expiresAt } : { ended }),
                 ...(params === undefined ? {} : { params }),
               };
