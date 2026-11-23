@@ -5,9 +5,6 @@ import { GitlabClient } from "./client.ts";
 export const NoteableType = Schema.Literals(["merge_request", "issue"]);
 export type NoteableType = typeof NoteableType.Type;
 
-/** The MergeRequest global ID prefix, shared by the noteable kinds and the integration's param checks. */
-export const mergeRequestGlobalId = "gid://gitlab/MergeRequest/";
-
 interface NoteableKind {
   readonly label: string;
   readonly field: "mergeRequest" | "issue";
@@ -21,7 +18,7 @@ const kinds: Readonly<Record<NoteableType, NoteableKind>> = {
   merge_request: {
     label: "Merge request",
     field: "mergeRequest",
-    globalIdPrefix: mergeRequestGlobalId,
+    globalIdPrefix: "gid://gitlab/MergeRequest/",
     query: "query($id: MergeRequestID!) { mergeRequest(id: $id) { id iid projectId } }",
     globalIdHint: "Pass the global ID gid://gitlab/MergeRequest/<database id>, not the !iid.",
     databaseIdHint:

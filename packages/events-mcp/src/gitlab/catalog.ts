@@ -10,6 +10,6 @@ export const GitlabEvent = Schema.Struct({
 });
 export type GitlabEvent = typeof GitlabEvent.Type;
 
-export const GitlabCatalog = Schema.Struct({ events: Schema.Array(GitlabEvent) });
+const GitlabCatalog = Schema.Struct({ events: Schema.Array(GitlabEvent) });
 
 export const decodeGitlabCatalog = Schema.decodeUnknownSync(GitlabCatalog);

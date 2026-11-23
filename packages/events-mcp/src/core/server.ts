@@ -5,16 +5,13 @@ import {
   SUBSCRIPTION_ID_META_KEY,
   McpServer,
 } from "@modelcontextprotocol/server";
-import { serveStdio, StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import {
   Cause,
   Clock,
   ConfigProvider,
-  Context,
   Deferred,
   Effect,
   Exit,
-  Layer,
   Logger,
   Schema,
   SchemaIssue,
@@ -66,18 +63,6 @@ const streamParams = Schema.toStandardSchemaV1(
     cursor: Schema.optionalKey(Schema.Unknown),
   }),
 );
-
-// Stdout carries MCP messages, so handler logs must go to stderr.
-const makeRun =
-  (config: ConfigProvider.ConfigProvider) =>
-  <A, E>(effect: Effect.Effect<A, E>, options?: Effect.RunOptions) =>
-    Effect.runPromise(
-      effect.pipe(
-        Effect.provideService(Logger.LogToStderr, true),
-        Effect.provideService(ConfigProvider.ConfigProvider, config),
-      ),
-      options,
-    );
 
 const invalidParams = (message: string) => new ProtocolError(INVALID_PARAMS, message);
 
@@ -176,7 +161,15 @@ const watchInputSchema = (options: {
 };
 
 const buildServer = (options: ServerOptions): McpServer => {
-  const run = makeRun(options.config);
+  // Stdout carries MCP messages, so handler logs must go to stderr.
+  const run = <A, E>(effect: Effect.Effect<A, E>, runOptions?: Effect.RunOptions) =>
+    Effect.runPromise(
+      effect.pipe(
+        Effect.provideService(Logger.LogToStderr, true),
+        Effect.provideService(ConfigProvider.ConfigProvider, options.config),
+      ),
+      runOptions,
+    );
   const transformEvent = makeTransform();
   const watches = new Map<string, Watch>();
   const toolPaths = options.registry.integrations.flatMap((integration) =>
@@ -562,12 +555,6 @@ const buildServer = (options: ServerOptions): McpServer => {
   return server;
 };
 
-export interface Interface {
-  readonly done: Effect.Effect<void>;
-}
-
-export class Service extends Context.Service<Service, Interface>()("@events-mcp/Server") {}
-
 export const make = (options: {
   readonly harness: HarnessName;
   /** Owns every watch this connection arms; closing it ends them. */
@@ -591,45 +578,5 @@ export const make = (options: {
       eventTimeoutSeconds: options.eventTimeoutSeconds ?? DEFAULT_STEP_TIMEOUT_SECONDS,
     });
   });
-
-// Stdout carries MCP messages, so transport errors must go to stderr.
-const logError = (error: unknown): void => {
-  Effect.runSync(Effect.logError(error).pipe(Effect.provideService(Logger.LogToStderr, true)));
-};
-
-export const layer = (
-  name: HarnessName,
-): Layer.Layer<Service, never, Registry.Service | Feeds.Service | DecisionModel.Service> =>
-  Layer.effect(
-    Service,
-    Effect.gen(function* () {
-      const scope = yield* Scope.make();
-      yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
-      const closed = yield* Deferred.make<void>();
-      const transport = new StdioServerTransport();
-      const server = yield* make({ harness: name, scope });
-      yield* Effect.acquireRelease(
-        Effect.sync(() => {
-          const handle = serveStdio(() => server, {
-            legacy: "serve",
-            transport,
-            onerror: logError,
-          });
-          const onclose = transport.onclose;
-          transport.onclose = () => {
-            onclose?.();
-            Deferred.doneUnsafe(closed, Effect.void);
-          };
-          return handle;
-        }),
-        (handle) => Effect.promise(() => handle.close()),
-      );
-      const done = Effect.gen(function* () {
-        yield* Deferred.await(closed);
-        yield* Scope.close(scope, Exit.void);
-      }).pipe(Effect.asVoid);
-      return Service.of({ done });
-    }),
-  );
 
 export * as Server from "./server.ts";

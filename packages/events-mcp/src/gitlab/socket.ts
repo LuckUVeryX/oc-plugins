@@ -36,7 +36,7 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/GitlabSocket") {}
 
-export interface GitlabSocketOptions {
+interface GitlabSocketOptions {
   readonly url: string;
   /** Resolved when the connection is acquired, so a token failure fails that subscribe. */
   readonly headers: Effect.Effect<Readonly<Record<string, string>>, IntegrationError>;

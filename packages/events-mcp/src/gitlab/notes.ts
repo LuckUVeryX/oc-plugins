@@ -82,7 +82,7 @@ const toEvent = (
 
 const params = Schema.toJsonSchemaDocument(NotesParams, { onExcessProperty: "error" }).schema;
 
-export interface NotesEventOptions {
+interface NotesEventOptions {
   readonly client: GitlabClient.Interface;
   readonly socket: GitlabSocket.Interface;
 }

@@ -28,7 +28,7 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/GitlabClient") {}
 
-export interface GitlabClientOptions {
+interface GitlabClientOptions {
   readonly host: string;
   readonly identity: Effect.Effect<TokenIdentity, IntegrationError>;
   readonly http?: HttpClient.HttpClient | undefined;

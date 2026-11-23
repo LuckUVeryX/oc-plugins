@@ -5,7 +5,7 @@ import type { GetInput } from "../core/tool.ts";
 import type { LarkRequester } from "./get.ts";
 import { sdkLogger } from "./sdk-logger.ts";
 
-export interface Credentials {
+interface Credentials {
   readonly appId: string;
   readonly appSecret: string;
   readonly request: LarkRequester;
