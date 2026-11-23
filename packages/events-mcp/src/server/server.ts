@@ -5,19 +5,10 @@ import {
   SUBSCRIPTION_ID_META_KEY,
   McpServer,
 } from "@modelcontextprotocol/server";
-import {
-  Cause,
-  Clock,
-  ConfigProvider,
-  Deferred,
-  Effect,
-  Exit,
-  Logger,
-  Schema,
-  Scope,
-} from "effect";
-import { isObject } from "effect/Predicate";
+import { Clock, ConfigProvider, Deferred, Effect, Logger, Schema, Scope } from "effect";
 import { decodeArguments, inputSchemaDocument, Invalid } from "./arguments.ts";
+import { text, toolResult } from "./result.ts";
+import { registerTools } from "./tools.ts";
 import { Registry } from "../source/registry.ts";
 import { DecisionModel, type Decide } from "../decision/decision-model.ts";
 import { bytes, MAX_CODE_BYTES } from "../limits.ts";
@@ -26,7 +17,7 @@ import { makeRunCode, makeWatchState } from "../code/code.ts";
 import { inputJsonSchema } from "../source/tool.ts";
 import { Feeds } from "../watch/feeds.ts";
 import { runWatch, type Notification } from "../watch/watch.ts";
-import type { Harness, Send, Tools } from "../harness/harness.ts";
+import type { Harness } from "../harness/harness.ts";
 import { get, type Name as HarnessName } from "../harness/catalog.ts";
 
 const DEFAULT_WATCH_SECONDS = 3600;
@@ -68,12 +59,6 @@ const protocolError = (error: Invalid | SourceError) => {
   }
 };
 
-const text = (value: unknown) => ({
-  content: [
-    { type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value) },
-  ],
-});
-
 export interface Watch {
   readonly view: {
     readonly event: string;
@@ -98,36 +83,13 @@ interface Armed {
   }) => Effect.Effect<string, Invalid | SourceError, Scope.Scope>;
 }
 
-const watchInputSchema = (options: {
-  readonly watchParams: Tools["watchParams"];
-  readonly toolPaths: ReadonlyArray<string>;
-  readonly defaultExpiresInSeconds: number;
-}) => {
-  const { schema, definitions } = Schema.toJsonSchemaDocument(options.watchParams);
-  const properties = isObject(schema["properties"]) ? schema["properties"] : {};
-  const required = Array.isArray(schema["required"])
-    ? schema["required"].filter((name) => typeof name === "string")
-    : [];
-  const watch = inputSchemaDocument({
-    target: {
-      description:
-        "A link or shorthand that names the resource, required for events whose list_events entry lists target.",
-      required: false,
-    },
-    toolPaths: options.toolPaths,
-    defaultExpiresInSeconds: options.defaultExpiresInSeconds,
-  });
-  return {
-    ...(Object.keys(definitions).length === 0 ? {} : { $defs: definitions }),
-    ...watch,
-    properties: {
-      event: { type: "string", description: "The event to watch, from list_events." },
-      ...watch.properties,
-      ...properties,
-    },
-    required: ["event", ...watch.required, ...required],
-  };
-};
+/** Decodes and resolves a watch without starting it. */
+export type Arm = (input: {
+  readonly name: string;
+  readonly args: unknown;
+  /** What `watches` lists as the arguments, which is enough to arm the watch again. */
+  readonly view: Record<string, unknown>;
+}) => Effect.Effect<Armed, Invalid | SourceError>;
 
 const buildServer = (options: ServerOptions): McpServer => {
   // Stdout carries MCP messages, so handler logs must go to stderr.
@@ -162,13 +124,7 @@ const buildServer = (options: ServerOptions): McpServer => {
             additionalProperties: false,
           }),
         },
-        (input) =>
-          run(
-            Effect.match(tool.run(input), {
-              onFailure: (error) => ({ ...text(error.message), isError: true }),
-              onSuccess: text,
-            }),
-          ),
+        (input) => run(toolResult(tool.run(input))),
       );
 
   server.registerTool(
@@ -249,12 +205,7 @@ const buildServer = (options: ServerOptions): McpServer => {
         );
     });
 
-  const arm = (input: {
-    readonly name: string;
-    readonly args: unknown;
-    /** What `watches` lists as the arguments, which is enough to arm the watch again. */
-    readonly view: Record<string, unknown>;
-  }): Effect.Effect<Armed, Invalid | SourceError> =>
+  const arm: Arm = (input) =>
     Effect.gen(function* () {
       const event = options.registry.get(input.name);
       if (event === undefined)
@@ -324,157 +275,72 @@ const buildServer = (options: ServerOptions): McpServer => {
     });
 
   if (options.harness._tag === "Tools") {
-    const harness = options.harness;
-    const send: Send = (notification) =>
-      Effect.promise(() => server.server.notification(notification));
-    const sessionKeys = Object.keys(harness.watchParams.fields);
-    const ToolInput = Schema.Struct({ event: Schema.String, ...harness.watchParams.fields });
-    server.registerTool(
-      "list_events",
-      {
-        description:
-          "List the events you can watch, with each event's arguments and payload. Read it before you arm a watch.",
-      },
-      () => text({ events: catalogue() }),
-    );
-    server.registerTool(
-      "watch",
-      {
-        description:
-          "Arm a watch and return once it is live. Each event the code does not drop reaches this session as the code's result, until the watch expires or you stop it. Read the event's payload from list_events before you write the code.",
-        inputSchema: fromJsonSchema<Record<string, unknown>>(
-          watchInputSchema({
-            watchParams: harness.watchParams,
-            toolPaths,
-            defaultExpiresInSeconds: options.defaultExpiresInSeconds,
-          }),
-        ),
-      },
-      (input) =>
-        run(
-          Effect.match(
-            Effect.gen(function* () {
-              const { event: name, ...session } = yield* Schema.decodeUnknownEffect(ToolInput)(
-                input,
-              ).pipe(Effect.mapError((error) => new Invalid({ message: error.message })));
-              if (harness.check !== undefined)
-                yield* harness
-                  .check(session)
-                  .pipe(Effect.mapError((error) => new Invalid({ message: error.message })));
-              const args = Object.fromEntries(
-                Object.entries(input).filter(
-                  ([key]) => key !== "event" && !sessionKeys.includes(key),
-                ),
-              );
-              const armed = yield* arm({ name, args, view: input });
-              const wake = (
-                text: string,
-                onFailure: (error: { readonly message: string }) => Effect.Effect<void>,
-              ) =>
-                harness
-                  .wake(send, { session, id: armed.id, event: armed.event, text })
-                  .pipe(Effect.catchTag("Harness.WakeFailed", onFailure));
-              const notify = (notification: Notification) => {
-                if (notification.type === "event")
-                  return wake(notification.data, (error) =>
-                    Deferred.succeed(armed.watch.ended, `Wake failed: ${error.message}`).pipe(
-                      Effect.asVoid,
-                    ),
-                  );
-                if (notification.type !== "terminated" || notification.reason === "Stopped")
-                  return Effect.void;
-                return wake(`Watch ${armed.id} ended: ${notification.reason}`, (error) =>
-                  Effect.logWarning(`Termination wake failed: ${error.message}`),
-                );
-              };
-              // Succeeds once the feed is subscribed, or with the reason the watch ended first.
-              const ready = yield* Deferred.make<string | undefined, Invalid | SourceError>();
-              yield* armed.run({ notify, onSubscribed: Deferred.succeed(ready, undefined) }).pipe(
-                Effect.onExit((exit) => {
-                  const warn =
-                    Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)
-                      ? Effect.logWarning("Watch failed").pipe(
-                          Effect.annotateLogs({
-                            id: armed.id,
-                            error: String(Cause.squash(exit.cause)),
-                          }),
-                        )
-                      : Effect.void;
-                  return warn.pipe(Effect.andThen(Deferred.done(ready, exit)));
-                }),
-                Effect.scoped,
-                Effect.forkIn(options.scope),
-              );
-              const ended = yield* Deferred.await(ready);
-              const params = armed.watch.view.params;
-              return {
-                id: armed.id,
-                ...(ended === undefined ? { expiresAt: armed.watch.view.expiresAt } : { ended }),
-                ...(params === undefined ? {} : { params }),
-              };
-            }),
-            {
-              onFailure: (error) => ({ ...text(error.message), isError: true }),
-              onSuccess: text,
-            },
-          ),
-        ),
-    );
-  } else {
-    server.server.setRequestHandler(
-      "events/list",
-      { params: Schema.toStandardSchemaV1(Schema.Struct({})) },
-      () => ({ events: catalogue() }),
-    );
-
-    server.server.setRequestHandler("events/stream", { params: streamParams }, (params, ctx) => {
-      const body = (notification: Notification): Record<string, unknown> => {
-        switch (notification.type) {
-          case "event":
-            return {
-              eventId: notification.eventId,
-              name: notification.name,
-              timestamp: notification.timestamp,
-              data: notification.data,
-            };
-          case "error":
-          case "terminated":
-            return { error: { code: -32000, message: notification.reason } };
-          case "active":
-          case "heartbeat":
-            return {};
-          default: {
-            const _exhaustive: never = notification;
-            return _exhaustive;
-          }
-        }
-      };
-      const notify = (notification: Notification) =>
-        Effect.promise(() =>
-          ctx.mcpReq.notify({
-            method: `notifications/events/${notification.type}`,
-            params: {
-              ...body(notification),
-              cursor: null,
-              _meta: { [SUBSCRIPTION_ID_META_KEY]: ctx.mcpReq.id },
-            },
-          }),
-        );
-      return run(
-        Effect.gen(function* () {
-          if (params.cursor !== undefined && params.cursor !== null)
-            return yield* Effect.fail(
-              new Invalid({ message: "Events are live-only; omit cursor or set it to null" }),
-            );
-          const args = params.arguments ?? {};
-          const armed = yield* arm({ name: params.name, args, view: args });
-          yield* armed.run({ notify }).pipe(Effect.scoped);
-          return {};
-        }).pipe(Effect.mapError(protocolError)),
-        { signal: ctx.mcpReq.signal },
-      );
+    registerTools({
+      server,
+      harness: options.harness,
+      scope: options.scope,
+      run,
+      arm,
+      catalogue,
+      toolPaths,
+      defaultExpiresInSeconds: options.defaultExpiresInSeconds,
     });
+    return server;
   }
+
+  server.server.setRequestHandler(
+    "events/list",
+    { params: Schema.toStandardSchemaV1(Schema.Struct({})) },
+    () => ({ events: catalogue() }),
+  );
+
+  server.server.setRequestHandler("events/stream", { params: streamParams }, (params, ctx) => {
+    const body = (notification: Notification): Record<string, unknown> => {
+      switch (notification.type) {
+        case "event":
+          return {
+            eventId: notification.eventId,
+            name: notification.name,
+            timestamp: notification.timestamp,
+            data: notification.data,
+          };
+        case "error":
+        case "terminated":
+          return { error: { code: -32000, message: notification.reason } };
+        case "active":
+        case "heartbeat":
+          return {};
+        default: {
+          const _exhaustive: never = notification;
+          return _exhaustive;
+        }
+      }
+    };
+    const notify = (notification: Notification) =>
+      Effect.promise(() =>
+        ctx.mcpReq.notify({
+          method: `notifications/events/${notification.type}`,
+          params: {
+            ...body(notification),
+            cursor: null,
+            _meta: { [SUBSCRIPTION_ID_META_KEY]: ctx.mcpReq.id },
+          },
+        }),
+      );
+    return run(
+      Effect.gen(function* () {
+        if (params.cursor !== undefined && params.cursor !== null)
+          return yield* Effect.fail(
+            new Invalid({ message: "Events are live-only; omit cursor or set it to null" }),
+          );
+        const args = params.arguments ?? {};
+        const armed = yield* arm({ name: params.name, args, view: args });
+        yield* armed.run({ notify }).pipe(Effect.scoped);
+        return {};
+      }).pipe(Effect.mapError(protocolError)),
+      { signal: ctx.mcpReq.signal },
+    );
+  });
 
   return server;
 };
