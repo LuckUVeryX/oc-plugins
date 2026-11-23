@@ -91,24 +91,10 @@ test("delivers fresh events once and drops stale events", async () => {
         expect(listing.events).toHaveLength(14);
         expect(listing.events.map((event) => event.name)).toContain("lark.im.message.receive_v1");
         expect(listing.events.map((event) => event.name)).not.toContain("order_paid");
-        expect(
-          await h.stream(
-            {
-              id: "dedup",
-              code: "return input.event.data",
-            },
-            "order_paid",
-          ).done,
-        ).toMatchObject({
+        expect(await h.stream({}, "order_paid").done).toMatchObject({
           code: -32602,
         });
-        h.stream(
-          {
-            id: "dedup",
-            code: "return input.event.data",
-          },
-          "lark.im.message.receive_v1",
-        );
+        h.stream({}, "lark.im.message.receive_v1");
         await vi.waitFor(() =>
           expect(h.notifications.filter((n) => n.type === "active")).toHaveLength(1),
         );
@@ -139,12 +125,16 @@ test("delivers fresh events once and drops stale events", async () => {
           expect.objectContaining({
             eventId: "same",
             timestamp: new Date(Number(recent)).toISOString(),
-            data: expect.stringContaining('"message_id":"same"'),
+            data: expect.objectContaining({
+              message: expect.objectContaining({ message_id: "same" }),
+            }),
           }),
           expect.objectContaining({
             eventId: "fresh-sentinel",
             timestamp: new Date(Number(recent)).toISOString(),
-            data: expect.stringContaining('"message_id":"fresh-sentinel"'),
+            data: expect.objectContaining({
+              message: expect.objectContaining({ message_id: "fresh-sentinel" }),
+            }),
           }),
         ]);
       } finally {

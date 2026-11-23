@@ -1,14 +1,20 @@
 import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 
 const main = fileURLToPath(new URL("../../src/main.ts", import.meta.url));
 
 const line = (value: unknown) => `${JSON.stringify(value)}\n`;
 
 test("a broken stdout ends the connection while stdin stays open", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "events-transport-"));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
   const child = spawn(process.execPath, [main, "claude"], {
     stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env, EVENTS_MCP_HUB_DIR: dir },
   });
   let stderr = "";
   child.stderr.on("data", (chunk) => {

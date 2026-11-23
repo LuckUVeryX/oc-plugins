@@ -5,18 +5,17 @@ import {
   SUBSCRIPTION_ID_META_KEY,
   McpServer,
 } from "@modelcontextprotocol/server";
-import { Clock, ConfigProvider, Deferred, Effect, Logger, Schema, Scope } from "effect";
-import { decodeArguments, inputSchemaDocument, Invalid } from "./arguments.ts";
-import { text, toolResult } from "./result.ts";
-import { registerTools } from "./tools.ts";
+import { ConfigProvider, Effect, Logger, Schema, Scope } from "effect";
+import { decodeTarget, Invalid, targetSchemaDocument } from "./arguments.ts";
+import { toolResult } from "./result.ts";
+import { registerTools, type Watch } from "./tools.ts";
 import { Registry } from "../source/registry.ts";
 import { DecisionModel, type Decide } from "../decision/decision-model.ts";
-import { bytes, MAX_CODE_BYTES } from "../limits.ts";
-import type { EventType, SourceError } from "../source/contract.ts";
-import { makeRunCode, makeWatchState } from "../code/code.ts";
+import type { EventType, SourceError, Tool } from "../source/contract.ts";
+import { decideTool, type RunCode } from "../code/code.ts";
 import { inputJsonSchema } from "../source/tool.ts";
 import { Feeds } from "../watch/feeds.ts";
-import { runWatch, type Notification } from "../watch/watch.ts";
+import { HEARTBEAT_MS, runWatch, type Notification } from "../watch/watch.ts";
 import type { Harness } from "../harness/harness.ts";
 import { get, type Name as HarnessName } from "../harness/catalog.ts";
 
@@ -59,36 +58,22 @@ const protocolError = (error: Invalid | SourceError) => {
   }
 };
 
-export interface Watch {
-  readonly view: {
+/** Resolves an event and its target without subscribing yet. */
+export type Arm = (
+  name: string,
+  target: string | undefined,
+) => Effect.Effect<
+  {
     readonly event: string;
-    readonly startedAt: string;
-    readonly expiresAt: string;
-    readonly arguments: Record<string, unknown>;
-    readonly params?: Schema.JsonObject;
-  };
-  readonly ended: Deferred.Deferred<string>;
-  readonly finished: Deferred.Deferred<void>;
-}
-
-/** A decoded and resolved watch that has not claimed its id yet. */
-interface Armed {
-  readonly id: string;
-  readonly event: string;
-  readonly watch: Watch;
-  /** Claims the id, runs the watch until it ends, and releases the id. */
-  readonly run: (
-    notify: (notification: Notification) => Effect.Effect<void>,
-  ) => Effect.Effect<string, Invalid | SourceError, Scope.Scope>;
-}
-
-/** Decodes and resolves a watch without starting it. */
-export type Arm = (input: {
-  readonly name: string;
-  readonly args: unknown;
-  /** What `watches` lists as the arguments, which is enough to arm the watch again. */
-  readonly view: Record<string, unknown>;
-}) => Effect.Effect<Armed, Invalid | SourceError>;
+    readonly params: Schema.JsonObject;
+    readonly run: (
+      notify: (notification: Notification) => Effect.Effect<void>,
+      until: Effect.Effect<string>,
+      runCode: RunCode,
+    ) => Effect.Effect<string, SourceError, Scope.Scope>;
+  },
+  Invalid | SourceError
+>;
 
 const buildServer = (options: ServerOptions): McpServer => {
   // Stdout carries MCP messages, so handler logs must go to stderr.
@@ -100,7 +85,6 @@ const buildServer = (options: ServerOptions): McpServer => {
       ),
       runOptions,
     );
-  const { watches } = options;
   const toolPaths = options.registry.sources.flatMap((source) =>
     Object.keys(source.tools).map((name) => `tools.${source.name}.${name}`),
   );
@@ -112,77 +96,34 @@ const buildServer = (options: ServerOptions): McpServer => {
     },
   );
 
+  const registerTool = (name: string, tool: Tool) =>
+    server.registerTool(
+      name,
+      {
+        description: tool.description,
+        inputSchema: fromJsonSchema({ ...inputJsonSchema(tool), additionalProperties: false }),
+      },
+      (input) => run(toolResult(tool.run(input))),
+    );
   for (const source of options.registry.sources)
     for (const [name, tool] of Object.entries(source.tools))
-      server.registerTool(
-        `${source.name}_${name}`,
-        {
-          description: tool.description,
-          inputSchema: fromJsonSchema({
-            ...inputJsonSchema(tool),
-            additionalProperties: false,
-          }),
-        },
-        (input) => run(toolResult(tool.run(input))),
-      );
-
-  server.registerTool(
-    "watches",
-    {
-      description:
-        "List every open watch from every session with its event, arguments, and expiry, so you can reuse the arguments or find a watch by its id. A watch armed with target also lists the params the target resolved to. A watch that already ended is not listed.",
-    },
-    () =>
-      text({
-        watches: [...watches].map(([id, watch]) => ({ id, ...watch.view })),
-      }),
-  );
-  server.registerTool(
-    "unwatch",
-    {
-      description:
-        "End a watch early and wait until it has closed. Returns { id, stopped }. stopped is false when no open watch has that id.",
-      inputSchema: fromJsonSchema<{ id: string }>({
-        type: "object",
-        properties: {
-          id: {
-            type: "string",
-            minLength: 1,
-            description:
-              "The watch to end, as the `watches` tool lists it or as you named it when you armed it.",
-          },
-        },
-        required: ["id"],
-        additionalProperties: false,
-      }),
-    },
-    ({ id }) =>
-      run(
-        Effect.gen(function* () {
-          const watch = watches.get(id);
-          if (watch) {
-            yield* Deferred.succeed(watch.ended, "Stopped");
-            yield* Deferred.await(watch.finished);
-          }
-          return text({ id, stopped: watch !== undefined });
-        }),
-      ),
-  );
+      registerTool(`${source.name}_${name}`, tool);
 
   const catalogue = () =>
     options.registry.events.map((event) => ({
       name: event.name,
-      description: event.description || event.name,
+      description: [event.description || event.name, event.recipe?.[options.harness._tag] ?? []]
+        .flat()
+        .join("\n\n"),
       delivery: ["push"],
-      inputSchema: inputSchemaDocument({
-        target:
-          event.target === undefined
-            ? undefined
-            : { description: event.target.description, required: true },
-        toolPaths,
-        defaultExpiresInSeconds: options.defaultExpiresInSeconds,
-      }),
-      payloadSchema: { anyOf: [event.payload, { type: "string" }] },
+      inputSchema: targetSchemaDocument(
+        event.target === undefined
+          ? undefined
+          : { description: event.target.description, required: true },
+      ),
+      // OpenCode drops an event that fails this schema, and the source schemas are generated,
+      // so they only document the payload.
+      payloadSchema: { anyOf: [event.payload, { type: "object" }] },
     }));
 
   const resolveParams = (event: EventType, target: string | undefined) =>
@@ -204,70 +145,25 @@ const buildServer = (options: ServerOptions): McpServer => {
         );
     });
 
-  const arm: Arm = (input) =>
+  const arm: Arm = (name, target) =>
     Effect.gen(function* () {
-      const event = options.registry.get(input.name);
+      const event = options.registry.get(name);
       if (event === undefined)
         return yield* Effect.fail(
-          new Invalid({ message: `Unknown event: ${input.name}; choose a listed event` }),
+          new Invalid({ message: `Unknown event: ${name}; choose a listed event` }),
         );
-      const decoded = yield* decodeArguments(input.args);
-      if (bytes(decoded.code) > MAX_CODE_BYTES)
-        return yield* Effect.fail(
-          new Invalid({ message: `code exceeds ${MAX_CODE_BYTES} bytes; shorten it` }),
-        );
-      const params = yield* resolveParams(event, decoded.target);
-      const expiresInSeconds = decoded.expiresInSeconds ?? options.defaultExpiresInSeconds;
-      const startedAt = yield* Clock.currentTimeMillis;
-      const watch: Watch = {
-        view: {
-          event: event.name,
-          startedAt: new Date(startedAt).toISOString(),
-          expiresAt: new Date(startedAt + expiresInSeconds * 1000).toISOString(),
-          arguments: input.view,
-          ...(decoded.target === undefined ? {} : { params }),
-        },
-        ended: yield* Deferred.make<string>(),
-        finished: yield* Deferred.make<void>(),
-      };
-      const claim = Effect.acquireRelease(
-        Effect.suspend(() => {
-          if (watches.has(decoded.id))
-            return Effect.fail(
-              new Invalid({
-                message: "id is already open in this or another session; choose another id",
-              }),
-            );
-          watches.set(decoded.id, watch);
-          return Effect.void;
-        }),
-        () =>
-          Effect.sync(() => watches.delete(decoded.id)).pipe(
-            Effect.andThen(Deferred.succeed(watch.finished, undefined)),
-          ),
-      );
+      const params = yield* resolveParams(event, target);
       return {
-        id: decoded.id,
         event: event.name,
-        watch,
-        run: (notify) =>
-          Effect.gen(function* () {
-            yield* claim;
-            return yield* runWatch({
-              id: decoded.id,
-              eventType: event,
-              params,
-              expiresInSeconds,
-              eventTimeoutSeconds: options.eventTimeoutSeconds,
-              ended: watch.ended,
-              runCode: makeRunCode({
-                code: decoded.code,
-                sources: options.registry.sources,
-                state: yield* makeWatchState,
-                decide: options.decide,
-              }),
-              notify,
-            });
+        params,
+        run: (notify, until, runCode) =>
+          runWatch({
+            eventType: event,
+            params,
+            eventTimeoutSeconds: options.eventTimeoutSeconds,
+            until,
+            runCode,
+            notify,
           }).pipe(Effect.provideService(Feeds.Service, options.feeds)),
       };
     });
@@ -279,12 +175,17 @@ const buildServer = (options: ServerOptions): McpServer => {
       scope: options.scope,
       run,
       arm,
+      watches: options.watches,
+      sources: options.registry.sources,
+      decide: options.decide,
       catalogue,
       toolPaths,
       defaultExpiresInSeconds: options.defaultExpiresInSeconds,
     });
     return server;
   }
+
+  registerTool("decide", decideTool(options.decide));
 
   server.server.setRequestHandler(
     "events/list",
@@ -306,6 +207,7 @@ const buildServer = (options: ServerOptions): McpServer => {
         case "terminated":
           return { error: { code: -32000, message: notification.reason } };
         case "active":
+          return { heartbeatMs: HEARTBEAT_MS };
         case "heartbeat":
           return {};
         default: {
@@ -331,9 +233,12 @@ const buildServer = (options: ServerOptions): McpServer => {
           return yield* Effect.fail(
             new Invalid({ message: "Events are live-only; omit cursor or set it to null" }),
           );
-        const args = params.arguments ?? {};
-        const armed = yield* arm({ name: params.name, args, view: args });
-        yield* armed.run(notify).pipe(Effect.scoped);
+        const { target } = yield* decodeTarget(params.arguments ?? {});
+        const armed = yield* arm(params.name, target);
+        // OpenCode's automation filters the events and cancels the request to end the watch.
+        yield* armed
+          .run(notify, Effect.never, (event) => Effect.succeed(event.data))
+          .pipe(Effect.scoped);
         return {};
       }).pipe(Effect.mapError(protocolError)),
       { signal: ctx.mcpReq.signal },

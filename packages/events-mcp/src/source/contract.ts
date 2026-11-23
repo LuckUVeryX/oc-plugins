@@ -36,6 +36,8 @@ export interface EventType {
   readonly name: string;
   readonly description: string;
   readonly payload: JsonSchema.JsonSchema;
+  /** How to filter this event, for an OpenCode automation or for a watch's code. */
+  readonly recipe?: { readonly Events: string; readonly Tools: string } | undefined;
   /** Present when a watch names its resource with a link or shorthand, which resolves to the subscription params. */
   readonly target?:
     | {

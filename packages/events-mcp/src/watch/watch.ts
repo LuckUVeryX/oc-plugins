@@ -1,11 +1,10 @@
 import { Cause, Clock, DateTime, Deferred, Effect, Schema, type Scope, Stream } from "effect";
-import { bytes, MAX_EVENT_BYTES } from "../limits.ts";
 import { Health, type EventType, type Event, type SourceError } from "../source/contract.ts";
 import { Failed, type RunCode } from "../code/code.ts";
 import { Feeds } from "./feeds.ts";
 
-// OpenCode cancels event feeds after 60 seconds without a notification.
-const HEARTBEAT_INTERVAL = "20 seconds";
+// OpenCode ends an event stream after three of these pass without a notification.
+export const HEARTBEAT_MS = 20_000;
 
 export type Notification =
   | { readonly type: "active" | "heartbeat" }
@@ -14,7 +13,7 @@ export type Notification =
       readonly eventId: string;
       readonly name: string;
       readonly timestamp: string;
-      readonly data: string;
+      readonly data: Schema.Json;
     }
   | { readonly type: "error" | "terminated"; readonly reason: string };
 
@@ -23,12 +22,11 @@ class StepFailed extends Schema.TaggedError<StepFailed>()("Watch.StepFailed", {
 }) {}
 
 interface WatchRunOptions {
-  readonly id: string;
   readonly eventType: EventType;
   readonly params: Schema.JsonObject;
-  readonly expiresInSeconds: number;
   readonly eventTimeoutSeconds: number;
-  readonly ended: Deferred.Deferred<string>;
+  /** Ends the watch with the reason it succeeds with. */
+  readonly until: Effect.Effect<string>;
   readonly runCode: RunCode;
   readonly notify: (notification: Notification) => Effect.Effect<void>;
 }
@@ -61,7 +59,7 @@ export const runWatch = Effect.fn("Watch.run")(function* (
         Effect.catchCause((cause) => {
           if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
           return Effect.logWarning("Event step failed").pipe(
-            Effect.annotateLogs({ id: options.id, eventId }),
+            Effect.annotateLogs({ event: options.eventType.name, eventId }),
             Effect.andThen(
               Effect.fail(
                 new StepFailed({
@@ -73,15 +71,6 @@ export const runWatch = Effect.fn("Watch.run")(function* (
         }),
       );
       if (result === null) return;
-      if (
-        bytes(JSON.stringify({ id: eventId, timestamp: delivered.timestamp, data: result })) >
-        MAX_EVENT_BYTES
-      )
-        return yield* Effect.fail(
-          new StepFailed({
-            message: `code failed on ${eventId}: the delivered event exceeds ${MAX_EVENT_BYTES} bytes; return less`,
-          }),
-        );
       yield* options.notify({
         type: "event",
         eventId,
@@ -112,16 +101,11 @@ export const runWatch = Effect.fn("Watch.run")(function* (
       ),
     );
   });
-  const heartbeat = Effect.sleep(HEARTBEAT_INTERVAL).pipe(
+  const heartbeat = Effect.sleep(HEARTBEAT_MS).pipe(
     Effect.andThen(options.notify({ type: "heartbeat" })),
     Effect.forever,
   );
-  const reason = yield* Effect.raceAllFirst([
-    Effect.sleep(`${options.expiresInSeconds} seconds`).pipe(Effect.as("Expired")),
-    Deferred.await(options.ended),
-    Effect.scoped(session),
-    heartbeat,
-  ]);
+  const reason = yield* Effect.raceAllFirst([options.until, Effect.scoped(session), heartbeat]);
   yield* options.notify({ type: "terminated", reason });
   return reason;
 });

@@ -1,5 +1,5 @@
-import { DateTime, Deferred, Effect, Stream } from "effect";
-import { expect, test, vi } from "vitest";
+import { DateTime, Effect, Stream } from "effect";
+import { expect, test } from "vitest";
 import {
   Health,
   type EventType,
@@ -12,33 +12,11 @@ import { Feeds } from "../../src/watch/feeds.ts";
 import { runWatch } from "../../src/watch/watch.ts";
 import { connect } from "../support.ts";
 
-const pass = { code: "return input.event.data" };
-
-test("watches exposes each watch's public view without its handles", async () => {
-  const h = await connect();
-  try {
-    h.stream({ id: "listed", ...pass });
-    const listed = () => h.call("watches");
-    await vi.waitFor(async () => expect((await listed()).watches).toHaveLength(1));
-    const [watch] = (await listed()).watches;
-    expect(Object.keys(watch).sort()).toEqual([
-      "arguments",
-      "event",
-      "expiresAt",
-      "id",
-      "startedAt",
-    ]);
-    expect(watch).toMatchObject({ id: "listed", event: "lark.im.message.receive_v1" });
-  } finally {
-    await h.close();
-  }
-});
-
 // OpenCode treats -32024 as a permanent rejection and retries -32603 as a transient failure.
 const subscribeOnce = async (error: SourceError) => {
   const h = await connect({ otherSubscribeError: error });
   try {
-    return await h.stream({ id: "subscribe", ...pass }, "other.ping").done;
+    return await h.stream({}, "other.ping").done;
   } finally {
     await h.close();
   }
@@ -75,13 +53,11 @@ test("announces active before delivering the first event of a short stream", asy
     Effect.scoped(
       Effect.gen(function* () {
         return yield* runWatch({
-          id: "short",
           eventType: event,
           params: {},
-          expiresInSeconds: 60,
           eventTimeoutSeconds: 30,
-          ended: yield* Deferred.make<string>(),
-          runCode: () => Effect.succeed("delivered"),
+          until: Effect.never,
+          runCode: () => Effect.succeed({}),
           notify: (n) => Effect.sync(() => types.push(n.type)),
         }).pipe(
           Effect.provideService(

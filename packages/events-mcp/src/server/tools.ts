@@ -1,14 +1,31 @@
 // Claude Code and Codex have no MCP events, so they arm watches through tools and the
 // server wakes the session itself. Delete this file once they support MCP events.
 import { fromJsonSchema, type McpServer } from "@modelcontextprotocol/server";
-import { Cause, Deferred, Effect, Exit, Schema, type Scope } from "effect";
+import { Cause, Clock, Deferred, Effect, Exit, Schema, type Scope } from "effect";
 import { isObject } from "effect/Predicate";
-import { inputSchemaDocument, Invalid } from "./arguments.ts";
+import { decodeWatch, Invalid, targetSchemaDocument, watchSchemaDocument } from "./arguments.ts";
 import { text, toolResult } from "./result.ts";
 import type { Arm } from "./server.ts";
-import type { SourceError } from "../source/contract.ts";
+import type { Source, SourceError } from "../source/contract.ts";
+import type { Decide } from "../decision/decision-model.ts";
+import { makeRunCode, makeWatchState } from "../code/code.ts";
+import { bytes, MAX_CODE_BYTES } from "../limits.ts";
 import type { Notification } from "../watch/watch.ts";
 import type { Send, Tools } from "../harness/harness.ts";
+
+export interface Watch {
+  readonly view: {
+    readonly event: string;
+    readonly startedAt: string;
+    readonly expiresAt: string;
+    readonly arguments: Record<string, unknown>;
+    readonly params?: Schema.JsonObject;
+  };
+  readonly ended: Deferred.Deferred<string>;
+  readonly finished: Deferred.Deferred<void>;
+}
+
+const wakeText = (data: Schema.Json) => (typeof data === "string" ? data : JSON.stringify(data));
 
 const watchInputSchema = (options: {
   readonly watchParams: Tools["watchParams"];
@@ -20,15 +37,14 @@ const watchInputSchema = (options: {
   const required = Array.isArray(schema["required"])
     ? schema["required"].filter((name) => typeof name === "string")
     : [];
-  const watch = inputSchemaDocument({
-    target: {
+  const watch = watchSchemaDocument(
+    targetSchemaDocument({
       description:
         "A link or shorthand that names the resource, required for events whose list_events entry lists target.",
       required: false,
-    },
-    toolPaths: options.toolPaths,
-    defaultExpiresInSeconds: options.defaultExpiresInSeconds,
-  });
+    }),
+    options,
+  );
   return {
     ...(Object.keys(definitions).length === 0 ? {} : { $defs: definitions }),
     ...watch,
@@ -48,15 +64,62 @@ export const registerTools = (options: {
   readonly scope: Scope.Scope;
   readonly run: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>;
   readonly arm: Arm;
+  /** Every open watch in the hub, shared by all connections. */
+  readonly watches: Map<string, Watch>;
+  readonly sources: ReadonlyArray<Source>;
+  readonly decide: Decide;
   readonly catalogue: () => ReadonlyArray<unknown>;
   readonly toolPaths: ReadonlyArray<string>;
   readonly defaultExpiresInSeconds: number;
 }) => {
-  const { server, harness, run, arm } = options;
+  const { server, harness, run, arm, watches } = options;
   const send: Send = (notification) =>
     Effect.promise(() => server.server.notification(notification));
   const sessionKeys = Object.keys(harness.watchParams.fields);
   const ToolInput = Schema.Struct({ event: Schema.String, ...harness.watchParams.fields });
+
+  server.registerTool(
+    "watches",
+    {
+      description:
+        "List every open watch from every session with its event, arguments, and expiry, so you can reuse the arguments or find a watch by its id. A watch armed with target also lists the params the target resolved to. A watch that already ended is not listed.",
+    },
+    () =>
+      text({
+        watches: [...watches].map(([id, watch]) => ({ id, ...watch.view })),
+      }),
+  );
+  server.registerTool(
+    "unwatch",
+    {
+      description:
+        "End a watch early and wait until it has closed. Returns { id, stopped }. stopped is false when no open watch has that id.",
+      inputSchema: fromJsonSchema<{ id: string }>({
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            minLength: 1,
+            description:
+              "The watch to end, as the `watches` tool lists it or as you named it when you armed it.",
+          },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      }),
+    },
+    ({ id }) =>
+      run(
+        Effect.gen(function* () {
+          const watch = watches.get(id);
+          if (watch) {
+            yield* Deferred.succeed(watch.ended, "Stopped");
+            yield* Deferred.await(watch.finished);
+          }
+          return text({ id, stopped: watch !== undefined });
+        }),
+      ),
+  );
 
   server.registerTool(
     "list_events",
@@ -95,13 +158,61 @@ export const registerTools = (options: {
                 ([key]) => key !== "event" && !sessionKeys.includes(key),
               ),
             );
-            const armed = yield* arm({ name, args, view: input });
+            const {
+              id,
+              expiresInSeconds = options.defaultExpiresInSeconds,
+              target,
+              code,
+            } = yield* decodeWatch(args);
+            if (bytes(code) > MAX_CODE_BYTES)
+              return yield* Effect.fail(
+                new Invalid({ message: `code exceeds ${MAX_CODE_BYTES} bytes; shorten it` }),
+              );
+            const armed = yield* arm(name, target);
+            const runCode = makeRunCode({
+              code,
+              sources: options.sources,
+              state: yield* makeWatchState,
+              decide: options.decide,
+            });
+            const startedAt = yield* Clock.currentTimeMillis;
+            const watch: Watch = {
+              view: {
+                event: armed.event,
+                startedAt: new Date(startedAt).toISOString(),
+                expiresAt: new Date(startedAt + expiresInSeconds * 1000).toISOString(),
+                arguments: input,
+                ...(target === undefined ? {} : { params: armed.params }),
+              },
+              ended: yield* Deferred.make<string>(),
+              finished: yield* Deferred.make<void>(),
+            };
+            const claim = Effect.acquireRelease(
+              Effect.suspend(() => {
+                if (watches.has(id))
+                  return Effect.fail(
+                    new Invalid({
+                      message: "id is already open in this or another session; choose another id",
+                    }),
+                  );
+                watches.set(id, watch);
+                return Effect.void;
+              }),
+              () =>
+                Effect.sync(() => watches.delete(id)).pipe(
+                  Effect.andThen(Deferred.succeed(watch.finished, undefined)),
+                ),
+            );
+            const until = Effect.raceFirst(
+              Effect.sleep(`${expiresInSeconds} seconds`).pipe(Effect.as("Expired")),
+              Deferred.await(watch.ended),
+            );
             const wake = (
               text: string,
               onFailure: (error: { readonly message: string }) => Effect.Effect<void>,
             ) =>
               harness
-                .wake(send, { session, id: armed.id, event: armed.event, text })
+                .wake(send, { session, id, event: armed.event, text })
                 .pipe(Effect.catchTag("Harness.WakeFailed", onFailure));
             // Succeeds at the watch's first health report, or with the reason it ended first.
             const ready = yield* Deferred.make<string | undefined, Invalid | SourceError>();
@@ -113,25 +224,26 @@ export const registerTools = (options: {
                 case "heartbeat":
                   return Effect.void;
                 case "event":
-                  return wake(notification.data, (error) =>
-                    Deferred.succeed(armed.watch.ended, `Wake failed: ${error.message}`).pipe(
+                  return wake(wakeText(notification.data), (error) =>
+                    Deferred.succeed(watch.ended, `Wake failed: ${error.message}`).pipe(
                       Effect.asVoid,
                     ),
                   );
                 case "terminated":
                   if (notification.reason === "Stopped") return Effect.void;
-                  return wake(`Watch ${armed.id} ended: ${notification.reason}`, (error) =>
+                  return wake(`Watch ${id} ended: ${notification.reason}`, (error) =>
                     Effect.logWarning(`Termination wake failed: ${error.message}`),
                   );
               }
             };
-            yield* armed.run(notify).pipe(
+            yield* claim.pipe(
+              Effect.andThen(armed.run(notify, until, runCode)),
               Effect.onExit((exit) => {
                 const warn =
                   Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)
                     ? Effect.logWarning("Watch failed").pipe(
                         Effect.annotateLogs({
-                          id: armed.id,
+                          id,
                           error: String(Cause.squash(exit.cause)),
                         }),
                       )
@@ -142,10 +254,10 @@ export const registerTools = (options: {
               Effect.forkIn(options.scope),
             );
             const ended = yield* Deferred.await(ready);
-            const params = armed.watch.view.params;
+            const params = watch.view.params;
             return {
-              id: armed.id,
-              ...(ended === undefined ? { expiresAt: armed.watch.view.expiresAt } : { ended }),
+              id,
+              ...(ended === undefined ? { expiresAt: watch.view.expiresAt } : { ended }),
               ...(params === undefined ? {} : { params }),
             };
           }),

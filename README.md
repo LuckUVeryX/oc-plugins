@@ -8,7 +8,7 @@ Two OpenCode plugins and a standalone events MCP server for Lark and GitLab in o
 | [oc-idle](packages/oc-idle/README.md)         | Compact large sessions after an idle period              |
 | [events-mcp](packages/events-mcp/README.md)   | Wake sessions on Lark and GitLab events over MCP stdio   |
 
-Tested with OpenCode 2.3.0 and Effect 4.1.0. No build step is required.
+Tested with OpenCode 2.4.0 and Effect 4.1.0. No build step is required.
 
 ## Install
 

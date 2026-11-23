@@ -36,7 +36,7 @@ Launch a harness only through the run:
 
 - **Claude Code.** `scripts/tui.sh claude` starts `$VERIFY_RUN_DIR/bin/claude` on the run's tmux socket, then answers the two first-launch dialogs. It returns after `Channels (experimental) messages from server:events-mcp` appears. The launcher sources the run's credentials from `bin/env`, sets `MCP_PROTOCOL_NEGOTIATION=legacy`, and adds `--dangerously-load-development-channels server:events-mcp`; `run.sh init` writes it.
 - **Codex.** `scripts/tui.sh codex` starts `$VERIFY_RUN_DIR/bin/codex`, which sets the isolated `HOME`, the run's hub, and the names Codex forwards. Codex uses its default `~/.codex` under that home, where `init` wrote the `events` server, an `env_vars` list, and a copy of `auth.json`. Readiness is the composer prompt. Do not set `CODEX_HOME`: Codex must use the default `~/.codex`, and the server reads the control socket there.
-- **OpenCode.** Do not launch the operator's OpenCode. Drive the `opencode` harness over stdio with `scripts/mcp-client.mjs`, which opens the same MCP connection and calls `events/list` and `events/stream`. The TUI's `watch_mcp_event` wrapper is not exercised; everything below it is.
+- **OpenCode.** Do not launch the operator's OpenCode. Drive the `opencode` harness over stdio with `scripts/mcp-client.mjs`, which opens the same MCP connection and calls `events/list` and `events/stream`. OpenCode's automation that arms the watch is not exercised; everything below it is.
 
 ## Doctor
 
@@ -80,9 +80,9 @@ Cleanup kills this run's tmux session by exact name, then this run's tmux server
 
 ## Helpers
 
-| Helper                   | Invocation                                                                                    | Purpose                                         |
-| ------------------------ | --------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `scripts/run.sh`         | `init`, `use <run-dir>`, `status <run-dir>`, `cleanup <run-dir>`                              | Run layout, isolated homes, launchers, teardown |
-| `scripts/target.ts`      | `doctor [--all] [--codex]`, `trigger`                                                         | Read-only target checks; the one pipeline write |
-| `scripts/tui.sh`         | `claude`, `codex`, `prompt`, `expect`, `key`, `capture`, `stop`                               | tmux driver and measured dialog keys            |
-| `scripts/mcp-client.mjs` | `list`, `read-tools`, `watch [--id ID] [--timeout SECONDS] [--trigger]`, `hub [--sessions N]` | OpenCode surface over stdio                     |
+| Helper                   | Invocation                                                                          | Purpose                                         |
+| ------------------------ | ----------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `scripts/run.sh`         | `init`, `use <run-dir>`, `status <run-dir>`, `cleanup <run-dir>`                    | Run layout, isolated homes, launchers, teardown |
+| `scripts/target.ts`      | `doctor [--all] [--codex]`, `trigger`                                               | Read-only target checks; the one pipeline write |
+| `scripts/tui.sh`         | `claude`, `codex`, `prompt`, `expect`, `key`, `capture`, `stop`                     | tmux driver and measured dialog keys            |
+| `scripts/mcp-client.mjs` | `list`, `read-tools`, `watch [--timeout SECONDS] [--trigger]`, `hub [--sessions N]` | OpenCode surface over stdio                     |

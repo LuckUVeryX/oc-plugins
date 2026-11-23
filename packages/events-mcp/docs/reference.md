@@ -40,7 +40,7 @@ All 8 events arrive over one Action Cable connection to `/-/cable`.
 | `gitlab.mergeRequestApprovalStateUpdated` | merge request link or `group/project!123`                               | A merge request, when its approval state changes.                        |
 | `gitlab.noteable.notes_changed`           | merge request or issue link, `group/project!123` or `group/project#123` | A merge request or issue, when any note changes.                         |
 
-Every GitLab event except `gitlab.userMergeRequestUpdated` needs a `target`. A target is a link on the configured GitLab host, a project path such as `group/project`, or a shorthand such as `group/project!123`, `group/project#123`, or `group/project@<full sha>`. The server reads the resource to prove the token can read it, then fills the subscription params. `watches` lists the resolved params beside the target, and in Claude Code and Codex `watch` also returns them. `gitlab.userMergeRequestUpdated` subscribes as the token's user.
+Every GitLab event except `gitlab.userMergeRequestUpdated` needs a `target`. A target is a link on the configured GitLab host, a project path such as `group/project`, or a shorthand such as `group/project!123`, `group/project#123`, or `group/project@<full sha>`. The server reads the resource to prove the token can read it, then fills the subscription params. In Claude Code and Codex, `watch` returns the resolved params and `watches` lists them. `gitlab.userMergeRequestUpdated` subscribes as the token's user.
 
 A target the token cannot read, or a link to a resource that does not exist, fails the watch before it subscribes.
 
@@ -54,7 +54,9 @@ GITLAB_TOKEN=... bun run --filter events-mcp generate:gitlab
 
 ### OpenCode
 
-`"location_idle_timeout": false` stops OpenCode from unloading an idle location. Without it, OpenCode can end a long watch before `expiresInSeconds`. A numeric `location_idle_timeout` still unloads the location, and its watches, after that duration.
+OpenCode arms a watch as an automation with an event trigger, so it needs `experimental.mcp_events`, and automations must not be turned off. The automation holds the watch's name and expiry, and `automation.list`, `pause`, `resume` and `delete` manage it. Without `expires` the watch has no time limit.
+
+`"location_idle_timeout": false` stops OpenCode from unloading an idle location. Without it, OpenCode can end a long watch early. A numeric `location_idle_timeout` still unloads the location, and its watches, after that duration.
 
 Put the block in the global config. Every session for this user shares one hub, with one Lark connection and one GitLab connection, so `"pool"` is unnecessary. OpenCode expands `{env:HOME}` but not `$HOME`.
 
@@ -111,28 +113,59 @@ No settings are required to start the server. Each source needs its own credenti
 ## Limits
 
 - Everything is in memory. Watches, per-watch state, and the dedup cache live in the hub process. A hub restart starts fresh.
-- Watch ids are shared by every session on the machine. `watches` lists every open watch, and `unwatch` can stop any of them. A watch still ends when the session that armed it disconnects. Sessions that stay connected share upstream subscriptions and dedup.
-- A watch stays open for 3600 seconds unless `expiresInSeconds` says otherwise. One event's code has a 120-second limit, and a watch handles one event at a time, so a slow event delays the ones behind it.
+- In Claude Code and Codex, watch ids are shared by every session on the machine. `watches` lists every open watch, and `unwatch` can stop any of them. Neither covers OpenCode's automations. A watch still ends when the session that armed it disconnects. Sessions that stay connected share upstream subscriptions and dedup.
+- In Claude Code and Codex, a watch stays open for 3600 seconds unless `expiresInSeconds` says otherwise. One event's code has a 120-second limit, and a watch handles one event at a time, so a slow event delays the ones behind it.
 - Delivery is live only. Events that arrive while no watch is open, or while a connection reconnects, are dropped. The stream reports `cursor: null`, so there is no replay.
 - Duplicate event IDs are dropped within each shared feed. Lark drops events older than an hour.
-- OpenCode ends every watch without a stop message when it reloads, restarts, or unloads an idle location. Claude Code ends them when the session exits. Codex runs one server per thread, so a watch ends when that thread's server exits.
+- OpenCode pauses the automation when its watch fails. The reason is in `lastOutput`, the session is not woken, and `automation.resume` arms it again. After a reconnect OpenCode arms the same watch again, and the automation keeps its state. Claude Code ends its watches when the session exits. Codex runs one server per thread, so a watch ends when that thread's server exits.
 - Lark delivers each app's events to one WebSocket client. Before connecting, the server reads `/open-apis/event/v1/connection`. If another consumer is online, such as `lark-cli event consume` or this server on another machine, the watch fails with a clear error instead of splitting events.
 - The GitLab notes channel is not part of the GraphQL schema and can change.
-- A delivered event is capped at 16,384 bytes, counted as `{ id, timestamp, data }`. Code that returns more stops the watch.
+- In Claude Code and Codex, a wake is capped at 16,384 bytes, counted as `{ id, timestamp, data }`. Code that returns more stops the watch.
 - Every wake starts a session turn and costs tokens.
 - Every watch's code and every read tool can read whatever the credentials allow. Grant only the scopes your watches need. HR, payroll, and mail scopes expose personal data to the decision model.
 
-## For agents: setting up a watch
+## For agents: OpenCode
 
-OpenCode calls `watch_mcp_event`. Claude Code and Codex call `list_events`, then `watch`. All of them take the same watch arguments, and Codex also takes a `threadId`.
+An automation reacts to each event. Its code action filters, keeps state and wakes the session.
 
-Each event runs the watch's code. A null result drops the event, and anything else wakes the session.
+1. Call `tools.opencode.list_mcp_events({ server: "events" })` in `execute` for the events, args and payloads.
+2. Read the endpoints the code will read, with `lark_get` or `gitlab_get`, and confirm the response shape and IDs.
+3. Create the automation.
+
+```js
+await tools.automation.create({
+  name: "Failed pipelines",
+  trigger: {
+    type: "event",
+    server: "events",
+    event: "gitlab.ciPipelineStatusesUpdated",
+    args: { target: "group/project" },
+  },
+  expires: "in 8 hours",
+  action: {
+    type: "code",
+    code: `
+const { id, status } = input.event.data;
+if (status !== "FAILED") return;
+return { send: { prompt: "Pipeline failed, untrusted data:\\n" + JSON.stringify(id) } };
+`,
+  },
+});
+```
+
+The code reads `input.event = { id, timestamp, data }`, with the raw source payload in `data`, and `input.state`. It returns nothing to stay quiet, `{ state }` to remember, `{ send: { prompt } }` to wake the session, and `{ done: true }` to stop. It calls `tools.events.gitlab_get`, `tools.events.lark_get` and `tools.events.decide`, where `events` is the configured server name. Each run has 30 seconds. A prompt action with no `to` wakes the session on every event, and OpenCode skips one whose prompt and event exceed 32 KiB.
+
+Manage it with `automation.list`, `pause`, `resume` and `delete`. The recipe for new comments is in the description of `gitlab.noteable.notes_changed`.
+
+## For agents: Claude Code and Codex
+
+These clients have no automations, so events-mcp runs the watch's code. A null result drops the event, and anything else wakes the session.
 
 ### Arm a watch
 
-1. OpenCode calls `watch_mcp_event({ "server": "events" })`. Claude Code and Codex call `list_events`. All of them list the events and each argument's schema and description. Read the arguments there, not here.
-2. Read the same endpoints the code will read, with `lark_get` or `gitlab_get`, and confirm the response shape and IDs.
-3. OpenCode calls `watch_mcp_event({ "server": "events", "event": "<name>", "arguments": { ... } })`. Claude Code and Codex call `watch({ "event": "<name>", ... })` with the same fields. For GitLab, pass `target` when `list_events` lists one. Codex also passes `"threadId": "<the value of $CODEX_THREAD_ID>"`.
+1. Call `list_events` for the events, targets and payloads.
+2. Read the endpoints the code will read, with `lark_get` or `gitlab_get`, and confirm the response shape and IDs.
+3. Call `watch({ "event": "<name>", "id": "<your name>", "code": "...", ... })`. Pass `target` when `list_events` lists one, and `expiresInSeconds` for more than an hour. Codex also passes `"threadId": "<the value of $CODEX_THREAD_ID>"`.
 
 The wake text is the code's result: a string as is, or JSON as `JSON.stringify` of the value. In Claude Code it arrives as a channel message from the server, and in Codex as a new user turn in the same thread. To stop a watch early, call `unwatch({ "id": "..." })`. `watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again, and the params a target resolved to. If a watch stops with `code failed`, fix the code and arm a new watch.
 
@@ -167,7 +200,7 @@ Use `decide` when plain code cannot tell whether an event deserves a wake. One c
 
 ### Recipes
 
-Each recipe is the event plus the arguments to pass with it.
+Each recipe is a watch for Claude Code and Codex, and also needs an `id`. In an OpenCode code action, use `tools.events.*_get` for reads, `input.state` and a returned `state` for memory, nothing instead of null, and `{ send: { prompt } }` instead of a result.
 
 #### Babysit a failing pipeline
 
@@ -186,7 +219,6 @@ return { pipeline: input.event.data, jobs };
 
 ```json
 {
-  "id": "pipeline",
   "target": "group/project",
   "code": "…"
 }
@@ -219,13 +251,12 @@ return fresh.length === 0 ? null : { notes: fresh };
 
 ```json
 {
-  "id": "mr-comments",
   "target": "group/project!123",
   "code": "…"
 }
 ```
 
-`watches` lists the resolved `projectId`, `noteableType`, `noteableId`, and `noteableIid`, and in Claude Code and Codex `watch` also returns them.
+In Claude Code and Codex, `watch` returns the resolved `projectId`, `noteableType`, `noteableId`, and `noteableIid`.
 
 A signal that finds nothing newer than the stored id returns null. If more than 20 comments arrive between two signals, the older ones in that burst are skipped.
 
@@ -285,7 +316,7 @@ This code drops the event when the model is not confident.
 ### Verify
 
 1. Run `opencode mcp list` or `claude mcp list`. For Codex, ask the agent in the TUI to call `list_events` instead. `codex mcp list` reports an entry as enabled even when its command does not exist, so it does not prove the server connected.
-2. OpenCode calls `watch_mcp_event` with server `events` and no event. Claude Code and Codex call `list_events`. Each lists 22 events, including `lark.im.message.receive_v1` and `gitlab.noteable.notes_changed`.
+2. OpenCode calls `tools.opencode.list_mcp_events({ server: "events" })`. Claude Code and Codex call `list_events`. Each lists 22 events, including `lark.im.message.receive_v1` and `gitlab.noteable.notes_changed`.
 3. For Lark, ask the user to trigger a subscribed event, such as a message to the bot. The wake confirms delivery.
 4. For GitLab, call `gitlab_get` with `{ "path": "/user" }` to check the token. Then arm a watch on a project the user can read and wait for the next pipeline status change.
 5. In Claude Code the wake appears as a channel message from the configured server, and in Codex as a new user turn in the watched thread. If it never arrives, check the client notes above.
@@ -305,10 +336,10 @@ This code drops the event when the model is not confident.
 | A GitLab watch stops with "No GitLab token"                       | Set `GITLAB_TOKEN`, or authenticate `glab` for the GitLab host so `glab config get token --host <host>` returns a token.                                                                                                                                               |
 | A GitLab watch fails to arm with "GitLab HTTP 404"                | The target names a resource the token cannot read, or the link is wrong. `gitlab_get` on the path in the message shows the same result.                                                                                                                                |
 | A GitLab watch stops with "refused this watch"                    | GitLab refused the subscription after the target read succeeded. Check that the token can still read the resource, then arm a new watch.                                                                                                                               |
-| A notes watch stops with "exceeds 16384 bytes"                    | The code returned an event bigger than OpenCode accepts. Return less data.                                                                                                                                                                                             |
+| A notes watch stops with "exceeds 16384 bytes"                    | The code returned more than one event may carry. Return less data.                                                                                                                                                                                                     |
 | A Codex watch fails with "Codex does not know thread"             | `threadId` is wrong. Run `printf %s "$CODEX_THREAD_ID"` in the thread's shell and pass that exact value.                                                                                                                                                               |
 | A Codex watch fails with "Cannot reach the Codex app-server"      | The Codex app-server control socket is not at `~/.codex/app-server-control/app-server-control.sock`. Start Codex without `--no-daemon`, using the default `~/.codex` home.                                                                                             |
 | A watch disappears without a stop message                         | OpenCode reloaded, restarted, or unloaded the idle location, or the Claude Code or Codex session exited. For OpenCode, set `location_idle_timeout` to `false` and arm a new watch.                                                                                     |
 | A watch stops with a timeout                                      | The event exceeded the code's 120-second limit. Shorten the work, such as fewer or smaller reads.                                                                                                                                                                      |
 | A watch stops with "Watch state exceeds 65536 bytes"              | The code stores too much in `tools.watch.state`. Keep less, or derive it again on each event.                                                                                                                                                                          |
-| Memory grows over time                                            | Watches and their buffers live in one long-running hub process, and buffers are unbounded. Call `watches`, then `unwatch` the ones you no longer need.                                                                                                                 |
+| Memory grows over time                                            | Watches and their buffers live in one long-running hub process, and buffers are unbounded. End the ones you no longer need with `unwatch`, or `automation.delete` in OpenCode.                                                                                         |

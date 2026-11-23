@@ -1,9 +1,9 @@
 import { CodeMode, Tool } from "@opencode/codemode";
 import { Effect, Record, Ref, Schema } from "effect";
 import { type Decide, DecideInput } from "../decision/decision-model.ts";
-import type { Source, Tool as SourceTool } from "../source/contract.ts";
-import { bytes, MAX_CODE_BYTES } from "../limits.ts";
-import { inputJsonSchema } from "../source/tool.ts";
+import { ToolError, type Source, type Tool as SourceTool } from "../source/contract.ts";
+import { bytes, MAX_CODE_BYTES, MAX_EVENT_BYTES } from "../limits.ts";
+import { inputJsonSchema, makeTool } from "../source/tool.ts";
 
 export class Failed extends Schema.TaggedError<Failed>()("Code.Failed", {
   message: Schema.String,
@@ -15,8 +15,8 @@ export type WatchEvent = {
   readonly data: Schema.JsonObject;
 };
 
-/** Runs a watch's code on one event. null drops the event, and a string is the wake text. */
-export type RunCode = (event: WatchEvent) => Effect.Effect<string | null, Failed>;
+/** Runs a watch's code on one event. null drops the event, and anything else is delivered. */
+export type RunCode = (event: WatchEvent) => Effect.Effect<Schema.Json, Failed>;
 
 export class StateTooLarge extends Schema.TaggedError<StateTooLarge>()("WatchState.TooLarge", {
   message: Schema.String,
@@ -72,13 +72,13 @@ const stateSet = (state: WatchState) =>
     execute: (value) => state.set(value),
   });
 
-const decideTool = (decide: Decide) =>
-  Tool.make({
+export const decideTool = (decide: Decide): SourceTool =>
+  makeTool({
     description:
       "Judge a payload that plain code cannot settle, such as whether a message is a real request. Send text or JSON input and one or more named questions of type predicate, choice, or score. Check each answer's type before reading its probability. A question can return an error instead. One call is one model request.",
     input: DecideInput,
-    output: Schema.Json,
-    execute: (input) => decide(input),
+    run: (input) =>
+      decide(input).pipe(Effect.mapError((error) => new ToolError({ message: error.message }))),
   });
 
 export const makeRunCode = (options: {
@@ -93,7 +93,7 @@ export const makeRunCode = (options: {
       ...Object.fromEntries(
         options.sources.map((source) => [source.name, Record.map(source.tools, codeModeTool)]),
       ),
-      events: { decide: decideTool(options.decide) },
+      events: { decide: codeModeTool(decideTool(options.decide)) },
     },
     limits: { maxOutputBytes: MAX_CODE_BYTES },
   });
@@ -106,8 +106,16 @@ export const makeRunCode = (options: {
         );
       if (result.truncated === true)
         return yield* Effect.fail(new Failed({ message: "Truncated" }));
-      const value = result.value;
-      if (value === null || typeof value === "string") return value;
-      return JSON.stringify(value);
+      if (
+        bytes(
+          JSON.stringify({ id: event.eventId, timestamp: event.timestamp, data: result.value }),
+        ) > MAX_EVENT_BYTES
+      )
+        return yield* Effect.fail(
+          new Failed({
+            message: `the delivered event exceeds ${MAX_EVENT_BYTES} bytes; return less`,
+          }),
+        );
+      return result.value;
     });
 };

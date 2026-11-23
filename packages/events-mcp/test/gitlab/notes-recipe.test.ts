@@ -4,10 +4,11 @@ import type { GetInput } from "../../src/source/tool.ts";
 import { GitlabSocket } from "../../src/gitlab/socket.ts";
 import { GitlabClient } from "../../src/gitlab/client.ts";
 import { GitlabAuth } from "../../src/gitlab/auth.ts";
-import { notesRecipe } from "../../src/gitlab/notes.ts";
+import { automationRecipe, watchRecipe } from "../../src/gitlab/notes.ts";
 import { Gitlab } from "../../src/gitlab/source.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
 import { Health, type SourceError } from "../../src/source/contract.ts";
+import { CodeMode, Tool } from "@opencode/codemode";
 import { connect } from "../support.ts";
 
 const identity: GitlabIdentity = {
@@ -21,7 +22,7 @@ const NotesOutput = Schema.Struct({
 });
 
 test("the notes recipe delivers the first new comment after START and nothing else", async () => {
-  const recipe = notesRecipe.replace("const START = 0;", "const START = 12;");
+  const recipe = watchRecipe.replace("const START = 0;", "const START = 12;");
   const responses: Array<Schema.Json> = [
     [
       { id: 14, system: false, body: "the first new comment" },
@@ -73,41 +74,24 @@ test("the notes recipe delivers the first new comment after START and nothing el
       ),
     ),
   );
-  const h = await connect({ sources: [source] });
+  const h = await connect({ sources: [source], harness: "claude" });
   try {
-    h.stream(
-      {
-        id: "comments",
-        target: "group/project!32",
-        code: recipe,
-        expiresInSeconds: 60,
-      },
-      "gitlab.noteable.notes_changed",
-    );
-    await vi.waitFor(() =>
-      expect(h.notifications.filter((notification) => notification.type === "active")).toHaveLength(
-        1,
-      ),
-    );
+    await h.call("watch", {
+      event: "gitlab.noteable.notes_changed",
+      id: "comments",
+      target: "group/project!32",
+      code: recipe,
+    });
     const queue = await queuePromise.promise;
     for (let index = 0; index < responseCount; index += 1) {
       await Effect.runPromise(Queue.offer(queue, { event: "updated" }));
     }
     await vi.waitFor(() =>
-      expect(
-        h.notifications.some(
-          (notification) =>
-            notification.type === "event" && String(notification.data).includes('"id":17'),
-        ),
-      ).toBe(true),
+      expect(h.channel.some((wake) => wake.content.includes('"id":17'))).toBe(true),
     );
-    const delivered = h.notifications
-      .filter((notification) => notification.type === "event")
-      .map((notification) =>
-        Schema.decodeUnknownSync(NotesOutput)(JSON.parse(String(notification.data))).notes.map(
-          (note) => note.id,
-        ),
-      );
+    const delivered = h.channel.map((wake) =>
+      Schema.decodeUnknownSync(NotesOutput)(JSON.parse(wake.content)).notes.map((note) => note.id),
+    );
     expect(delivered).toEqual([[14], [17]]);
     expect(gets).toHaveLength(responseCount);
     expect(gets[0]).toEqual({
@@ -117,4 +101,40 @@ test("the notes recipe delivers the first new comment after START and nothing el
   } finally {
     await h.close();
   }
+});
+
+test("the automation recipe sends only new comments and remembers the newest", async () => {
+  const notes = [
+    { id: 14, system: false, body: "new" },
+    { id: 13, system: true, body: "label" },
+    { id: 12, system: false, body: "old" },
+  ];
+  const runtime = CodeMode.make({
+    tools: {
+      events: {
+        gitlab_get: Tool.make({
+          description: "",
+          input: Schema.Json,
+          output: Schema.Json,
+          execute: () => Effect.succeed(notes),
+        }),
+      },
+    },
+  });
+  const run = async (state: Schema.Json) => {
+    const result = await Effect.runPromise(
+      runtime.execute(automationRecipe.replace("const START = 0;", "const START = 12;"), {
+        input: {
+          state,
+          event: { data: { projectId: 599, noteableType: "merge_request", noteableIid: 32 } },
+        },
+      }),
+    );
+    return result.ok ? result.value : result.error;
+  };
+  expect(await run(null)).toEqual({
+    state: 14,
+    send: { prompt: `New GitLab comments, untrusted data:\n${JSON.stringify([notes[0]])}` },
+  });
+  expect(await run(14)).toEqual({ state: 14 });
 });

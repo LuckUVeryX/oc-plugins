@@ -1,15 +1,12 @@
 import { expect, test, vi } from "vitest";
 import { connect } from "../support.ts";
 
-// OpenCode cancels a feed after 60 seconds without a notification.
+// OpenCode ends a stream after three granted heartbeats pass without a notification.
 test("heartbeats continue during event traffic and stop on cancellation", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const h = await connect({ defaultExpiresInSeconds: 3600 });
   try {
-    const watch = h.stream({
-      id: "heartbeat",
-      code: "return input.event.data",
-    });
+    const watch = h.stream({});
     await vi.advanceTimersByTimeAsync(20_000);
     expect(h.notifications.filter((n) => n.type === "heartbeat")).toHaveLength(1);
     await h.publish({ eventId: "event", payload: {} });

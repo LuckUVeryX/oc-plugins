@@ -147,20 +147,38 @@ export async function connect(
     timestamp?: string;
     reason?: string;
   }> = [];
+  const subscribed = {
+    cursor: Schema.Null,
+    _meta: Schema.Struct({
+      [SUBSCRIPTION_ID_META_KEY]: Schema.Union([Schema.String, Schema.Number]),
+    }),
+  };
   const params = Schema.toStandardSchemaV1(
     Schema.Struct({
-      cursor: Schema.Null,
-      _meta: Schema.Struct({
-        [SUBSCRIPTION_ID_META_KEY]: Schema.Union([Schema.String, Schema.Number]),
-      }),
+      ...subscribed,
       eventId: Schema.optionalKey(Schema.String),
       name: Schema.optionalKey(Schema.String),
       timestamp: Schema.optionalKey(Schema.String),
-      data: Schema.optionalKey(Schema.Unknown),
+      // OpenCode drops an event whose data is not an object.
+      data: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
       error: Schema.optionalKey(Schema.Struct({ code: Schema.Number, message: Schema.String })),
     }),
   );
-  for (const type of ["active", "heartbeat", "event", "error", "terminated"]) {
+  // OpenCode drops an active notification that does not grant a heartbeat.
+  const activeParams = Schema.toStandardSchemaV1(
+    Schema.Struct({
+      ...subscribed,
+      heartbeatMs: Schema.Int.check(Schema.isGreaterThan(0)),
+    }),
+  );
+  client.setNotificationHandler(
+    "notifications/events/active",
+    { params: activeParams },
+    (value) => {
+      notifications.push({ type: "active", id: value._meta[SUBSCRIPTION_ID_META_KEY] });
+    },
+  );
+  for (const type of ["heartbeat", "event", "error", "terminated"]) {
     client.setNotificationHandler(`notifications/events/${type}`, { params }, (value) => {
       notifications.push({
         type,
@@ -229,6 +247,10 @@ export async function connect(
         ),
       );
       return JSON.parse(response.content[0]?.text ?? "null");
+    },
+    /** Arms a watch with code, in a harness that has the watch tool. */
+    watch(id: string, code: string, event: string = larkMessage) {
+      return this.call("watch", { event, id, code });
     },
     async callRaw(name: string, args: Record<string, unknown> = {}) {
       const response = await client.request(
