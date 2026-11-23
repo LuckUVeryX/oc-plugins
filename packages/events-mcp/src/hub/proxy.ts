@@ -28,7 +28,7 @@ const spawnHub = (entry: string, state: string) => {
   ensureDirectory(state);
   const log = openSync(logPath(state), "a", 0o600);
   try {
-    const child = spawn(process.execPath, [entry, "hub", String(process.pid)], {
+    const child = spawn(process.execPath, [entry, "hub"], {
       detached: true,
       stdio: ["ignore", log, log],
       env: process.env,

@@ -36,8 +36,10 @@ import { directories, ensureDirectory, lockPath, socketPath } from "./paths.ts";
 
 const HELLO_TIMEOUT = "5 seconds";
 const MAX_HELLO_BYTES = 512;
-const SPAWNER_TICK = "1 second";
 const RETIRE_AFTER = "1 second";
+// A proxy that spawns the hub connects within its own 60-second connect timeout.
+// A hub nobody connects to by then exits, for example when its proxy died first.
+const STARTUP_GRACE = "60 seconds";
 
 const Hello = Schema.Struct({ harness: Schema.String });
 
@@ -62,20 +64,6 @@ const listen = (entry: net.Server, path: string) =>
       resolve();
     });
   });
-
-const isAlive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return !(
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "ESRCH"
-    );
-  }
-};
 
 type HelloResult = { readonly name: Name; readonly rest: Buffer } | { readonly reason: string };
 
@@ -165,23 +153,17 @@ type Dependencies = Registry.Service | Feeds.Service | DecisionModel.Service;
 
 interface HubState {
   connections: number;
-  served: boolean;
 }
 
 interface Hub {
   readonly entry: net.Server;
   readonly queue: Queue.Queue<net.Socket>;
   readonly state: HubState;
-  readonly spawner: number;
   readonly scope: Scope.Scope;
   readonly idle: Deferred.Deferred<void>;
 }
 
-// An unserved hub still exits once the proxy that spawned it dies.
-const idleNow = (hub: Hub) =>
-  hub.state.connections === 0 &&
-  Queue.sizeUnsafe(hub.queue) === 0 &&
-  (hub.state.served || !isAlive(hub.spawner));
+const idleNow = (hub: Hub) => hub.state.connections === 0 && Queue.sizeUnsafe(hub.queue) === 0;
 
 // The read and the close run in one synchronous step so an arriving connection
 // cannot slip between them. A short settle first gives a harness that disposed
@@ -205,16 +187,7 @@ const evaluate = (hub: Hub) =>
     yield* Effect.forkIn(hub.scope)(retire(hub));
   });
 
-const watchSpawner = (hub: Hub) =>
-  Effect.gen(function* () {
-    while (!hub.state.served) {
-      yield* Effect.sleep(SPAWNER_TICK);
-      if (hub.state.served) return;
-      yield* evaluate(hub);
-    }
-  });
-
-const connection = (socket: net.Socket, hub: Hub) =>
+const connection = (socket: net.Socket) =>
   Effect.scopedWith((scope) =>
     Effect.gen(function* () {
       const hello = yield* readHello(socket);
@@ -222,7 +195,6 @@ const connection = (socket: net.Socket, hub: Hub) =>
         yield* Effect.logWarning(`closed before its harness arrived: ${hello.reason}`);
         return;
       }
-      hub.state.served = true;
       yield* Effect.logInfo(`connection opened: ${hello.name}`);
 
       const input = new PassThrough();
@@ -261,7 +233,7 @@ const serve = (hub: Hub) =>
     while (true) {
       const socket = yield* Queue.take(hub.queue);
       yield* Effect.forkScoped(
-        connection(socket, hub).pipe(
+        connection(socket).pipe(
           Effect.ensuring(
             Effect.gen(function* () {
               hub.state.connections -= 1;
@@ -276,17 +248,11 @@ const serve = (hub: Hub) =>
 export const layer: Layer.Layer<Service, never, Dependencies> = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const spawner = yield* Effect.sync(() => {
-      const value = Number(process.argv[3]);
-      if (!Number.isInteger(value) || value <= 0)
-        throw new Error("events-mcp hub is started by a proxy, not directly");
-      return value;
-    });
     const paths = yield* directories;
     yield* Effect.sync(() => ensureDirectory(paths.runtime));
 
     const queue = yield* Queue.unbounded<net.Socket>();
-    const state: HubState = { connections: 0, served: false };
+    const state: HubState = { connections: 0 };
     const idle = yield* Deferred.make<void>();
     const entry = net.createServer();
 
@@ -311,12 +277,13 @@ export const layer: Layer.Layer<Service, never, Dependencies> = Layer.effect(
       entry,
       queue,
       state,
-      spawner,
       scope: yield* Effect.scope,
       idle,
     };
     yield* Effect.forkScoped(serve(hub));
-    yield* Effect.forkIn(hub.scope)(watchSpawner(hub));
+    yield* Effect.forkIn(hub.scope)(
+      Effect.sleep(STARTUP_GRACE).pipe(Effect.andThen(evaluate(hub))),
+    );
     return Service.of({ done: Deferred.await(hub.idle) });
   }),
 );
