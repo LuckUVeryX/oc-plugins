@@ -163,59 +163,58 @@ export class Service extends Context.Service<Service, Interface>()("@events-mcp/
 
 type Dependencies = Registry.Service | Feeds.Service | DecisionModel.Service;
 
-interface SessionState {
-  active: number;
+interface HubState {
+  connections: number;
   served: boolean;
 }
 
-interface Session {
+interface Hub {
   readonly entry: net.Server;
   readonly queue: Queue.Queue<net.Socket>;
-  readonly state: SessionState;
+  readonly state: HubState;
   readonly spawner: number;
   readonly scope: Scope.Scope;
   readonly idle: Deferred.Deferred<void>;
 }
 
-// Exit only when no connection is open or queued and either a session has been
-// served or the proxy that spawned this hub is gone.
-const idleNow = (session: Session) =>
-  session.state.active === 0 &&
-  Queue.sizeUnsafe(session.queue) === 0 &&
-  (session.state.served || !isAlive(session.spawner));
+// An unserved hub still exits once the proxy that spawned it dies.
+const idleNow = (hub: Hub) =>
+  hub.state.connections === 0 &&
+  Queue.sizeUnsafe(hub.queue) === 0 &&
+  (hub.state.served || !isAlive(hub.spawner));
 
 // The read and the close run in one synchronous step so an arriving connection
 // cannot slip between them. A short settle first gives a harness that disposed
 // its negotiation probe time to open its real connection.
-const retire = (session: Session) =>
+const retire = (hub: Hub) =>
   Effect.gen(function* () {
     yield* Effect.sleep(RETIRE_AFTER);
     const retired = yield* Effect.sync(() => {
-      if (!idleNow(session)) return false;
-      session.entry.close();
+      if (!idleNow(hub)) return false;
+      hub.entry.close();
       return true;
     });
     if (!retired) return;
-    yield* Effect.logInfo("no sessions, exiting");
-    yield* Deferred.succeed(session.idle, undefined);
+    yield* Effect.logInfo("no connections, exiting");
+    yield* Deferred.succeed(hub.idle, undefined);
   });
 
-const evaluate = (session: Session) =>
+const evaluate = (hub: Hub) =>
   Effect.gen(function* () {
-    if (!(yield* Effect.sync(() => idleNow(session)))) return;
-    yield* Effect.forkIn(session.scope)(retire(session));
+    if (!(yield* Effect.sync(() => idleNow(hub)))) return;
+    yield* Effect.forkIn(hub.scope)(retire(hub));
   });
 
-const watchSpawner = (session: Session) =>
+const watchSpawner = (hub: Hub) =>
   Effect.gen(function* () {
-    while (!session.state.served) {
+    while (!hub.state.served) {
       yield* Effect.sleep(SPAWNER_TICK);
-      if (session.state.served) return;
-      yield* evaluate(session);
+      if (hub.state.served) return;
+      yield* evaluate(hub);
     }
   });
 
-const connection = (socket: net.Socket, session: Session) =>
+const connection = (socket: net.Socket, hub: Hub) =>
   Effect.scopedWith((scope) =>
     Effect.gen(function* () {
       const hello = yield* readHello(socket);
@@ -223,8 +222,8 @@ const connection = (socket: net.Socket, session: Session) =>
         yield* Effect.logWarning(`closed before its harness arrived: ${hello.reason}`);
         return;
       }
-      session.state.served = true;
-      yield* Effect.logInfo(`session opened: ${hello.name}`);
+      hub.state.served = true;
+      yield* Effect.logInfo(`connection opened: ${hello.name}`);
 
       const input = new PassThrough();
       input.write(hello.rest);
@@ -253,20 +252,20 @@ const connection = (socket: net.Socket, session: Session) =>
       yield* Deferred.await(closed);
     }).pipe(
       Effect.ensuring(Effect.sync(() => socket.destroy())),
-      Effect.onExit(() => Effect.logInfo("session closed")),
+      Effect.onExit(() => Effect.logInfo("connection closed")),
     ),
   );
 
-const serve = (session: Session) =>
+const serve = (hub: Hub) =>
   Effect.gen(function* () {
     while (true) {
-      const socket = yield* Queue.take(session.queue);
+      const socket = yield* Queue.take(hub.queue);
       yield* Effect.forkScoped(
-        connection(socket, session).pipe(
+        connection(socket, hub).pipe(
           Effect.ensuring(
             Effect.gen(function* () {
-              session.state.active -= 1;
-              yield* evaluate(session);
+              hub.state.connections -= 1;
+              yield* evaluate(hub);
             }),
           ),
         ),
@@ -287,14 +286,14 @@ export const layer: Layer.Layer<Service, never, Dependencies> = Layer.effect(
     yield* Effect.sync(() => ensureDirectory(paths.runtime));
 
     const queue = yield* Queue.unbounded<net.Socket>();
-    const state: SessionState = { active: 0, served: false };
+    const state: HubState = { connections: 0, served: false };
     const idle = yield* Deferred.make<void>();
     const entry = net.createServer();
 
     // Attach the handler before listen. A connection accepted between listen and
     // the first handler waits in the queue instead of being dropped.
     entry.on("connection", (socket) => {
-      state.active += 1;
+      state.connections += 1;
       Queue.offerUnsafe(queue, socket);
     });
 
@@ -308,7 +307,7 @@ export const layer: Layer.Layer<Service, never, Dependencies> = Layer.effect(
       }),
     );
 
-    const session: Session = {
+    const hub: Hub = {
       entry,
       queue,
       state,
@@ -316,9 +315,9 @@ export const layer: Layer.Layer<Service, never, Dependencies> = Layer.effect(
       scope: yield* Effect.scope,
       idle,
     };
-    yield* Effect.forkScoped(serve(session));
-    yield* Effect.forkIn(session.scope)(watchSpawner(session));
-    return Service.of({ done: Deferred.await(session.idle) });
+    yield* Effect.forkScoped(serve(hub));
+    yield* Effect.forkIn(hub.scope)(watchSpawner(hub));
+    return Service.of({ done: Deferred.await(hub.idle) });
   }),
 );
 
@@ -336,8 +335,8 @@ const CoreLayer = Layer.mergeAll(Feeds.layer, DecisionModel.layer, RegistryLayer
 
 export const main = () => {
   const program = Effect.gen(function* () {
-    const hub = yield* Service;
-    yield* hub.done;
+    const service = yield* Service;
+    yield* service.done;
   }).pipe(
     Effect.provide(layer.pipe(Layer.provide(CoreLayer))),
     Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ preserveEmptyStrings: true }))),
