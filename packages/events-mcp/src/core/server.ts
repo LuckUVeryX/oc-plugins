@@ -151,6 +151,12 @@ const watchInputSchema = (options: {
         type: "object",
         description: "Selects the resource to watch. list_events describes this event's params.",
       },
+      target: {
+        type: "string",
+        minLength: 1,
+        description:
+          "Instead of params, a link or shorthand, for events whose list_events entry lists target.",
+      },
       filter: filterProperty({ hint: "list_events lists the paths for each event." }),
       prepare: prepareProperty(options.toolPaths),
       transform: transformProperty,
@@ -256,11 +262,28 @@ const buildServer = (options: ServerOptions): McpServer => {
       inputSchema: inputSchemaDocument({
         filter: event.filter,
         params: event.params,
+        target: event.target?.description,
         toolPaths,
         defaultExpiresInSeconds: options.defaultExpiresInSeconds,
       }),
       payloadSchema: { anyOf: [event.payload, { type: "string" }] },
     }));
+
+  const resolveParams = (event: RegisteredEventKind, decoded: DecodedArguments) =>
+    Effect.gen(function* () {
+      if (decoded.target === undefined) return decoded.params ?? {};
+      if (decoded.params !== undefined)
+        return yield* Effect.fail(new Invalid({ message: "Pass params or target, not both" }));
+      if (event.target === undefined)
+        return yield* Effect.fail(new Invalid({ message: `${event.name} does not take a target` }));
+      return yield* event.target
+        .resolve(decoded.target)
+        .pipe(
+          Effect.mapError((error) =>
+            error._tag === "Integration.Rejected" ? new Invalid({ message: error.message }) : error,
+          ),
+        );
+    });
 
   const resolveWatch = (name: string, value: unknown) =>
     Effect.gen(function* () {
@@ -281,12 +304,11 @@ const buildServer = (options: ServerOptions): McpServer => {
             }),
           );
       }
-      const eventParams = yield* Schema.decodeUnknownEffect(event.paramsSchema)(decoded.params, {
+      const params = yield* resolveParams(event, decoded);
+      const eventParams = yield* Schema.decodeUnknownEffect(event.paramsSchema)(params, {
         onExcessProperty: "error",
       }).pipe(
-        Effect.mapError(
-          (error) => new Invalid({ message: paramsError(event, error, decoded.params) }),
-        ),
+        Effect.mapError((error) => new Invalid({ message: paramsError(event, error, params) })),
       );
       return { event, decoded, eventParams };
     });
@@ -386,6 +408,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                 event: name,
                 watchId,
                 params,
+                target,
                 filter,
                 prepare: prepareSource,
                 transform,
@@ -401,6 +424,7 @@ const buildServer = (options: ServerOptions): McpServer => {
               const { event, decoded, eventParams } = yield* resolveWatch(name, {
                 watchId,
                 ...(params === undefined ? {} : { params }),
+                ...(target === undefined ? {} : { target }),
                 ...(filter === undefined ? {} : { filter }),
                 prepare: prepareSource,
                 transform,
@@ -481,9 +505,11 @@ const buildServer = (options: ServerOptions): McpServer => {
               const outcome = yield* Deferred.await(ready).pipe(
                 Effect.mapError((error) => new Invalid({ message: error.message })),
               );
-              return outcome === undefined
-                ? { watchId: decoded.watchId, expiresAt: watch.view.expiresAt }
-                : { watchId: decoded.watchId, ended: outcome };
+              const result =
+                outcome === undefined
+                  ? { watchId: decoded.watchId, expiresAt: watch.view.expiresAt }
+                  : { watchId: decoded.watchId, ended: outcome };
+              return target === undefined ? result : { ...result, params: eventParams };
             }),
             {
               onFailure: (error) => ({ ...text(error.message), isError: true }),
@@ -541,7 +567,16 @@ const buildServer = (options: ServerOptions): McpServer => {
           const { event, decoded, eventParams } = yield* resolveWatch(
             params.name,
             params.arguments ?? {},
-          ).pipe(Effect.mapError((error) => invalidParams(error.message)));
+          ).pipe(
+            Effect.mapError((error) =>
+              error._tag === "Arguments.Invalid"
+                ? invalidParams(error.message)
+                : new ProtocolError(
+                    error._tag === "Integration.Unavailable" ? -32603 : -32024,
+                    error.message,
+                  ),
+            ),
+          );
           const expiresInSeconds = decoded.expiresInSeconds ?? options.defaultExpiresInSeconds;
           const watch = yield* newWatch({
             event: params.name,
