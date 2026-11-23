@@ -1,33 +1,21 @@
 import { Effect, Option, Schema } from "effect";
 import { type EventKind, type Event, Rejected } from "../core/integration.ts";
 import { GitlabSocket, type ChannelIdentifier } from "./socket.ts";
-import { GitlabClient } from "./client.ts";
-import { databaseIdHint, globalIdFor, NoteableType, readNoteable } from "./noteable.ts";
-import type { TargetSupport } from "./target.ts";
+import { NoteableType, type TargetSupport } from "./target.ts";
 import { subscribeToChannel } from "./channel.ts";
 
+/** What the target resolver reads from GitLab. The channel takes database ids. */
 const NotesParams = Schema.Struct({
-  projectId: Schema.Int.annotate({
-    description:
-      "Project database id, from the id field of GET /projects/:id. Pass target instead to fill all three params.",
-  }),
-  noteableType: NoteableType.annotate({ description: `"merge_request" or "issue".` }),
-  noteableId: Schema.Int.annotate({
-    description:
-      "Database id from the id field of GET /projects/:id/merge_requests/:iid, or the issue equivalent, not the iid.",
-  }),
-});
-type NotesParams = Schema.Schema.Type<typeof NotesParams>;
-
-const NotesMessage = Schema.Struct({ event: Schema.String });
-
-const NotesPayload = Schema.Struct({
-  event: Schema.String,
   projectId: Schema.Int,
   noteableType: NoteableType,
   noteableId: Schema.Int,
   noteableIid: Schema.Int,
 });
+type NotesParams = typeof NotesParams.Type;
+
+const NotesMessage = Schema.Struct({ event: Schema.String });
+
+const NotesPayload = Schema.Struct({ event: Schema.String, ...NotesParams.fields });
 
 const payload = Schema.toJsonSchemaDocument(NotesPayload, { onExcessProperty: "error" }).schema;
 
@@ -46,11 +34,9 @@ return fresh.length === 0 ? null : { notes: fresh };`;
 
 const description = `Watch for note changes on a merge request or issue. The recipe below wakes only for new non-system notes.
 
-Arm it from a merge request or issue link, or a shorthand such as group/project!123 or group/project#123, by passing target. The server reads the noteable and fills the params.
+Arm it from a merge request or issue link, or a shorthand such as group/project!123 or group/project#123, by passing target. The payload carries projectId, noteableType, and noteableIid for the notes endpoint.
 
-Without a target, pass projectId and noteableId as database ids, not iids or global ids, and noteableType as "merge_request" or "issue". GET /projects/:id/merge_requests/:iid returns the merge request's id and project_id, and the issue endpoint does the same.
-
-Prepare recipe. Before you arm, read the newest notes to choose \`START\`. Use GET /projects/:projectId/merge_requests/:iid/notes with sort=desc, order_by=created_at, and per_page=20, or the issues endpoint. Set \`START\` to the newest non-system note's id, or 0 when that returns none. The recipe reads the newest 20 notes and keeps the highest comment id in tools.watch.state. A signal with nothing newer than START or the stored id returns null. More than 20 comments between two signals skips the older ones.
+Script recipe. Before you arm, read the newest notes to choose \`START\`. Use GET /projects/:projectId/merge_requests/:iid/notes with sort=desc, order_by=created_at, and per_page=20, or the issues endpoint. Set \`START\` to the newest non-system note's id, or 0 when that returns none. The recipe reads the newest 20 notes and keeps the highest comment id in tools.watch.state. A signal with nothing newer than START or the stored id returns null. More than 20 comments between two signals skips the older ones.
 
 ${notesRecipe}`;
 
@@ -62,11 +48,7 @@ const identifier = (params: NotesParams): ChannelIdentifier => ({
   noteable_id: params.noteableId,
 });
 
-const toEvent = (
-  params: NotesParams,
-  noteableIid: number,
-  message: Schema.Json,
-): Effect.Effect<Option.Option<Event>> =>
+const toEvent = (params: NotesParams, message: Schema.Json): Effect.Effect<Option.Option<Event>> =>
   Effect.gen(function* () {
     const decoded = Schema.decodeUnknownOption(NotesMessage)(message);
     if (Option.isNone(decoded)) {
@@ -74,20 +56,11 @@ const toEvent = (
       return Option.none();
     }
     return Option.some({
-      payload: {
-        event: decoded.value.event,
-        projectId: params.projectId,
-        noteableType: params.noteableType,
-        noteableId: params.noteableId,
-        noteableIid,
-      },
+      payload: { event: decoded.value.event, ...params },
     });
   });
 
-const params = Schema.toJsonSchemaDocument(NotesParams, { onExcessProperty: "error" }).schema;
-
 interface NotesEventOptions {
-  readonly client: GitlabClient.Interface;
   readonly socket: GitlabSocket.Interface;
   readonly target: TargetSupport | undefined;
 }
@@ -95,7 +68,6 @@ interface NotesEventOptions {
 export const makeNotesEvent = (options: NotesEventOptions): EventKind => ({
   name: "noteable.notes_changed",
   description,
-  params,
   payload,
   target: options.target,
   subscribe: (input) =>
@@ -103,22 +75,10 @@ export const makeNotesEvent = (options: NotesEventOptions): EventKind => ({
       const decoded = yield* Schema.decodeUnknownEffect(NotesParams)(input).pipe(
         Effect.mapError((issue) => new Rejected({ message: issue.message })),
       );
-      const noteable = yield* readNoteable(
-        options.client,
-        decoded.noteableType,
-        globalIdFor(decoded.noteableType, decoded.noteableId),
-        databaseIdHint(decoded.noteableType),
-      );
-      if (noteable.projectId !== decoded.projectId)
-        return yield* Effect.fail(
-          new Rejected({
-            message: `${noteable.label} ${decoded.noteableId} is in project ${noteable.projectId}, not ${decoded.projectId}. Pass the project database id from GET /projects/:id -> .id.`,
-          }),
-        );
       return yield* subscribeToChannel({
         socket: options.socket,
         identifier: identifier(decoded),
-        toEvent: (message) => toEvent(decoded, noteable.iid, message),
+        toEvent: (message) => toEvent(decoded, message),
       });
     }),
 });

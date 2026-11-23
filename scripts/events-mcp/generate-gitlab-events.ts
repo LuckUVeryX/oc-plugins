@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { JsonSchema, Schema } from "effect";
+import { Schema } from "effect";
 import { decodeGitlabCatalog } from "../../packages/events-mcp/src/gitlab/catalog.ts";
 
 const host = process.env["GITLAB_HOST"]?.trim() || "gitlab.com";
@@ -28,7 +28,6 @@ const ArgumentDef = Schema.Struct({
   description: Schema.NullOr(Schema.String),
   type: TypeRef,
 });
-type ArgumentDef = typeof ArgumentDef.Type;
 
 const FieldDef = Schema.Struct({
   name: Schema.String,
@@ -152,7 +151,6 @@ interface EventConfig {
   readonly field: string;
   readonly selection: keyof typeof SELECTIONS;
   readonly fragment?: boolean;
-  readonly requireOneOf?: ReadonlyArray<string>;
   readonly when: string;
 }
 
@@ -160,76 +158,42 @@ const EVENTS: ReadonlyArray<EventConfig> = [
   {
     field: "ciPipelineStatusesUpdated",
     selection: "Pipeline",
-    requireOneOf: ["projectId", "projectFullPath"],
-    when: "Watch a project's pipeline status changes. Pass projectFullPath, such as group/project, or projectId. Pass sha to follow one commit.",
+    when: "Watch the pipeline status changes in a project, or for one commit.",
   },
   {
     field: "ciPipelineStatusUpdated",
     selection: "Pipeline",
-    when: "Follow one pipeline through its status changes. Pass its global id as pipelineId.",
+    when: "Follow one pipeline through its status changes.",
   },
   {
     field: "ciJobStatusUpdated",
     selection: "CiJob",
-    when: "Follow one job through its status changes, for example while a retry runs. Pass its global id as jobId.",
+    when: "Follow one job through its status changes, for example while a retry runs.",
   },
   {
     field: "userMergeRequestUpdated",
     selection: "MergeRequest",
-    when: "Watch merge requests whose author, assignee, or reviewer is the token's user. Pass the token user's global id as userId.",
+    when: "Watch merge requests whose author, assignee, or reviewer is the token's user.",
   },
   {
     field: "mergeRequestMergeStatusUpdated",
     selection: "MergeRequest",
     fragment: true,
-    when: "Follow one merge request while GitLab recomputes whether it can merge. Pass its global id as issuableId.",
+    when: "Follow one merge request while GitLab recomputes whether it can merge.",
   },
   {
     field: "mergeRequestReviewersUpdated",
     selection: "MergeRequest",
     fragment: true,
-    when: "Watch one merge request's reviewers, for example while you wait to be added as a reviewer. Pass its global id as issuableId.",
+    when: "Watch one merge request's reviewers, for example while you wait to be added as a reviewer.",
   },
   {
     field: "mergeRequestApprovalStateUpdated",
     selection: "MergeRequest",
     fragment: true,
-    when: "Watch one merge request's approvals, for example while you wait for approval. Pass its global id as issuableId.",
+    when: "Watch one merge request's approvals, for example while you wait for approval.",
   },
 ];
-
-interface GlobalIdKind {
-  readonly prefix: string;
-  readonly source: string;
-}
-
-const GLOBAL_ID_KINDS: Readonly<Record<string, GlobalIdKind>> = {
-  ProjectID: {
-    prefix: "gid://gitlab/Project/",
-    source: "the numeric id from GET /projects/:id",
-  },
-  CiPipelineID: {
-    prefix: "gid://gitlab/Ci::Pipeline/",
-    source: "the pipeline's numeric id from GET /projects/:id/pipelines/:pipeline_id",
-  },
-  CiBuildID: {
-    prefix: "gid://gitlab/Ci::Build/",
-    source: "the job's numeric id from GET /projects/:id/jobs/:job_id",
-  },
-  UserID: {
-    prefix: "gid://gitlab/User/",
-    source: "the token user's numeric id from GET /user",
-  },
-  IssuableID: {
-    prefix: "gid://gitlab/MergeRequest/",
-    source:
-      "the merge request's database id from GET /projects/:id/merge_requests/:iid, not the iid",
-  },
-};
-
-const PARAM_DESCRIPTIONS: Readonly<Record<string, string>> = {
-  projectFullPath: "Project path as it appears in the web URL, such as group/project.",
-};
 
 const child = (ref: TypeRef): TypeRef => {
   if (ref.ofType === null || ref.ofType === undefined)
@@ -249,11 +213,6 @@ const named = (ref: TypeRef): NamedRef => {
 };
 
 const isNonNull = (ref: TypeRef): boolean => ref.kind === "NON_NULL";
-
-const globalIdKind = (argument: ArgumentDef) => GLOBAL_ID_KINDS[named(argument.type).name];
-
-const globalIdParamDescription = ({ prefix, source }: GlobalIdKind): string =>
-  `Use ${prefix}<id>. Replace <id> with ${source}.`;
 
 const graphqlType = (ref: TypeRef): string => {
   if (ref.kind === "NON_NULL") return `${graphqlType(child(ref))}!`;
@@ -364,34 +323,6 @@ const payloadSchema = (
   return objectSchema(properties, required);
 };
 
-const paramsSchema = (
-  field: FieldDef,
-  requireOneOf: ReadonlyArray<string> | undefined,
-): JsonObject => {
-  const properties: Record<string, Json> = {};
-  const required: Array<string> = [];
-  for (const argument of field.args) {
-    const kind = globalIdKind(argument);
-    const description = PARAM_DESCRIPTIONS[argument.name] ?? argument.description ?? "";
-    properties[argument.name] =
-      kind === undefined
-        ? { type: "string", ...(description === "" ? {} : { description }) }
-        : {
-            type: "string",
-            pattern: `^${kind.prefix}\\d+$`,
-            description: globalIdParamDescription(kind),
-          };
-    if (isNonNull(argument.type)) required.push(argument.name);
-  }
-  return {
-    ...objectSchema(properties, required),
-    ...(requireOneOf === undefined
-      ? {}
-      : { anyOf: requireOneOf.map((name) => ({ required: [name] })) }),
-    additionalProperties: false,
-  };
-};
-
 const queryFor = (field: FieldDef, selection: string): string => {
   const declarations = field.args.map(
     (argument) => `$${argument.name}: ${graphqlType(argument.type)}`,
@@ -455,12 +386,10 @@ const generate = (raw: unknown) => {
     const selectionType = types(event.selection);
     const inner = selectionText(selection);
     const selectionSet = event.fragment === true ? `... on ${event.selection} { ${inner} }` : inner;
-    const params = paramsSchema(field, event.requireOneOf);
     const payload = payloadSchema(selectionType, selection, types);
     return {
       name: event.field,
       description: event.when,
-      params,
       query: queryFor(field, selectionSet),
       payload,
     };
@@ -476,8 +405,6 @@ const verify = (text: string) => {
     "Generated GitLab events no longer match the allowlist",
   );
   for (const event of catalog.events) {
-    JsonSchema.fromSchemaDraft2020_12(event.params);
-    assert.equal(event.params["type"], "object", `${event.name} params must be an object`);
     assert.equal(event.payload["type"], "object", `${event.name} payload must be an object`);
     assert.ok(event.query.startsWith("subscription"), `${event.name} query must be a subscription`);
   }

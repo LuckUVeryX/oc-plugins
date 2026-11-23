@@ -1,5 +1,5 @@
 import { connect } from "node:net";
-import { Deferred, Effect, HashMap, Queue, Ref, Schema, type Scope } from "effect";
+import { Effect, Queue, Schema, type Scope } from "effect";
 // Bun resolves "ws" to its built-in module, so no dependency is needed.
 import WebSocket from "ws";
 import { WakeFailed } from "../core/harness.ts";
@@ -55,15 +55,11 @@ const open = (socketPath: string): Effect.Effect<WebSocket, WakeFailed, Scope.Sc
     { interruptible: true },
   );
 
+// withSession sends one request at a time, so a call reads frames until its own answer arrives.
 const connectSession = (socketPath: string): Effect.Effect<Session, WakeFailed, Scope.Scope> =>
   Effect.gen(function* () {
     const socket = yield* open(socketPath);
     const events = yield* Queue.unbounded<SocketEvent>();
-    const pending = yield* Ref.make(
-      HashMap.empty<number, Deferred.Deferred<unknown, WakeFailed>>(),
-    );
-    const nextId = yield* Ref.make(0);
-
     yield* Effect.acquireRelease(
       Effect.sync(() => {
         const onMessage = (data: unknown) => {
@@ -87,42 +83,29 @@ const connectSession = (socketPath: string): Effect.Effect<Session, WakeFailed, 
       (remove) => Effect.sync(remove),
     );
 
-    const failAll = (message: string) =>
-      Effect.gen(function* () {
-        const map = yield* Ref.getAndSet(pending, HashMap.empty());
-        for (const deferred of HashMap.values(map))
-          yield* Deferred.fail(deferred, new WakeFailed({ message }));
-      });
-
-    const handle = (event: SocketEvent) => {
-      if (event._tag === "Closed") return failAll(event.message);
-      const { id, result, error } = event.frame;
-      if (id === undefined) return Effect.void;
-      return Effect.gen(function* () {
-        const deferred = HashMap.get(yield* Ref.get(pending), id);
-        if (deferred._tag === "None") return;
-        yield* Ref.update(pending, HashMap.remove(id));
-        if (error === undefined) yield* Deferred.succeed(deferred.value, result);
-        else
-          yield* Deferred.fail(
-            deferred.value,
-            new WakeFailed({ message: `Codex rejected the request: ${error.message}` }),
-          );
-      });
-    };
-
-    yield* Queue.take(events).pipe(Effect.flatMap(handle), Effect.forever, Effect.forkScoped);
+    let lastId = 0;
+    const answer = (id: number): Effect.Effect<unknown, WakeFailed> =>
+      Queue.take(events).pipe(
+        Effect.flatMap((event) => {
+          if (event._tag === "Closed")
+            return Effect.fail(new WakeFailed({ message: event.message }));
+          const { frame } = event;
+          if (frame.id !== id) return answer(id);
+          if (frame.error !== undefined)
+            return Effect.fail(
+              new WakeFailed({ message: `Codex rejected the request: ${frame.error.message}` }),
+            );
+          return Effect.succeed(frame.result);
+        }),
+      );
 
     return {
       call: (method, params) =>
-        Effect.gen(function* () {
-          const id = yield* Ref.updateAndGet(nextId, (value) => value + 1);
-          const deferred = yield* Deferred.make<unknown, WakeFailed>();
-          yield* Ref.update(pending, HashMap.set(id, deferred));
-          yield* Effect.sync(() =>
-            socket.send(JSON.stringify({ jsonrpc: "2.0", id, method, params })),
-          );
-          return yield* Deferred.await(deferred);
+        Effect.suspend(() => {
+          lastId += 1;
+          const id = lastId;
+          socket.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
+          return answer(id);
         }),
       notify: (method) =>
         Effect.sync(() => socket.send(JSON.stringify({ jsonrpc: "2.0", method }))),

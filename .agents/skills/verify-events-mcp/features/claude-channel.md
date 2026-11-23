@@ -5,7 +5,7 @@ An agent in Claude Code arms a watch on GitLab, a pipeline changes, and the wake
 ## Sub-features
 
 - `claude-arm` lists the 22 events and arms one pipeline watch through the `list_events` and `watch` tools.
-- `claude-target` arms the watch from a `target`, a project path or a project or commit link, instead of hand-built `params`. `watches` then lists the resolved `params`.
+- `claude-target` arms the watch from a `target`, a project path or a project or commit link. `watches` then lists the resolved `params`.
 - `claude-wake` delivers a pipeline status change as a `notifications/claude/channel` message and starts a turn while the session is idle.
 - `claude-stop` ends the watch with `unwatch`, and `watches` no longer lists it.
 - `claude-transcript` records the channel text and the turn in the session JSONL, the durable receipt Claude Code gives.
@@ -15,7 +15,7 @@ An agent in Claude Code arms a watch on GitLab, a pipeline changes, and the wake
 - Start Claude Code with the events-mcp server entry and `MCP_PROTOCOL_NEGOTIATION=legacy`.
 - Launch it with `--dangerously-load-development-channels server:<name>`, where `<name>` is the server entry name (`events-mcp` here), and confirm the development-channel warning.
 - Ask the agent to list events and arm a watch on a GitLab project.
-- Change a pipeline in that project. The wake appears as `← events-mcp: <transform text>` and the agent acts on it in a new turn.
+- Change a pipeline in that project. The wake appears as `← events-mcp: <script result>` and the agent acts on it in a new turn.
 
 ## Driving it with tmux + Claude Code
 
@@ -31,11 +31,11 @@ Preconditions:
 
   ```sh
   scripts/tui.sh prompt <<'EOF'
-  Use the events-mcp list_events tool, then the events-mcp watch tool. Arm watchId claude-verify, event gitlab.ciPipelineStatusesUpdated, target "<project path>", filter {"status": ["SUCCESS", "FAILED", "CANCELED"]}, prepare `return input.event.data`, transform `return input.prepared.id`, expiresInSeconds 600. Then call watches and reply with one line: ARMED-OK <watchId> <expiresAt> <params as JSON>. Do nothing else.
+  Use the events-mcp list_events tool, then the events-mcp watch tool. Arm watchId claude-verify, event gitlab.ciPipelineStatusesUpdated, target "<project path>", script `if (!["SUCCESS", "FAILED", "CANCELED"].includes(input.event.data.status)) return null; return input.event.data.id`, expiresInSeconds 600. Then call watches and reply with one line: ARMED-OK <watchId> <expiresAt> <params as JSON>. Do nothing else.
   EOF
   ```
 
-  Wait for `ARMED-OK claude-verify 20`. Match the timestamp, not the words: the prompt text sits in the pane too and contains `ARMED-OK <watchId>`. The pane shows `Called events-mcp 3 times` and a line such as `● ARMED-OK claude-verify 2026-11-23T03:42:16.643Z {"projectFullPath":"<project path>"}`. The params come from the `target`. To arm with `params {"projectFullPath": "<project path>"}` instead, replace the `target` clause; `watches` then lists no `params`. Pass one or the other, never both.
+  Wait for `ARMED-OK claude-verify 20`. Match the timestamp, not the words: the prompt text sits in the pane too and contains `ARMED-OK <watchId>`. The pane shows `Called events-mcp 3 times` and a line such as `● ARMED-OK claude-verify 2026-11-23T03:42:16.643Z {"projectFullPath":"<project path>"}`. The params come from the `target`.
 
 - **Arm proof.** Capture the pane. Run `scripts/tui.sh capture "$VERIFY_EVIDENCE/pane-armed.txt"`. It contains the `ARMED-OK` line and the expiry.
 - **Trigger.** Create one pipeline. Run `bun scripts/target.ts trigger | tee "$VERIFY_EVIDENCE/trigger.json"`. Note the `id`.
@@ -52,5 +52,5 @@ Preconditions:
 - Without `MCP_PROTOCOL_NEGOTIATION=legacy` the channel registers nothing and the server logs no wake. The banner then reads that channel messages are unavailable.
 - Claude sends no acknowledgement for a channel message, and it queues messages while busy. `watches` is the only proof that the watch is still live.
 - The composer can show a gray suggestion such as `stop the claude-verify watch`. It is not typed input and does not affect the run.
-- `transform` must return a string or `null`. Returning a number or object stops the watch, and the session gets one last channel message, `Watch <watchId> ended: transform failed on <eventId>: ...`.
+- A script that throws stops the watch, and the session gets one last channel message, `Watch <watchId> ended: script failed on <eventId>: ...`. A script that returns JSON wakes with `JSON.stringify` of it.
 - The isolated home holds copies of the real `~/.claude.json` and credentials. Cleanup deletes them; never copy the run home into evidence.

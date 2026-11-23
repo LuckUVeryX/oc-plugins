@@ -97,8 +97,7 @@ test("delivers fresh events once and drops stale events", async () => {
           await h.stream(
             {
               watchId: "dedup",
-              prepare: "return input.event.data",
-              transform: "return JSON.stringify(input.prepared)",
+              script: "return input.event.data",
             },
             "order_paid",
           ).done,
@@ -108,8 +107,7 @@ test("delivers fresh events once and drops stale events", async () => {
         h.stream(
           {
             watchId: "dedup",
-            prepare: "return input.event.data",
-            transform: "return JSON.stringify(input.prepared)",
+            script: "return input.event.data",
           },
           "lark.im.message.receive_v1",
         );

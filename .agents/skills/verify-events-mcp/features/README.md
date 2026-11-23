@@ -47,4 +47,4 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Codex thread wake](./codex-thread.md) covers arming a watch with a thread id and receiving the wake as a new turn in that thread.
 - [OpenCode events stream](./opencode-stream.md) covers the `opencode` harness over stdio: event list, stream arm, and wake notification.
 - [Shared hub](./shared-hub.md) covers several sessions sharing one hub process, one socket, and one upstream connection.
-- [Read tools](./read-tools.md) covers `gitlab_get` and `lark_get` from a prepare script or the agent.
+- [Read tools](./read-tools.md) covers `gitlab_get` and `lark_get` from a watch script or the agent.

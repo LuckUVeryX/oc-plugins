@@ -11,8 +11,7 @@ test("stops a watch whose delivered event exceeds the OpenCode envelope", async 
     const watch = (watchId: string, size: number) =>
       h.stream({
         watchId,
-        prepare: "return input.event.data",
-        transform: `return "x".repeat(${size})`,
+        script: `return "x".repeat(${size})`,
       });
     watch("fits", 16_384 - overhead);
     watch("over", 16_385 - overhead);

@@ -206,7 +206,7 @@ test("a hello-less connection does not keep an unserved hub alive", async () => 
 
 test("a connection that arrives as the hub starts still initializes", async () => {
   const root = mkdtempSync(join(tmpdir(), "events-hub-test-"));
-  const hub = spawn(process.execPath, [main, "hub", String(process.pid)], {
+  const hub = spawn(process.execPath, [main, "hub"], {
     env: environment(root),
     stdio: "ignore",
   });

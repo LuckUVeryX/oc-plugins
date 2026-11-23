@@ -14,29 +14,16 @@ import {
   Exit,
   Logger,
   Schema,
-  SchemaIssue,
   Scope,
 } from "effect";
-import type { JsonSchema } from "effect";
 import { isObject } from "effect/Predicate";
-import {
-  decodeArguments,
-  expiresInSecondsProperty,
-  filterProperty,
-  inputSchemaDocument,
-  Invalid,
-  prepareProperty,
-  transformProperty,
-  watchIdProperty,
-  WatchArguments,
-} from "./arguments.ts";
-import { Registry, type RegisteredEventKind } from "./registry.ts";
+import { decodeArguments, inputSchemaDocument, Invalid } from "./arguments.ts";
+import { Registry } from "./registry.ts";
 import { DecisionModel, type Decide } from "./decision-model.ts";
 import { bytes, MAX_SCRIPT_BYTES } from "./limits.ts";
-import { makePrepare, makeWatchState } from "./prepare.ts";
-import type { IntegrationError } from "./integration.ts";
+import type { EventKind, IntegrationError } from "./integration.ts";
+import { makeRunScript, makeWatchState } from "./script.ts";
 import { inputJsonSchema } from "./tool.ts";
-import { makeTransform } from "./transform.ts";
 import { Feeds } from "./feeds.ts";
 import { runWatch, type Notification } from "./watch.ts";
 import type { Harness, Send, Tools } from "./harness.ts";
@@ -56,8 +43,6 @@ interface ServerOptions {
   readonly eventTimeoutSeconds: number;
 }
 
-type DecodedArguments = Effect.Success<ReturnType<typeof decodeArguments>>;
-
 const streamParams = Schema.toStandardSchemaV1(
   Schema.Struct({
     name: Schema.String,
@@ -66,49 +51,20 @@ const streamParams = Schema.toStandardSchemaV1(
   }),
 );
 
-const invalidParams = (message: string) => new ProtocolError(INVALID_PARAMS, message);
-
-const patternedParamHint = (params: JsonSchema.JsonSchema, name: string): string | undefined => {
-  if (!isObject(params)) return undefined;
-  const properties = params["properties"];
-  if (!isObject(properties)) return undefined;
-  const property = properties[name];
-  if (!isObject(property) || typeof property["pattern"] !== "string") return undefined;
-  const description = property["description"];
-  return typeof description === "string" ? `${name}: ${description}` : undefined;
-};
-
-const paramsError = (
-  event: RegisteredEventKind,
-  error: Schema.SchemaError,
-  args: Schema.JsonObject,
-): string => {
-  const issues = SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues;
-  const paramName = (issue: (typeof issues)[number]): string | undefined => {
-    const path = issue.path ?? [];
-    return path.length === 1 && typeof path[0] === "string" ? path[0] : undefined;
-  };
-  // A union of required params also reports branches the caller did not choose,
-  // so prefer a supplied param that failed over a missing one.
-  const supplied = Object.keys(args);
-  const failed = issues.filter((issue) => {
-    const name = paramName(issue);
-    return name !== undefined && supplied.includes(name);
-  });
-  const details = new Set(
-    (failed.length === 0 ? issues : failed).map((issue) => {
-      const name = paramName(issue);
-      const hint =
-        name === undefined || !supplied.includes(name)
-          ? undefined
-          : patternedParamHint(event.params, name);
-      if (hint !== undefined) return `${hint} (${issue.message})`;
-      const path = issue.path ?? [];
-      const where = path.length === 0 ? "" : `\n  at ${JSON.stringify(path)}`;
-      return `${issue.message}${where}`;
-    }),
-  );
-  return `Invalid params for ${event.name}: ${[...details].join("\n")}`;
+// OpenCode treats -32024 as a permanent rejection and retries -32603 as a transient failure.
+const protocolError = (error: Invalid | IntegrationError) => {
+  switch (error._tag) {
+    case "Arguments.Invalid":
+      return new ProtocolError(INVALID_PARAMS, error.message);
+    case "Integration.Rejected":
+      return new ProtocolError(-32024, error.message);
+    case "Integration.Unavailable":
+      return new ProtocolError(-32603, error.message);
+    default: {
+      const _exhaustive: never = error;
+      return _exhaustive;
+    }
+  }
 };
 
 const text = (value: unknown) => ({
@@ -129,6 +85,18 @@ interface Watch {
   readonly finished: Deferred.Deferred<void>;
 }
 
+/** A decoded and resolved watch that has not claimed its watchId yet. */
+interface Armed {
+  readonly watchId: string;
+  readonly event: string;
+  readonly watch: Watch;
+  /** Claims the watchId, runs the watch until it ends, and releases the watchId. */
+  readonly run: (options: {
+    readonly notify: (notification: Notification) => Effect.Effect<void>;
+    readonly onSubscribed?: Effect.Effect<void>;
+  }) => Effect.Effect<string, Invalid | IntegrationError, Scope.Scope>;
+}
+
 const watchInputSchema = (options: {
   readonly watchParams: Tools["watchParams"];
   readonly toolPaths: ReadonlyArray<string>;
@@ -139,33 +107,24 @@ const watchInputSchema = (options: {
   const required = Array.isArray(schema["required"])
     ? schema["required"].filter((name) => typeof name === "string")
     : [];
+  const watch = inputSchemaDocument({
+    target: {
+      description:
+        "A link or shorthand that names the resource, required for events whose list_events entry lists target.",
+      required: false,
+    },
+    toolPaths: options.toolPaths,
+    defaultExpiresInSeconds: options.defaultExpiresInSeconds,
+  });
   return {
     ...(Object.keys(definitions).length === 0 ? {} : { $defs: definitions }),
-    type: "object",
+    ...watch,
     properties: {
-      event: {
-        type: "string",
-        description: "The event to watch, from list_events.",
-      },
-      watchId: watchIdProperty,
-      params: {
-        type: "object",
-        description: "Selects the resource to watch. list_events describes this event's params.",
-      },
-      target: {
-        type: "string",
-        minLength: 1,
-        description:
-          "Instead of params, a link or shorthand, for events whose list_events entry lists target.",
-      },
-      filter: filterProperty({ hint: "list_events lists the paths for each event." }),
-      prepare: prepareProperty(options.toolPaths),
-      transform: transformProperty,
-      expiresInSeconds: expiresInSecondsProperty(options.defaultExpiresInSeconds),
+      event: { type: "string", description: "The event to watch, from list_events." },
+      ...watch.properties,
       ...properties,
     },
-    required: ["event", "watchId", "prepare", "transform", ...required],
-    additionalProperties: false,
+    required: ["event", ...watch.required, ...required],
   };
 };
 
@@ -179,7 +138,6 @@ const buildServer = (options: ServerOptions): McpServer => {
       ),
       runOptions,
     );
-  const transformEvent = makeTransform();
   const watches = new Map<string, Watch>();
   const toolPaths = options.registry.integrations.flatMap((integration) =>
     Object.keys(integration.tools).map((name) => `tools.${integration.name}.${name}`),
@@ -261,24 +219,28 @@ const buildServer = (options: ServerOptions): McpServer => {
       description: event.description || event.name,
       delivery: ["push"],
       inputSchema: inputSchemaDocument({
-        filter: event.filter,
-        params: event.params,
-        target: event.target?.description,
+        target:
+          event.target === undefined
+            ? undefined
+            : { description: event.target.description, required: true },
         toolPaths,
         defaultExpiresInSeconds: options.defaultExpiresInSeconds,
       }),
       payloadSchema: { anyOf: [event.payload, { type: "string" }] },
     }));
 
-  const resolveParams = (event: RegisteredEventKind, decoded: DecodedArguments) =>
+  const resolveParams = (event: EventKind, target: string | undefined) =>
     Effect.gen(function* () {
-      if (decoded.target === undefined) return decoded.params ?? {};
-      if (decoded.params !== undefined)
-        return yield* Effect.fail(new Invalid({ message: "Pass params or target, not both" }));
-      if (event.target === undefined)
+      if (event.target === undefined) {
+        if (target === undefined) return {};
         return yield* Effect.fail(new Invalid({ message: `${event.name} does not take a target` }));
+      }
+      if (target === undefined)
+        return yield* Effect.fail(
+          new Invalid({ message: `${event.name} needs a target. ${event.target.description}` }),
+        );
       return yield* event.target
-        .resolve(decoded.target)
+        .resolve(target)
         .pipe(
           Effect.mapError((error) =>
             error._tag === "Integration.Rejected" ? new Invalid({ message: error.message }) : error,
@@ -286,113 +248,91 @@ const buildServer = (options: ServerOptions): McpServer => {
         );
     });
 
-  const resolveWatch = (name: string, value: unknown) =>
+  const arm = (input: {
+    readonly name: string;
+    readonly args: unknown;
+    /** What `watches` lists as the arguments, which is enough to arm the watch again. */
+    readonly view: Record<string, unknown>;
+  }): Effect.Effect<Armed, Invalid | IntegrationError> =>
     Effect.gen(function* () {
-      const event = options.registry.get(name);
-      if (!event)
+      const event = options.registry.get(input.name);
+      if (event === undefined)
         return yield* Effect.fail(
-          new Invalid({ message: `Unknown event: ${name}; choose a listed event` }),
+          new Invalid({ message: `Unknown event: ${input.name}; choose a listed event` }),
         );
-      const decoded = yield* decodeArguments({ filter: event.filter, value });
-      for (const [step, code] of [
-        ["Transform", decoded.transform],
-        ["Prepare", decoded.prepare],
-      ] as const) {
-        if (bytes(code) > MAX_SCRIPT_BYTES)
-          return yield* Effect.fail(
-            new Invalid({
-              message: `${step} source exceeds ${MAX_SCRIPT_BYTES} bytes; shorten it`,
-            }),
-          );
-      }
-      const params = yield* resolveParams(event, decoded);
-      const eventParams = yield* Schema.decodeUnknownEffect(event.paramsSchema)(params, {
-        onExcessProperty: "error",
-      }).pipe(
-        Effect.mapError((error) => new Invalid({ message: paramsError(event, error, params) })),
-      );
-      return { event, decoded, eventParams };
-    });
-
-  const newWatch = (watch: {
-    readonly event: string;
-    readonly arguments: Record<string, unknown>;
-    readonly params: Schema.JsonObject | undefined;
-    readonly expiresInSeconds: number;
-  }) =>
-    Effect.gen(function* () {
+      const decoded = yield* decodeArguments(input.args);
+      if (bytes(decoded.script) > MAX_SCRIPT_BYTES)
+        return yield* Effect.fail(
+          new Invalid({ message: `script exceeds ${MAX_SCRIPT_BYTES} bytes; shorten it` }),
+        );
+      const params = yield* resolveParams(event, decoded.target);
+      const expiresInSeconds = decoded.expiresInSeconds ?? options.defaultExpiresInSeconds;
       const startedAt = yield* Clock.currentTimeMillis;
-      const ended = yield* Deferred.make<string>();
-      const finished = yield* Deferred.make<void>();
-      return {
+      const watch: Watch = {
         view: {
-          event: watch.event,
+          event: event.name,
           startedAt: new Date(startedAt).toISOString(),
-          expiresAt: new Date(startedAt + watch.expiresInSeconds * 1000).toISOString(),
-          arguments: watch.arguments,
-          ...(watch.params === undefined ? {} : { params: watch.params }),
+          expiresAt: new Date(startedAt + expiresInSeconds * 1000).toISOString(),
+          arguments: input.view,
+          ...(decoded.target === undefined ? {} : { params }),
         },
-        ended,
-        finished,
-      } satisfies Watch;
-    });
-
-  const release = (watchId: string, watch: Watch) =>
-    Effect.gen(function* () {
-      watches.delete(watchId);
-      yield* Deferred.succeed(watch.finished, undefined);
-    });
-
-  const finish = (watchId: string, watch: Watch) => Effect.ensuring(release(watchId, watch));
-
-  const startWatch = (input: {
-    readonly event: RegisteredEventKind;
-    readonly decoded: DecodedArguments;
-    readonly eventParams: Schema.JsonObject;
-    readonly watch: Watch;
-    readonly notify: (notification: Notification) => Effect.Effect<void>;
-    readonly ready?: Deferred.Deferred<string | undefined, IntegrationError> | undefined;
-  }) =>
-    Effect.gen(function* () {
-      const prepare = makePrepare({
-        integrations: options.registry.integrations,
-        state: yield* makeWatchState,
-        decide: options.decide,
-      });
-      return yield* runWatch({
-        watchId: input.decoded.watchId,
-        eventKind: input.event,
-        params: input.eventParams,
-        filter: input.decoded.filter,
-        expiresInSeconds: input.decoded.expiresInSeconds ?? options.defaultExpiresInSeconds,
-        eventTimeoutSeconds: options.eventTimeoutSeconds,
-        ended: input.watch.ended,
-        ready: input.ready,
-        prepare: (delivered) => prepare(input.decoded.prepare, delivered),
-        transform: (transformInput) => transformEvent(input.decoded.transform, transformInput),
-        notify: input.notify,
-      }).pipe(Effect.provideService(Feeds.Service, options.feeds));
+        ended: yield* Deferred.make<string>(),
+        finished: yield* Deferred.make<void>(),
+      };
+      const claim = Effect.acquireRelease(
+        Effect.suspend(() => {
+          if (watches.has(decoded.watchId))
+            return Effect.fail(
+              new Invalid({
+                message: "watchId is already active; choose another ID or stop the watch",
+              }),
+            );
+          watches.set(decoded.watchId, watch);
+          return Effect.void;
+        }),
+        () =>
+          Effect.sync(() => watches.delete(decoded.watchId)).pipe(
+            Effect.andThen(Deferred.succeed(watch.finished, undefined)),
+          ),
+      );
+      return {
+        watchId: decoded.watchId,
+        event: event.name,
+        watch,
+        run: ({ notify, onSubscribed }) =>
+          Effect.gen(function* () {
+            yield* claim;
+            return yield* runWatch({
+              watchId: decoded.watchId,
+              eventKind: event,
+              params,
+              expiresInSeconds,
+              eventTimeoutSeconds: options.eventTimeoutSeconds,
+              ended: watch.ended,
+              onSubscribed,
+              script: makeRunScript({
+                code: decoded.script,
+                integrations: options.registry.integrations,
+                state: yield* makeWatchState,
+                decide: options.decide,
+              }),
+              notify,
+            });
+          }).pipe(Effect.provideService(Feeds.Service, options.feeds)),
+      };
     });
 
   if (options.harness._tag === "Tools") {
     const harness = options.harness;
     const send: Send = (notification) =>
       Effect.promise(() => server.server.notification(notification));
-    const WatchInput = Schema.Struct({
-      event: Schema.String,
-      ...WatchArguments.fields,
-      ...harness.watchParams.fields,
-    });
-    const watchTool = watchInputSchema({
-      watchParams: harness.watchParams,
-      toolPaths,
-      defaultExpiresInSeconds: options.defaultExpiresInSeconds,
-    });
+    const sessionKeys = Object.keys(harness.watchParams.fields);
+    const ToolInput = Schema.Struct({ event: Schema.String, ...harness.watchParams.fields });
     server.registerTool(
       "list_events",
       {
         description:
-          "List the events you can watch, with each event's parameters, payload, and filter paths. Read it before you arm a watch.",
+          "List the events you can watch, with each event's arguments and payload. Read it before you arm a watch.",
       },
       () => text({ events: catalogue() }),
     );
@@ -400,120 +340,77 @@ const buildServer = (options: ServerOptions): McpServer => {
       "watch",
       {
         description:
-          "Arm a watch and return once it is live. Each event that passes filter and prepare reaches this session as the transform result, until the watch expires or you stop it. Read the event's fields from list_events before you write prepare and transform.",
-        inputSchema: fromJsonSchema<typeof WatchInput.Type>(watchTool),
+          "Arm a watch and return once it is live. Each event the script does not drop reaches this session as the script's result, until the watch expires or you stop it. Read the event's payload from list_events before you write the script.",
+        inputSchema: fromJsonSchema<Record<string, unknown>>(
+          watchInputSchema({
+            watchParams: harness.watchParams,
+            toolPaths,
+            defaultExpiresInSeconds: options.defaultExpiresInSeconds,
+          }),
+        ),
       },
       (input) =>
         run(
           Effect.match(
             Effect.gen(function* () {
-              const {
-                event: name,
-                watchId,
-                params,
-                target,
-                filter,
-                prepare: prepareSource,
-                transform,
-                expiresInSeconds: requestedExpiresInSeconds,
-                ...session
-              } = yield* Schema.decodeUnknownEffect(WatchInput)(input).pipe(
-                Effect.mapError((error) => new Invalid({ message: error.message })),
-              );
+              const { event: name, ...session } = yield* Schema.decodeUnknownEffect(ToolInput)(
+                input,
+              ).pipe(Effect.mapError((error) => new Invalid({ message: error.message })));
               if (harness.check !== undefined)
                 yield* harness
                   .check(session)
                   .pipe(Effect.mapError((error) => new Invalid({ message: error.message })));
-              const { event, decoded, eventParams } = yield* resolveWatch(name, {
-                watchId,
-                ...(params === undefined ? {} : { params }),
-                ...(target === undefined ? {} : { target }),
-                ...(filter === undefined ? {} : { filter }),
-                prepare: prepareSource,
-                transform,
-                ...(requestedExpiresInSeconds === undefined
-                  ? {}
-                  : { expiresInSeconds: requestedExpiresInSeconds }),
-              });
-              const expiresInSeconds = decoded.expiresInSeconds ?? options.defaultExpiresInSeconds;
-              const watch = yield* newWatch({
-                event: event.name,
-                arguments: input,
-                params: target === undefined ? undefined : eventParams,
-                expiresInSeconds,
-              });
-              const ready = yield* Deferred.make<string | undefined, IntegrationError>();
-              const claimed = yield* Effect.sync(() => {
-                if (watches.has(decoded.watchId)) return false;
-                watches.set(decoded.watchId, watch);
-                return true;
-              });
-              if (!claimed)
-                return yield* Effect.fail(
-                  new Invalid({
-                    message: "watchId is already active; choose another ID or stop the watch",
-                  }),
-                );
+              const args = Object.fromEntries(
+                Object.entries(input).filter(
+                  ([key]) => key !== "event" && !sessionKeys.includes(key),
+                ),
+              );
+              const armed = yield* arm({ name, args, view: input });
               const wake = (
                 text: string,
                 onFailure: (error: { readonly message: string }) => Effect.Effect<void>,
               ) =>
                 harness
-                  .wake(send, {
-                    session,
-                    watchId: decoded.watchId,
-                    event: event.name,
-                    text,
-                  })
+                  .wake(send, { session, watchId: armed.watchId, event: armed.event, text })
                   .pipe(Effect.catchTag("Harness.WakeFailed", onFailure));
-              yield* startWatch({
-                event,
-                decoded,
-                eventParams,
-                watch,
-                ready,
-                notify: (notification) => {
-                  if (notification.type === "event")
-                    return wake(
-                      typeof notification.data === "string"
-                        ? notification.data
-                        : JSON.stringify(notification.data),
-                      (error) =>
-                        Deferred.succeed(watch.ended, `Wake failed: ${error.message}`).pipe(
-                          Effect.as(undefined),
-                        ),
-                    );
-                  if (notification.type !== "terminated") return Effect.void;
-                  if (notification.reason === "Stopped") return Effect.void;
-                  return wake(`Watch ${decoded.watchId} ended: ${notification.reason}`, (error) =>
-                    Effect.logWarning(`Termination wake failed: ${error.message}`),
+              const notify = (notification: Notification) => {
+                if (notification.type === "event")
+                  return wake(notification.data, (error) =>
+                    Deferred.succeed(armed.watch.ended, `Wake failed: ${error.message}`).pipe(
+                      Effect.asVoid,
+                    ),
                   );
-                },
-              }).pipe(
+                if (notification.type !== "terminated" || notification.reason === "Stopped")
+                  return Effect.void;
+                return wake(`Watch ${armed.watchId} ended: ${notification.reason}`, (error) =>
+                  Effect.logWarning(`Termination wake failed: ${error.message}`),
+                );
+              };
+              // Succeeds once the feed is subscribed, or with the reason the watch ended first.
+              const ready = yield* Deferred.make<string | undefined, Invalid | IntegrationError>();
+              yield* armed.run({ notify, onSubscribed: Deferred.succeed(ready, undefined) }).pipe(
                 Effect.onExit((exit) => {
                   const warn =
                     Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)
                       ? Effect.logWarning("Watch failed").pipe(
                           Effect.annotateLogs({
-                            watchId: decoded.watchId,
+                            watchId: armed.watchId,
                             error: String(Cause.squash(exit.cause)),
                           }),
                         )
                       : Effect.void;
                   return warn.pipe(Effect.andThen(Deferred.done(ready, exit)));
                 }),
-                finish(decoded.watchId, watch),
                 Effect.scoped,
                 Effect.forkIn(options.scope),
               );
-              const outcome = yield* Deferred.await(ready).pipe(
-                Effect.mapError((error) => new Invalid({ message: error.message })),
-              );
-              const result =
-                outcome === undefined
-                  ? { watchId: decoded.watchId, expiresAt: watch.view.expiresAt }
-                  : { watchId: decoded.watchId, ended: outcome };
-              return target === undefined ? result : { ...result, params: eventParams };
+              const ended = yield* Deferred.await(ready);
+              const params = armed.watch.view.params;
+              return {
+                watchId: armed.watchId,
+                ...(ended === undefined ? { expiresAt: armed.watch.view.expiresAt } : { ended }),
+                ...(params === undefined ? {} : { params }),
+              };
             }),
             {
               onFailure: (error) => ({ ...text(error.message), isError: true }),
@@ -566,46 +463,13 @@ const buildServer = (options: ServerOptions): McpServer => {
         Effect.gen(function* () {
           if (params.cursor !== undefined && params.cursor !== null)
             return yield* Effect.fail(
-              invalidParams("Events are live-only; omit cursor or set it to null"),
+              new Invalid({ message: "Events are live-only; omit cursor or set it to null" }),
             );
-          const { event, decoded, eventParams } = yield* resolveWatch(
-            params.name,
-            params.arguments ?? {},
-          ).pipe(
-            Effect.mapError((error) =>
-              error._tag === "Arguments.Invalid"
-                ? invalidParams(error.message)
-                : new ProtocolError(
-                    error._tag === "Integration.Unavailable" ? -32603 : -32024,
-                    error.message,
-                  ),
-            ),
-          );
-          const expiresInSeconds = decoded.expiresInSeconds ?? options.defaultExpiresInSeconds;
-          const watch = yield* newWatch({
-            event: params.name,
-            arguments: params.arguments ?? {},
-            params: decoded.target === undefined ? undefined : eventParams,
-            expiresInSeconds,
-          });
-          yield* Effect.acquireRelease(
-            Effect.gen(function* () {
-              if (watches.has(decoded.watchId))
-                return yield* Effect.fail(
-                  invalidParams("watchId is already active; choose another ID or stop the watch"),
-                );
-              watches.set(decoded.watchId, watch);
-            }),
-            () => release(decoded.watchId, watch),
-          );
-          yield* startWatch({ event, decoded, eventParams, watch, notify }).pipe(
-            Effect.mapError((error: IntegrationError) => {
-              const code = error._tag === "Integration.Rejected" ? -32024 : -32603;
-              return new ProtocolError(code, error.message);
-            }),
-          );
+          const args = params.arguments ?? {};
+          const armed = yield* arm({ name: params.name, args, view: args });
+          yield* armed.run({ notify }).pipe(Effect.scoped);
           return {};
-        }).pipe(Effect.scoped),
+        }).pipe(Effect.mapError(protocolError)),
         { signal: ctx.mcpReq.signal },
       );
     });

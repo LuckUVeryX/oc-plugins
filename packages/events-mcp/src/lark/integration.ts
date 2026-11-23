@@ -24,7 +24,6 @@ export const integration: Effect.Effect<Integration, never, LarkAuth.Service | L
     const events: ReadonlyArray<EventKind> = catalog.events.map((event) => ({
       name: event.name,
       description: event.description ?? event.name,
-      params: { type: "object", properties: {}, additionalProperties: false },
       payload: event.payloadSchema,
       subscribe: () => socket.subscribe({ event: event.name }),
     }));
@@ -33,7 +32,7 @@ export const integration: Effect.Effect<Integration, never, LarkAuth.Service | L
       tools: { get: makeGetTool(auth) },
       events,
       instructions:
-        "Lark: read with lark_get to find a chat, message, or user id before arming a watch, or from inside prepare.",
+        "Lark: read with lark_get to find a chat, message, or user id before arming a watch, or from inside the script.",
     };
   });
 

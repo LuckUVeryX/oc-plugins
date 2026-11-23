@@ -16,14 +16,8 @@ import { GetInput, makeTool } from "../core/tool.ts";
 import { GitlabAuth } from "./auth.ts";
 import type { GitlabIdentity } from "./token.ts";
 
-export interface GraphqlRequest {
-  readonly query: string;
-  readonly variables: Readonly<Record<string, Schema.Json>>;
-}
-
 export interface Interface {
   readonly get: (input: GetInput) => Effect.Effect<Schema.Json, IntegrationError>;
-  readonly graphql: (request: GraphqlRequest) => Effect.Effect<Schema.JsonObject, IntegrationError>;
 }
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/GitlabClient") {}
@@ -38,17 +32,6 @@ const ErrorBody = Schema.Union([
   Schema.Struct({ message: Schema.String }),
   Schema.Struct({ error: Schema.String }),
 ]);
-
-export const GraphqlResult = Schema.Struct({
-  data: Schema.optionalKey(Schema.NullOr(Schema.JsonObject)),
-  errors: Schema.optionalKey(
-    Schema.NullOr(Schema.Array(Schema.Struct({ message: Schema.String }))),
-  ),
-});
-
-export const graphqlFailure = (
-  errors: ReadonlyArray<{ readonly message: string }>,
-): IntegrationError => new Rejected({ message: errors.map((error) => error.message).join("; ") });
 
 const invalidPath = (reason: string): IntegrationError =>
   new Rejected({ message: `Invalid GitLab REST path. ${reason}` });
@@ -145,30 +128,7 @@ export const makeGitlabClient = (options: GitlabClientOptions): Effect.Effect<In
       return yield* run(request, input.path);
     });
 
-    const graphql = Effect.fn("GitlabClient.graphql")(function* (request: GraphqlRequest) {
-      const identity = yield* authorize;
-      const httpRequest = HttpClientRequest.post(new URL("/api/graphql", base)).pipe(
-        HttpClientRequest.bearerToken(Redacted.value(identity.token)),
-        HttpClientRequest.acceptJson,
-        HttpClientRequest.bodyJsonUnsafe({
-          query: request.query,
-          variables: request.variables,
-        }),
-      );
-      const body = yield* run(httpRequest, "/api/graphql");
-      const envelope = yield* Schema.decodeUnknownEffect(GraphqlResult)(body).pipe(
-        Effect.mapError(
-          () => new Unavailable({ message: "GitLab returned an unexpected GraphQL response" }),
-        ),
-      );
-      const errors = envelope.errors ?? [];
-      if (errors.length > 0) return yield* Effect.fail(graphqlFailure(errors));
-      if (envelope.data === null || envelope.data === undefined)
-        return yield* Effect.fail(new Unavailable({ message: "GitLab returned no GraphQL data" }));
-      return envelope.data;
-    });
-
-    return { get, graphql };
+    return { get };
   });
 
 export const layer = Layer.effect(
@@ -184,7 +144,7 @@ export const layer = Layer.effect(
 export const makeGetTool = (client: Interface): Tool =>
   makeTool({
     description:
-      "Read GitLab REST data with the token's permissions, for example to find the database id behind a merge request or to read notes before arming a watch or from inside prepare. path starts with /, stays under /api/v4, and carries no query string. Pass parameters in query. Percent-encode a project path as /projects/group%2Fproject. Returns the JSON body.",
+      "Read GitLab REST data with the token's permissions, for example to find the database id behind a merge request or to read notes before arming a watch or from inside the script. path starts with /, stays under /api/v4, and carries no query string. Pass parameters in query. Percent-encode a project path as /projects/group%2Fproject. Returns the JSON body.",
     input: GetInput,
     run: (input) =>
       client.get(input).pipe(Effect.mapError((error) => new ToolError({ message: error.message }))),

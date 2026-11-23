@@ -1,6 +1,6 @@
 # Read tools
 
-The agent and every prepare script can read GitLab and Lark through `gitlab_get` and `lark_get`. Both are read-only GETs under a fixed API prefix, so a watch can fetch the context a raw event omits.
+The agent and every watch script can read GitLab and Lark through `gitlab_get` and `lark_get`. Both are read-only GETs under a fixed API prefix, so a watch can fetch the context a raw event omits.
 
 ## Sub-features
 
@@ -12,7 +12,7 @@ The agent and every prepare script can read GitLab and Lark through `gitlab_get`
 
 ## How to get to it (user POV)
 
-- Ask the agent to read a GitLab resource, or write `tools.gitlab.get({ path, query })` in a prepare script.
+- Ask the agent to read a GitLab resource, or write `tools.gitlab.get({ path, query })` in a watch script.
 - Ask for a Lark resource the same way with `tools.lark.get({ path, query })`.
 - The tools appear in the session's tool list as `gitlab_get` and `lark_get` next to `watches` and `unwatch`.
 
@@ -39,4 +39,4 @@ Preconditions:
 - Both tools return JSON only. A job log or a binary body is not readable; use `glab ci trace` outside the server.
 - Lark endpoints paginate. Pass `page_token` in `query`; the tool does not follow pages for you.
 - A resource the token cannot read fails with a message that names it, and GitLab sometimes answers 404 for a resource that exists. Check with the same call before blaming the watch.
-- Prepare scripts see the same tools, so a read tool failure fails the watch step, not the event feed.
+- Watch scripts see the same tools, so a read tool failure fails the script, not the event feed.

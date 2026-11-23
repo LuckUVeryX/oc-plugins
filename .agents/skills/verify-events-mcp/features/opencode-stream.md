@@ -6,7 +6,7 @@ An OpenCode session lists the watchable events, arms one through the `events` MC
 
 - `opencode-list` answers `events/list` with 22 events, 14 Lark and 8 GitLab.
 - `opencode-arm` opens `events/stream` and reports the watch live with `notifications/events/active`.
-- `opencode-wake` delivers a matching GitLab pipeline change as `notifications/events/event` with the transform text.
+- `opencode-wake` delivers a matching GitLab pipeline change as `notifications/events/event` with the script's text.
 - `opencode-terminate` ends the watch when the stream request ends, with no replay.
 
 ## How to get to it (user POV)
@@ -35,7 +35,7 @@ Preconditions:
 - Do not launch the operator's OpenCode. Its server, storage, and provider config are live state, and a second copy can corrupt them. This recipe drives the protocol below the TUI deliberately; record that the `watch_mcp_event` wrapper itself was not exercised.
 - OpenCode pins `2026-07-28` in its server config. The client negotiates the revision automatically and can fall back to a legacy one, so check `protocol` in the `list` output. Any other value means the drive did not use the revision OpenCode requires.
 - OpenCode cancels a feed after 60 seconds without a notification, so the server sends `notifications/events/heartbeat` every 20 seconds. A long watch with no heartbeats means the connection is gone.
-- `events/stream` accepts a `target` in its arguments, as the `watch` tool does, but its result is `{}`. Call `watches` to see the resolved `params`. `mcp-client.mjs watch` arms with `params` only; the [Claude Code channel](./claude-channel.md) recipe covers `target`.
+- `events/stream` takes a `target` in its arguments, as the `watch` tool does, but its result is `{}`. Call `watches` to see the resolved `params`.
 - Events are live only. `cursor` must be absent or `null`, and nothing is replayed after a reconnect.
 - `events/stream` stays open for the life of the watch. Aborting the request ends the watch without a `terminated` notification.
 - The stream id is `_meta["io.modelcontextprotocol/subscriptionId"]`. Match events to the watch through it when more than one stream is open.

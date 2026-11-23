@@ -44,17 +44,11 @@ test("the notes recipe delivers the first new comment after START and nothing el
   const gets: Array<GetInput> = [];
   const client: GitlabClient.Interface = {
     get: (input) => {
+      if (input.path === "/projects/group%2Fproject/merge_requests/32")
+        return Effect.succeed({ id: 48090, project_id: 599 });
       gets.push(input);
       return Effect.succeed(responses.shift() ?? []);
     },
-    graphql: () =>
-      Effect.succeed({
-        mergeRequest: {
-          id: "gid://gitlab/MergeRequest/48090",
-          iid: "32",
-          projectId: 599,
-        },
-      }),
   };
   const socket: GitlabSocket.Interface = {
     subscribe: () =>
@@ -84,9 +78,8 @@ test("the notes recipe delivers the first new comment after START and nothing el
     h.stream(
       {
         watchId: "comments",
-        params: { projectId: 599, noteableType: "merge_request", noteableId: 48090 },
-        prepare: recipe,
-        transform: "return JSON.stringify(input.prepared)",
+        target: "group/project!32",
+        script: recipe,
         expiresInSeconds: 60,
       },
       "gitlab.noteable.notes_changed",

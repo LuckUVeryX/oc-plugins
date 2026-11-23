@@ -35,15 +35,15 @@ export interface Feed {
 export interface EventKind {
   readonly name: string;
   readonly description: string;
-  /** An object JSON Schema in the Effect-supported Draft 2020-12 subset. */
-  readonly params: JsonSchema.JsonSchema;
   readonly payload: JsonSchema.JsonSchema;
+  /** Present when a watch names its resource with a link or shorthand, which resolves to the subscription params. */
   readonly target?:
     | {
         readonly description: string;
         readonly resolve: (target: string) => Effect.Effect<Schema.JsonObject, IntegrationError>;
       }
     | undefined;
+  /** Receives the params a target resolved to, or {} for an event without a target. */
   subscribe(params: Schema.JsonObject): Effect.Effect<Feed, IntegrationError, Scope.Scope>;
 }
 

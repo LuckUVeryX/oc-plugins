@@ -6,7 +6,7 @@ events-mcp is a local MCP server that wakes an agent session in OpenCode, Claude
 
 ### Lark
 
-All 14 events take `params: {}` and arrive over one shared WebSocket for the app.
+All 14 events take no target and arrive over one shared WebSocket for the app.
 
 | Event                                   | Fires when                                                     |
 | --------------------------------------- | -------------------------------------------------------------- |
@@ -29,18 +29,18 @@ All 14 events take `params: {}` and arrive over one shared WebSocket for the app
 
 All 8 events arrive over one Action Cable connection to `/-/cable`.
 
-| Event                                     | Params                                           | Target                                                                  | Payload                                                                  |
-| ----------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `gitlab.ciPipelineStatusesUpdated`        | `projectFullPath` or `projectId`, optional `sha` | project path, project link, or commit link                              | Any pipeline in the project, on each status change.                      |
-| `gitlab.ciPipelineStatusUpdated`          | `pipelineId`                                     | pipeline link                                                           | One pipeline, on each status change.                                     |
-| `gitlab.ciJobStatusUpdated`               | `jobId`                                          | job link                                                                | One job, on each status change.                                          |
-| `gitlab.userMergeRequestUpdated`          | `userId`                                         | none                                                                    | A merge request whose author, assignee, or reviewer is the token's user. |
-| `gitlab.mergeRequestMergeStatusUpdated`   | `issuableId`                                     | merge request link or `group/project!123`                               | A merge request, when its merge status changes.                          |
-| `gitlab.mergeRequestReviewersUpdated`     | `issuableId`                                     | merge request link or `group/project!123`                               | A merge request, when its reviewers change.                              |
-| `gitlab.mergeRequestApprovalStateUpdated` | `issuableId`                                     | merge request link or `group/project!123`                               | A merge request, when its approval state changes.                        |
-| `gitlab.noteable.notes_changed`           | `projectId`, `noteableType`, `noteableId`        | merge request or issue link, `group/project!123` or `group/project#123` | A merge request or issue, when any note changes.                         |
+| Event                                     | Target                                                                  | Payload                                                                  |
+| ----------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `gitlab.ciPipelineStatusesUpdated`        | project path, project link, commit link, or `group/project@<full sha>`  | Any pipeline in the project or for the commit, on each status change.    |
+| `gitlab.ciPipelineStatusUpdated`          | pipeline link                                                           | One pipeline, on each status change.                                     |
+| `gitlab.ciJobStatusUpdated`               | job link                                                                | One job, on each status change.                                          |
+| `gitlab.userMergeRequestUpdated`          | none                                                                    | A merge request whose author, assignee, or reviewer is the token's user. |
+| `gitlab.mergeRequestMergeStatusUpdated`   | merge request link or `group/project!123`                               | A merge request, when its merge status changes.                          |
+| `gitlab.mergeRequestReviewersUpdated`     | merge request link or `group/project!123`                               | A merge request, when its reviewers change.                              |
+| `gitlab.mergeRequestApprovalStateUpdated` | merge request link or `group/project!123`                               | A merge request, when its approval state changes.                        |
+| `gitlab.noteable.notes_changed`           | merge request or issue link, `group/project!123` or `group/project#123` | A merge request or issue, when any note changes.                         |
 
-An event with a target takes `target` instead of `params`. Pass a link on the configured GitLab host, a project path such as `group/project`, or a shorthand such as `group/project!123`, `group/project#123`, or `group/project@<full sha>`. The server reads the resource to prove the token can read it, then fills the params. `watches` lists the resolved params beside the target, and in Claude Code and Codex `watch` also returns them. Pass `params` or `target`, not both.
+Every GitLab event except `gitlab.userMergeRequestUpdated` needs a `target`: a link on the configured GitLab host, a project path such as `group/project`, or a shorthand such as `group/project!123`, `group/project#123`, or `group/project@<full sha>`. The server reads the resource to prove the token can read it, then fills the subscription params. `watches` lists the resolved params beside the target, and in Claude Code and Codex `watch` also returns them. `gitlab.userMergeRequestUpdated` subscribes as the token's user.
 
 ## Setup
 
@@ -186,46 +186,49 @@ No settings are required to start the server. Each integration needs its own cre
 
 - Everything is in memory. Watches, per-watch state, and the dedup cache live in the hub process. A hub restart starts fresh.
 - A watch belongs to the connection that armed it. When that OpenCode or Claude Code session disconnects, its watches end. Sessions that stay connected share upstream subscriptions and dedup.
-- A watch stays open for 3600 seconds unless `expiresInSeconds` says otherwise. One event's prepare and transform share a 120-second limit, and a watch handles one event at a time, so a slow event delays the ones behind it.
+- A watch stays open for 3600 seconds unless `expiresInSeconds` says otherwise. One event's script has a 120-second limit, and a watch handles one event at a time, so a slow event delays the ones behind it.
 - Delivery is live only. Events that arrive while no watch is open, or while a connection reconnects, are dropped. The stream reports `cursor: null`, so there is no replay.
 - Duplicate event IDs are dropped within each shared feed. Lark drops events older than an hour.
 - OpenCode ends every watch without a stop message when it reloads, restarts, or unloads an idle location. Set `location_idle_timeout` to `false` for long watches. Claude Code ends them when the session exits. Codex runs one server per thread, so a watch ends when that thread's server exits.
 - Lark delivers each app's events to one WebSocket client. Before connecting, the server reads `/open-apis/event/v1/connection`. If another consumer is online, such as `lark-cli event consume` or this server on another machine, the watch fails with a clear error instead of splitting events.
 - GitLab marks the GraphQL subscription fields Experiment. The notes channel is not part of the GraphQL schema and can also change.
-- GitLab access checks cover projects, merge requests, issues, and users. A pipeline, job, or commit watch armed with a `target` link reads the resource first, so a missing permission fails at arm time. One armed with a raw global ID stays silent when the token cannot read it.
-- A delivered event is capped at 16,384 bytes, counted as `{ id, timestamp, data }`. A transform that returns more stops the watch.
+- A GitLab watch reads its target before it subscribes, so a missing permission fails at arm time.
+- A delivered event is capped at 16,384 bytes, counted as `{ id, timestamp, data }`. A script that returns more stops the watch.
 - Every wake starts a session turn and costs tokens. A watch stays open until it expires or the agent stops it.
-- Every prepare script and every read tool can read whatever the credentials allow. Grant only the scopes your watches need. HR, payroll, and mail scopes expose personal data to the decision model.
+- Every script and every read tool can read whatever the credentials allow. Grant only the scopes your watches need. HR, payroll, and mail scopes expose personal data to the decision model.
 
 ## For agents: setting up a watch
 
 This section is the whole workflow. OpenCode calls `watch_mcp_event`. Claude Code and Codex call `list_events`, then `watch`. All of them take the same watch arguments, and Codex also takes a `threadId`.
 
-Each event passes filter → prepare → transform, and transform's string wakes the session.
+Each event runs the watch's script. A null result drops the event, and anything else wakes the session.
 
 ### Arm a watch
 
 1. OpenCode calls `watch_mcp_event({ "server": "events" })`. Claude Code and Codex call `list_events`. All of them list the events and each argument's schema and description; read the arguments there, not here.
-2. Read the same endpoints prepare will read, with `lark_get` or `gitlab_get`, and confirm the response shape and IDs.
-3. OpenCode calls `watch_mcp_event({ "server": "events", "event": "<name>", "arguments": { ... } })`. Claude Code and Codex call `watch({ "event": "<name>", ... })` with the same fields. For GitLab, pass `target` instead of `params` when `list_events` lists one. `watches` shows the resolved params in every harness, and in Claude Code and Codex `watch` also returns them. Codex also passes `"threadId": "<the value of $CODEX_THREAD_ID>"`.
+2. Read the same endpoints the script will read, with `lark_get` or `gitlab_get`, and confirm the response shape and IDs.
+3. OpenCode calls `watch_mcp_event({ "server": "events", "event": "<name>", "arguments": { ... } })`. Claude Code and Codex call `watch({ "event": "<name>", ... })` with the same fields. For GitLab, pass `target` when `list_events` lists one. `watches` shows the resolved params in every harness, and in Claude Code and Codex `watch` also returns them. Codex also passes `"threadId": "<the value of $CODEX_THREAD_ID>"`.
 
-A watch stays open until it expires or you stop it. Every event that passes filter and prepare wakes you.
+A watch stays open until it expires or you stop it. Every event the script does not drop wakes you.
 
-The wake text carries the string transform returned. In Claude Code it arrives as a channel message from the server, and in Codex as a new user turn in the same thread. To stop a watch early, call `unwatch({ "watchId": "..." })`. `watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again, and the params a target resolved to. If a watch stops with `<step> failed`, fix that step and arm a new watch.
+The wake text is the script's result: a string as is, or JSON as `JSON.stringify` of the value. In Claude Code it arrives as a channel message from the server, and in Codex as a new user turn in the same thread. To stop a watch early, call `unwatch({ "watchId": "..." })`. `watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again, and the params a target resolved to. If a watch stops with `script failed`, fix the script and arm a new watch.
 
-Each script is at most 64 KB, and both see `input.event = { eventId, timestamp, data }`. The event `data` is the raw integration payload.
+A script is at most 64 KB and sees `input.event = { eventId, timestamp, data }`. The event `data` is the raw integration payload.
 
-A typical watch returns the data unchanged:
+A script that wakes on every event returns the data unchanged:
 
 ```js
-// prepare
 return input.event.data;
-
-// transform
-return JSON.stringify(input.prepared);
 ```
 
-### Prepare tools
+A script that wakes only on some events returns null for the rest:
+
+```js
+if (input.event.data.status !== "FAILED") return null;
+return input.event.data;
+```
+
+### Script tools
 
 | Tool                                | Present when | What it does                                                 |
 | ----------------------------------- | ------------ | ------------------------------------------------------------ |
@@ -237,15 +240,13 @@ return JSON.stringify(input.prepared);
 
 The Lark path rejects `..`, `//`, `%`, `\`, a query string, and a fragment. Pass query parameters in `query`, and page with `page_token` when the endpoint paginates. The GitLab path must stay under `/api/v4` after URL normalisation and rejects a redirect. Percent-encode project paths, for example `/projects/group%2Fproject`.
 
-Use `decide` in prepare when `filter` cannot tell whether an event deserves a wake. One call accepts several questions.
+Use `decide` in the script when plain code cannot tell whether an event deserves a wake. One call accepts several questions.
 
-### GitLab targets and IDs
+### GitLab targets
 
-Arm a GitLab watch from a link or shorthand with `target` where `list_events` lists one. Pass a merge request link such as `https://gitlab.example.com/group/project/-/merge_requests/123`, an issue link, a pipeline link, a job link, a commit link, a project path such as `group/project`, or a shorthand such as `group/project!123`, `group/project#123`, or `group/project@<full sha>`. The server reads the resource to prove access and to fill the params. `watches` lists those params, and in Claude Code and Codex `watch` also returns them.
+Arm a GitLab watch from a link or shorthand with `target`. Pass a merge request link such as `https://gitlab.example.com/group/project/-/merge_requests/123`, an issue link, a pipeline link, a job link, a commit link, a project path such as `group/project`, or a shorthand such as `group/project!123`, `group/project#123`, or `group/project@<full sha>`. The server reads the resource to prove access and to fill the params. `watches` lists those params, and in Claude Code and Codex `watch` also returns them.
 
-Without a target, params take GitLab global IDs such as `gid://gitlab/MergeRequest/1234`, which are not the numbers in the web URL. `gitlab.noteable.notes_changed` takes database ids instead. Each event's params schema carries its ID format.
-
-The params schema rejects a missing or malformed ID before the watch subscribes. A project, merge request, issue, or user ID the token cannot read fails with a message that names it. A pipeline or job ID is not read before subscribing, so that watch stays silent when the token cannot read it.
+A target the token cannot read, or a link to a resource that does not exist, fails the watch before it subscribes.
 
 The GraphQL subscription fields are Experiment, so the selection set and arguments can change without deprecation. Regenerate the committed catalog after a GitLab upgrade.
 
@@ -259,11 +260,11 @@ Each recipe is the event plus the arguments to pass with it.
 
 #### Babysit a failing pipeline
 
-The watch wakes when any pipeline in `group/project` fails. Prepare reads the failed jobs and transform hands both the pipeline and jobs to the session.
+The watch wakes when any pipeline in `group/project` fails. The script drops every other status, reads the failed jobs, and hands both the pipeline and jobs to the session.
 
 ```js
-// prepare
-const { id, project } = input.event.data;
+const { id, project, status } = input.event.data;
+if (status !== "FAILED") return null;
 const pipelineId = id.split("/").pop();
 const jobs = await tools.gitlab.get({
   path: `/projects/${encodeURIComponent(project.fullPath)}/pipelines/${pipelineId}/jobs`,
@@ -272,28 +273,21 @@ const jobs = await tools.gitlab.get({
 return { pipeline: input.event.data, jobs };
 ```
 
-```js
-// transform
-return JSON.stringify(input.prepared);
-```
-
 ```json
 {
   "watchId": "pipeline",
   "target": "group/project",
-  "filter": { "status": ["FAILED"] },
-  "prepare": "…",
-  "transform": "return JSON.stringify(input.prepared)"
+  "script": "…"
 }
 ```
 
 The payload's `id` is the pipeline global ID, and its numeric suffix is the pipeline database id. The jobs endpoint and the web URL `/pipelines/<n>` both take that database id; `iid` is project-local. `gitlab_get` returns JSON only, so read a failed job's log with `glab ci trace <job database id>` and retry it with `glab ci retry <job database id>`. The server never writes to GitLab.
 
-Pass a pipeline link as `target` to follow one pipeline. Pass a commit link as `target` to follow that commit's pipelines. With params, pass `pipelineId` to follow one pipeline, and add `sha` to `ciPipelineStatusesUpdated` to follow one commit. `gitlab.userMergeRequestUpdated` is the broad merge request event, and `userId` must be the token's user.
+Pass a pipeline link as `target` to follow one pipeline. Pass a commit link as `target` to follow that commit's pipelines. `gitlab.userMergeRequestUpdated` is the broad merge request event, and it takes no target.
 
 #### Watch comments on a merge request
 
-`gitlab.noteable.notes_changed` sends only `{"event":"updated"}`. The payload repeats the subscription ids and adds `noteableIid`. Prepare reads the newest 20 notes, including system notes, and compares their comment ids with `tools.watch.state`.
+`gitlab.noteable.notes_changed` sends only `{"event":"updated"}`. The payload repeats the subscription ids and adds `noteableIid`. The script reads the newest 20 notes, including system notes, and compares their comment ids with `tools.watch.state`.
 
 Before arming, set `START` to the newest non-system note id from `GET /projects/:id/merge_requests/:iid/notes?sort=desc&order_by=created_at&per_page=20`, or the issues equivalent. Earlier comments are not replayed and the first new comment is delivered.
 
@@ -316,18 +310,17 @@ return fresh.length === 0 ? null : { notes: fresh };
 {
   "watchId": "mr-comments",
   "target": "group/project!123",
-  "prepare": "…",
-  "transform": "return JSON.stringify(input.prepared)"
+  "script": "…"
 }
 ```
 
-`watches` lists the resolved `projectId`, `noteableType`, and `noteableId`, and in Claude Code and Codex `watch` also returns them. Without a target, pass those three params as database ids.
+`watches` lists the resolved `projectId`, `noteableType`, `noteableId`, and `noteableIid`, and in Claude Code and Codex `watch` also returns them.
 
 A signal that finds nothing newer than the stored id returns null. If more than 20 comments arrive between two signals, the older ones in that burst are skipped.
 
 #### Wake only for messages that need you
 
-For `lark.im.message.receive_v1`, this prepare skips your own messages. It fetches the thread when `thread_id` is present, or the parent message when a reply has `parent_id` but no `thread_id`.
+For `lark.im.message.receive_v1`, this script skips your own messages. It fetches the thread when `thread_id` is present, or the parent message when a reply has `parent_id` but no `thread_id`.
 
 ```js
 const { sender, message } = input.event.data;
@@ -376,11 +369,7 @@ if (!answer || answer.type !== "predicate" || answer.probability < 0.7) return n
 return { message, context, answers };
 ```
 
-This prepare drops the event when the model is not confident. The transform stays the pass-through.
-
-```js
-return JSON.stringify(input.prepared);
-```
+This script drops the event when the model is not confident.
 
 ### Verify
 
@@ -392,29 +381,26 @@ return JSON.stringify(input.prepared);
 
 ### Troubleshoot
 
-| Symptom                                                           | Cause                                                                                                                                                                                                                                                                                  |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Server code changes do not take effect after a reload             | The hub process outlives harness reloads. End every session, or kill the hub process; the next session starts a fresh one.                                                                                                                                                             |
-| Server fails to start                                             | The harness argument is missing or unknown (use `events-mcp opencode`, `events-mcp claude`, or `events-mcp codex`), `GITLAB_HOST` is empty, `EVENTS_DECISIONS_MODEL` is not valid JSON in the model shape, or the committed event catalog is invalid. Server logs go to the hub log.   |
-| Claude Code shows the server but no wake arrives                  | Start Claude Code with `MCP_PROTOCOL_NEGOTIATION=legacy` and `--dangerously-load-development-channels server:<name>`, using the name from `claude mcp list`. Channels also need claude.ai or Console API key auth.                                                                     |
-| A Lark watch fails to start with "No Lark app credentials"        | Set `LARK_APP_ID` and `LARK_APP_SECRET` for the service and arm a new watch.                                                                                                                                                                                                           |
-| Watch fails with "Another connection for this Lark app is online" | Another consumer of the same app holds a connection, such as `lark-cli event consume` or this server elsewhere. Stop it and arm a new watch.                                                                                                                                           |
-| Some events arrive, others do not                                 | The app lacks the subscription, or the event arrived while the connection was reconnecting.                                                                                                                                                                                            |
-| An event never arrives                                            | The app lacks the permission or subscription, or Lark does not deliver that event over WebSocket.                                                                                                                                                                                      |
-| A watch stops with `prepare failed` and `Lark API 99991672`       | The app lacks a read scope for the request.                                                                                                                                                                                                                                            |
-| A GitLab watch stops with "No GitLab token"                       | Set `GITLAB_TOKEN`, or authenticate `glab` for the GitLab host so `glab config get token --host <host>` returns a token.                                                                                                                                                               |
-| A project watch stops with "is not accessible"                    | The token cannot read that project, or the path is wrong. `gitlab_get` with `/projects/<id>` shows the same result.                                                                                                                                                                    |
-| A GitLab pipeline or job watch stays silent                       | The watch passed a global `pipelineId` or `jobId`. GitLab gives no lookup by global ID alone, so the server cannot check the token. Pass a pipeline or job link as `target`; the server reads it first and reports a missing permission at arm time.                                   |
-| A GitLab watch stops with "is not the token's user"               | `userId` is not the token's user. Pass the token user's global ID. GitLab delivers this event to the merge request's author, assignees, and reviewers.                                                                                                                                 |
-| A merge request watch stops with "is not accessible"              | The link or global ID does not name a merge request the token can read. Pass a merge request link as `target`, or pass `gid://gitlab/MergeRequest/<database id>`, not the !iid. Confirm with `gitlab_get` on `/projects/<project>/merge_requests/<iid>`; its `.id` is the database id. |
-| A notes watch stops with "refused this watch"                     | The `target`, or the `projectId` and `noteableId` pair, does not name a noteable the token can read. Arm it with a merge request or issue link, or check the ids with `gitlab_get`.                                                                                                    |
-| A notes watch stops with "exceeds 16384 bytes"                    | Transform returned an event bigger than OpenCode accepts. Return less data.                                                                                                                                                                                                            |
-| A Codex watch fails with "Codex does not know thread"             | `threadId` is wrong. Run `printf %s "$CODEX_THREAD_ID"` in the thread's shell and pass that exact value.                                                                                                                                                                               |
-| A Codex watch fails with "Cannot reach the Codex app-server"      | The Codex app-server control socket is not at `~/.codex/app-server-control/app-server-control.sock`. Start Codex without `--no-daemon`, using the default `~/.codex` home; a different Codex home is not supported.                                                                    |
-| A watch disappears without a stop message                         | OpenCode reloaded, restarted, or unloaded the idle location, or the Claude Code or Codex session exited. For OpenCode, set `location_idle_timeout` to `false` and arm a new watch.                                                                                                     |
-| A watch stops with a timeout                                      | The event exceeded the 120-second limit for prepare and transform together. Inspect the named step or shorten the work.                                                                                                                                                                |
-| A watch stops with "Watch state exceeds 65536 bytes"              | Prepare stores too much in `tools.watch.state`. Keep less, or derive it again on each event.                                                                                                                                                                                           |
-| Memory grows over time                                            | Watches and their buffers live in one long-running hub process, and buffers are unbounded. Call `watches`, then `unwatch` the ones you no longer need.                                                                                                                                 |
+| Symptom                                                           | Cause                                                                                                                                                                                                                                                                                |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Server code changes do not take effect after a reload             | The hub process outlives harness reloads. End every session, or kill the hub process; the next session starts a fresh one.                                                                                                                                                           |
+| Server fails to start                                             | The harness argument is missing or unknown (use `events-mcp opencode`, `events-mcp claude`, or `events-mcp codex`), `GITLAB_HOST` is empty, `EVENTS_DECISIONS_MODEL` is not valid JSON in the model shape, or the committed event catalog is invalid. Server logs go to the hub log. |
+| Claude Code shows the server but no wake arrives                  | Start Claude Code with `MCP_PROTOCOL_NEGOTIATION=legacy` and `--dangerously-load-development-channels server:<name>`, using the name from `claude mcp list`. Channels also need claude.ai or Console API key auth.                                                                   |
+| A Lark watch fails to start with "No Lark app credentials"        | Set `LARK_APP_ID` and `LARK_APP_SECRET` for the service and arm a new watch.                                                                                                                                                                                                         |
+| Watch fails with "Another connection for this Lark app is online" | Another consumer of the same app holds a connection, such as `lark-cli event consume` or this server elsewhere. Stop it and arm a new watch.                                                                                                                                         |
+| Some events arrive, others do not                                 | The app lacks the subscription, or the event arrived while the connection was reconnecting.                                                                                                                                                                                          |
+| An event never arrives                                            | The app lacks the permission or subscription, or Lark does not deliver that event over WebSocket.                                                                                                                                                                                    |
+| A watch stops with `script failed` and `Lark API 99991672`        | The app lacks a read scope for the request.                                                                                                                                                                                                                                          |
+| A GitLab watch stops with "No GitLab token"                       | Set `GITLAB_TOKEN`, or authenticate `glab` for the GitLab host so `glab config get token --host <host>` returns a token.                                                                                                                                                             |
+| A GitLab watch fails to arm with "GitLab HTTP 404"                | The target names a resource the token cannot read, or the link is wrong. `gitlab_get` on the path in the message shows the same result.                                                                                                                                              |
+| A GitLab watch stops with "refused this watch"                    | GitLab refused the subscription after the target read succeeded. Check that the token can still read the resource, then arm a new watch.                                                                                                                                             |
+| A notes watch stops with "exceeds 16384 bytes"                    | The script returned an event bigger than OpenCode accepts. Return less data.                                                                                                                                                                                                         |
+| A Codex watch fails with "Codex does not know thread"             | `threadId` is wrong. Run `printf %s "$CODEX_THREAD_ID"` in the thread's shell and pass that exact value.                                                                                                                                                                             |
+| A Codex watch fails with "Cannot reach the Codex app-server"      | The Codex app-server control socket is not at `~/.codex/app-server-control/app-server-control.sock`. Start Codex without `--no-daemon`, using the default `~/.codex` home; a different Codex home is not supported.                                                                  |
+| A watch disappears without a stop message                         | OpenCode reloaded, restarted, or unloaded the idle location, or the Claude Code or Codex session exited. For OpenCode, set `location_idle_timeout` to `false` and arm a new watch.                                                                                                   |
+| A watch stops with a timeout                                      | The event exceeded the script's 120-second limit. Shorten the work, such as fewer or smaller reads.                                                                                                                                                                                  |
+| A watch stops with "Watch state exceeds 65536 bytes"              | The script stores too much in `tools.watch.state`. Keep less, or derive it again on each event.                                                                                                                                                                                      |
+| Memory grows over time                                            | Watches and their buffers live in one long-running hub process, and buffers are unbounded. Call `watches`, then `unwatch` the ones you no longer need.                                                                                                                               |
 
 ### Update
 

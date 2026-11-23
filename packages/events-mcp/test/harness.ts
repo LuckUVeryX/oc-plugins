@@ -31,16 +31,6 @@ const larkApp = { appId: "cli_0123456789abcdef", appSecret: "offline" };
 const lark = Schema.decodeUnknownSync(IntegrationName)("lark");
 const other = Schema.decodeUnknownSync(IntegrationName)("other");
 const larkMessage = "lark.im.message.receive_v1";
-const larkParams: Schema.JsonObject = {
-  type: "object",
-  properties: { group: { type: "string" } },
-  additionalProperties: false,
-};
-const eventParams: Schema.JsonObject = {
-  type: "object",
-  properties: {},
-  additionalProperties: false,
-};
 
 // A watch that only needs the decide tool to exist, not to answer.
 export const unusedDecide: DecisionModel.Decide = () =>
@@ -81,7 +71,6 @@ export async function connect(
         {
           name: "im.message.receive_v1",
           description: "A message was received.",
-          params: larkParams,
           payload: {
             type: "object",
             properties: {
@@ -107,7 +96,6 @@ export async function connect(
         {
           name: "ping",
           description: "A ping.",
-          params: eventParams,
           payload: { type: "object" },
           subscribe: () =>
             options.otherSubscribeError === undefined
