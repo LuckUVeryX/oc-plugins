@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { ConfigProvider } from "effect";
 import { WebSocketServer, type WebSocket } from "ws";
 import { expect, test, vi } from "vitest";
-import { connect } from "../harness.ts";
+import { connect } from "../support.ts";
 
 interface Frame {
   readonly id?: number;

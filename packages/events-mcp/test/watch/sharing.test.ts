@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { connect } from "../harness.ts";
+import { connect } from "../support.ts";
 
 test("an event published as the second watch becomes active reaches both watches", async () => {
   let publish: (() => void) | undefined;

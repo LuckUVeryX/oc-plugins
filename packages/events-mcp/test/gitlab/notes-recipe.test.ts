@@ -8,7 +8,7 @@ import { notesRecipe } from "../../src/gitlab/notes.ts";
 import { Gitlab } from "../../src/gitlab/integration.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
 import { Health, type IntegrationError } from "../../src/integration/contract.ts";
-import { connect } from "../harness.ts";
+import { connect } from "../support.ts";
 
 const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),

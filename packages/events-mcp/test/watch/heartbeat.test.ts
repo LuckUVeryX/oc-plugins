@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { connect } from "../harness.ts";
+import { connect } from "../support.ts";
 
 // OpenCode cancels a feed after 60 seconds without a notification.
 test("heartbeats continue during event traffic and stop on cancellation", async () => {

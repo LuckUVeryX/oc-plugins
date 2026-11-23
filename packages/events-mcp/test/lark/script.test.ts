@@ -4,7 +4,7 @@ import { DecisionModel } from "../../src/decision/decision-model.ts";
 import { makeGetTool } from "../../src/lark/get.ts";
 import { makeRunScript, makeWatchState } from "../../src/script/script.ts";
 import { IntegrationName } from "../../src/integration/contract.ts";
-import { connect, unusedDecide } from "../harness.ts";
+import { connect, unusedDecide } from "../support.ts";
 
 const questions = [
   { type: "predicate", name: "p", instructions: "test", criteria: { true: "yes" } },

@@ -4,7 +4,7 @@ import { HttpClient, HttpClientResponse } from "effect/http";
 import { makeGetTool, makeGitlabClient } from "../../src/gitlab/client.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
 import { IntegrationName } from "../../src/integration/contract.ts";
-import { connect } from "../harness.ts";
+import { connect } from "../support.ts";
 
 const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),

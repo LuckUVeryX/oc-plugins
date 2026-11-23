@@ -10,7 +10,7 @@ import {
 } from "../../src/integration/contract.ts";
 import { Feeds } from "../../src/watch/feeds.ts";
 import { runWatch } from "../../src/watch/watch.ts";
-import { connect } from "../harness.ts";
+import { connect } from "../support.ts";
 
 const pass = { script: "return input.event.data" };
 

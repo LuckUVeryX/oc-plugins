@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { connect } from "../harness.ts";
+import { connect } from "../support.ts";
 
 // OpenCode measures the delivered event as { id, timestamp, data } and rejects one above 16,384 bytes.
 const timestamp = new Date().toISOString();

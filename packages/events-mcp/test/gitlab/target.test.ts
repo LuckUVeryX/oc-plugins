@@ -13,7 +13,7 @@ import {
   type IntegrationError,
   type Integration,
 } from "../../src/integration/contract.ts";
-import { connect } from "../harness.ts";
+import { connect } from "../support.ts";
 
 const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),

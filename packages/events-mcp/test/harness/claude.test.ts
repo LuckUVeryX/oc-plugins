@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { connect } from "../harness.ts";
+import { connect } from "../support.ts";
 
 test("a watch armed with the watch tool wakes the session on the channel", async () => {
   const h = await connect({ harness: "claude" });

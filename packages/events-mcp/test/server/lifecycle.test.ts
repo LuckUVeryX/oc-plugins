@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import { expect, test, vi } from "vitest";
 import { IntegrationName, type Integration } from "../../src/integration/contract.ts";
-import { connect } from "../harness.ts";
+import { connect } from "../support.ts";
 
 const blocked: Integration = {
   name: Schema.decodeUnknownSync(IntegrationName)("blocked"),

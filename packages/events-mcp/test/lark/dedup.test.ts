@@ -5,7 +5,7 @@ import { LarkSocket } from "../../src/lark/socket.ts";
 import { Lark } from "../../src/lark/integration.ts";
 import type { LarkRequester } from "../../src/lark/get.ts";
 import type { Integration } from "../../src/integration/contract.ts";
-import { connect } from "../harness.ts";
+import { connect } from "../support.ts";
 
 const sdk = vi.hoisted(() => ({
   dispatcher: undefined as undefined | import("@larksuiteoapi/node-sdk").EventDispatcher,
