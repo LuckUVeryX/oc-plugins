@@ -99,7 +99,7 @@ const setup = async (getError?: IntegrationError) => {
   return { integration, socket, client };
 };
 
-const scripts = { prepare: "return null", transform: "return null" };
+const scripts = { script: "return null" };
 
 const subscriptionOf = async (event: string, args: Record<string, unknown>) => {
   const { integration, socket } = await setup();

@@ -1,27 +1,11 @@
 import { Cause, Clock, DateTime, Deferred, Effect, Schema, type Scope, Stream } from "effect";
-import { matchesFilter, type Filter } from "./arguments.ts";
 import { bytes, MAX_EVENT_BYTES } from "./limits.ts";
 import { Health, type EventKind, type Event, type IntegrationError } from "./integration.ts";
-import { Failed } from "./script.ts";
+import { Failed, type RunScript } from "./script.ts";
 import { Feeds } from "./feeds.ts";
 
 // OpenCode cancels event feeds after 60 seconds without a notification.
 const HEARTBEAT_INTERVAL = "20 seconds";
-
-export type WatchEvent = {
-  readonly eventId: string;
-  readonly timestamp: string;
-  readonly data: Schema.JsonObject;
-};
-
-type PrepareRunner = (event: WatchEvent) => Effect.Effect<Schema.Json, Failed>;
-
-export type TransformInput = {
-  readonly event: WatchEvent;
-  readonly prepared: Schema.Json;
-};
-
-type TransformRunner = (input: TransformInput) => Effect.Effect<string | null, Failed>;
 
 export type Notification =
   | { readonly type: "active" | "heartbeat" }
@@ -30,7 +14,7 @@ export type Notification =
       readonly eventId: string;
       readonly name: string;
       readonly timestamp: string;
-      readonly data: Schema.Json;
+      readonly data: string;
     }
   | { readonly type: "error" | "terminated"; readonly reason: string };
 
@@ -42,12 +26,10 @@ interface WatchRunOptions {
   readonly watchId: string;
   readonly eventKind: EventKind;
   readonly params: Schema.JsonObject;
-  readonly filter: Filter;
   readonly expiresInSeconds: number;
   readonly eventTimeoutSeconds: number;
   readonly ended: Deferred.Deferred<string>;
-  readonly prepare: PrepareRunner;
-  readonly transform: TransformRunner;
+  readonly script: RunScript;
   readonly notify: (notification: Notification) => Effect.Effect<void>;
   /** Succeeds with undefined once the feed is subscribed, or with the reason the watch ended before that. */
   readonly ready?: Deferred.Deferred<string | undefined, IntegrationError> | undefined;
@@ -68,7 +50,6 @@ export const runWatch = Effect.fn("Watch.run")(function* (
   });
   const deliver = (input: Event) =>
     Effect.gen(function* () {
-      if (!matchesFilter(options.filter, input.payload)) return;
       const now = yield* Clock.currentTimeMillis;
       const occurredAt = input.occurredAt ?? DateTime.makeUnsafe(now);
       const eventId = input.id ?? `local-${crypto.randomUUID()}`;
@@ -77,23 +58,16 @@ export const runWatch = Effect.fn("Watch.run")(function* (
         timestamp: DateTime.formatIso(occurredAt),
         data: input.payload,
       };
-      let step: "prepare" | "transform" = "prepare";
-      const pipeline = Effect.gen(function* () {
-        const prepared = yield* options.prepare(delivered);
-        if (prepared === null) return null;
-        step = "transform";
-        return yield* options.transform({ event: delivered, prepared });
-      });
-      const result = yield* pipeline.pipe(
+      const result = yield* options.script(delivered).pipe(
         Effect.timeout(`${options.eventTimeoutSeconds} seconds`),
         Effect.catchCause((cause) => {
           if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
           return Effect.logWarning("Event step failed").pipe(
-            Effect.annotateLogs({ watchId: options.watchId, eventId, step }),
+            Effect.annotateLogs({ watchId: options.watchId, eventId }),
             Effect.andThen(
               Effect.fail(
                 new StepFailed({
-                  message: `${step} failed on ${eventId}: ${messageOf(cause)}`,
+                  message: `script failed on ${eventId}: ${messageOf(cause)}`,
                 }),
               ),
             ),
@@ -107,7 +81,7 @@ export const runWatch = Effect.fn("Watch.run")(function* (
       )
         return yield* Effect.fail(
           new StepFailed({
-            message: `transform failed on ${eventId}: the delivered event exceeds ${MAX_EVENT_BYTES} bytes; return a shorter string`,
+            message: `script failed on ${eventId}: the delivered event exceeds ${MAX_EVENT_BYTES} bytes; return less`,
           }),
         );
       yield* options.notify({

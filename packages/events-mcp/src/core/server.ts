@@ -22,21 +22,18 @@ import { isObject } from "effect/Predicate";
 import {
   decodeArguments,
   expiresInSecondsProperty,
-  filterProperty,
   inputSchemaDocument,
   Invalid,
-  prepareProperty,
-  transformProperty,
+  scriptProperty,
   watchIdProperty,
   WatchArguments,
 } from "./arguments.ts";
 import { Registry, type RegisteredEventKind } from "./registry.ts";
 import { DecisionModel, type Decide } from "./decision-model.ts";
 import { bytes, MAX_SCRIPT_BYTES } from "./limits.ts";
-import { makePrepare, makeWatchState } from "./prepare.ts";
 import type { IntegrationError } from "./integration.ts";
+import { makeRunScript, makeWatchState } from "./script.ts";
 import { inputJsonSchema } from "./tool.ts";
-import { makeTransform } from "./transform.ts";
 import { Feeds } from "./feeds.ts";
 import { runWatch, type Notification } from "./watch.ts";
 import type { Harness, Send, Tools } from "./harness.ts";
@@ -158,13 +155,11 @@ const watchInputSchema = (options: {
         description:
           "Instead of params, a link or shorthand, for events whose list_events entry lists target.",
       },
-      filter: filterProperty({ hint: "list_events lists the paths for each event." }),
-      prepare: prepareProperty(options.toolPaths),
-      transform: transformProperty,
+      script: scriptProperty(options.toolPaths),
       expiresInSeconds: expiresInSecondsProperty(options.defaultExpiresInSeconds),
       ...properties,
     },
-    required: ["event", "watchId", "prepare", "transform", ...required],
+    required: ["event", "watchId", "script", ...required],
     additionalProperties: false,
   };
 };
@@ -179,7 +174,6 @@ const buildServer = (options: ServerOptions): McpServer => {
       ),
       runOptions,
     );
-  const transformEvent = makeTransform();
   const watches = new Map<string, Watch>();
   const toolPaths = options.registry.integrations.flatMap((integration) =>
     Object.keys(integration.tools).map((name) => `tools.${integration.name}.${name}`),
@@ -261,7 +255,6 @@ const buildServer = (options: ServerOptions): McpServer => {
       description: event.description || event.name,
       delivery: ["push"],
       inputSchema: inputSchemaDocument({
-        filter: event.filter,
         params: event.params,
         target: event.target?.description,
         toolPaths,
@@ -293,18 +286,11 @@ const buildServer = (options: ServerOptions): McpServer => {
         return yield* Effect.fail(
           new Invalid({ message: `Unknown event: ${name}; choose a listed event` }),
         );
-      const decoded = yield* decodeArguments({ filter: event.filter, value });
-      for (const [step, code] of [
-        ["Transform", decoded.transform],
-        ["Prepare", decoded.prepare],
-      ] as const) {
-        if (bytes(code) > MAX_SCRIPT_BYTES)
-          return yield* Effect.fail(
-            new Invalid({
-              message: `${step} source exceeds ${MAX_SCRIPT_BYTES} bytes; shorten it`,
-            }),
-          );
-      }
+      const decoded = yield* decodeArguments(value);
+      if (bytes(decoded.script) > MAX_SCRIPT_BYTES)
+        return yield* Effect.fail(
+          new Invalid({ message: `script exceeds ${MAX_SCRIPT_BYTES} bytes; shorten it` }),
+        );
       const params = yield* resolveParams(event, decoded);
       const eventParams = yield* Schema.decodeUnknownEffect(event.paramsSchema)(params, {
         onExcessProperty: "error",
@@ -354,7 +340,8 @@ const buildServer = (options: ServerOptions): McpServer => {
     readonly ready?: Deferred.Deferred<string | undefined, IntegrationError> | undefined;
   }) =>
     Effect.gen(function* () {
-      const prepare = makePrepare({
+      const script = makeRunScript({
+        code: input.decoded.script,
         integrations: options.registry.integrations,
         state: yield* makeWatchState,
         decide: options.decide,
@@ -363,13 +350,11 @@ const buildServer = (options: ServerOptions): McpServer => {
         watchId: input.decoded.watchId,
         eventKind: input.event,
         params: input.eventParams,
-        filter: input.decoded.filter,
         expiresInSeconds: input.decoded.expiresInSeconds ?? options.defaultExpiresInSeconds,
         eventTimeoutSeconds: options.eventTimeoutSeconds,
         ended: input.watch.ended,
         ready: input.ready,
-        prepare: (delivered) => prepare(input.decoded.prepare, delivered),
-        transform: (transformInput) => transformEvent(input.decoded.transform, transformInput),
+        script,
         notify: input.notify,
       }).pipe(Effect.provideService(Feeds.Service, options.feeds));
     });
@@ -392,7 +377,7 @@ const buildServer = (options: ServerOptions): McpServer => {
       "list_events",
       {
         description:
-          "List the events you can watch, with each event's parameters, payload, and filter paths. Read it before you arm a watch.",
+          "List the events you can watch, with each event's arguments and payload. Read it before you arm a watch.",
       },
       () => text({ events: catalogue() }),
     );
@@ -400,7 +385,7 @@ const buildServer = (options: ServerOptions): McpServer => {
       "watch",
       {
         description:
-          "Arm a watch and return once it is live. Each event that passes filter and prepare reaches this session as the transform result, until the watch expires or you stop it. Read the event's fields from list_events before you write prepare and transform.",
+          "Arm a watch and return once it is live. Each event the script does not drop reaches this session as the script's result, until the watch expires or you stop it. Read the event's payload from list_events before you write the script.",
         inputSchema: fromJsonSchema<typeof WatchInput.Type>(watchTool),
       },
       (input) =>
@@ -412,9 +397,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                 watchId,
                 params,
                 target,
-                filter,
-                prepare: prepareSource,
-                transform,
+                script,
                 expiresInSeconds: requestedExpiresInSeconds,
                 ...session
               } = yield* Schema.decodeUnknownEffect(WatchInput)(input).pipe(
@@ -428,9 +411,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                 watchId,
                 ...(params === undefined ? {} : { params }),
                 ...(target === undefined ? {} : { target }),
-                ...(filter === undefined ? {} : { filter }),
-                prepare: prepareSource,
-                transform,
+                script,
                 ...(requestedExpiresInSeconds === undefined
                   ? {}
                   : { expiresInSeconds: requestedExpiresInSeconds }),
@@ -474,14 +455,10 @@ const buildServer = (options: ServerOptions): McpServer => {
                 ready,
                 notify: (notification) => {
                   if (notification.type === "event")
-                    return wake(
-                      typeof notification.data === "string"
-                        ? notification.data
-                        : JSON.stringify(notification.data),
-                      (error) =>
-                        Deferred.succeed(watch.ended, `Wake failed: ${error.message}`).pipe(
-                          Effect.as(undefined),
-                        ),
+                    return wake(notification.data, (error) =>
+                      Deferred.succeed(watch.ended, `Wake failed: ${error.message}`).pipe(
+                        Effect.as(undefined),
+                      ),
                     );
                   if (notification.type !== "terminated") return Effect.void;
                   if (notification.reason === "Stopped") return Effect.void;

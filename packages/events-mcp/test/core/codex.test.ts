@@ -27,8 +27,7 @@ const watchParams = {
   event: "lark.im.message.receive_v1",
   watchId: "pipeline",
   params: { group: "mine" },
-  prepare: "return input.event.data",
-  transform: "return 'wake'",
+  script: "return 'wake'",
 };
 
 const fakeCodex = async (options: { failFirstAdd?: boolean } = {}) => {
@@ -119,15 +118,14 @@ const codexConnect = (home: string) =>
     config: ConfigProvider.fromUnknown({ CODEX_HOME: home }),
   });
 
-test("a watch wakes the given Codex thread with one queue add carrying the transform text", async () => {
+test("a watch wakes the given Codex thread with one queue add carrying the script result", async () => {
   await withCodex(async (codex) => {
     const h = await codexConnect(codex.home);
     try {
       const armed = await h.call("watch", {
         ...watchParams,
         threadId: "thread-1",
-        filter: { "message.chat_id": "oc_one" },
-        transform: "return `wake: ${input.prepared.message.chat_id}`",
+        script: "return `wake: ${input.event.data.message.chat_id}`",
       });
       expect(armed.watchId).toBe("pipeline");
 

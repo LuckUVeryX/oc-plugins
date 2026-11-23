@@ -7,13 +7,11 @@ import {
   SchemaRepresentation,
   type Scope,
 } from "effect";
-import { compileFilter, type CompiledFilter } from "./arguments.ts";
 import type { EventKind, Integration } from "./integration.ts";
 
 export interface RegisteredEventKind extends EventKind {
   readonly name: string;
   readonly paramsSchema: ReturnType<typeof compileParams>;
-  readonly filter: CompiledFilter;
 }
 
 export interface Interface {
@@ -54,7 +52,6 @@ export const layer = <R>(
             ...event,
             name,
             paramsSchema: compileParams(event, name),
-            filter: compileFilter(event.payload),
           });
         }
       return Service.of({

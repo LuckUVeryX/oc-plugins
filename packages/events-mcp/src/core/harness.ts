@@ -46,11 +46,11 @@ export const liveWatchInstructions =
   "A watch is live. It sees events from the moment it arms until it expires or you stop it, and nothing older is replayed. Choose a watchId. The `watches` tool shows the arguments of every open watch, and `unwatch` ends one early.";
 
 export const listEventsInstructions =
-  "Call list_events to see what this server can watch, with each event's arguments and payload. Arm one with the watch tool. The watch runs filter, prepare, and transform in turn, and transform's returned string reaches this session.";
+  "Call list_events to see what this server can watch, with each event's arguments and payload. Arm one with the watch tool. The watch runs its script on each event, and whatever the script returns, unless null, reaches this session.";
 
 export const commonInstructions = [
-  "When a filter cannot tell whether an event deserves a wake, ask the decision model from prepare with tools.events.decide.",
-  'When a watch ends with "<step> failed", fix that step and arm a new watch.',
+  "When plain code cannot tell whether an event deserves a wake, ask the decision model from the script with tools.events.decide.",
+  'When a watch ends with "script failed", fix the script and arm a new watch.',
 ];
 
 export const integrationInstructions = (integrations: ReadonlyArray<Integration>) =>

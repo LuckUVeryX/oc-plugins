@@ -12,10 +12,7 @@ import { Feeds } from "../../src/core/feeds.ts";
 import { runWatch } from "../../src/core/watch.ts";
 import { connect } from "../harness.ts";
 
-const pass = {
-  prepare: "return input.event.data",
-  transform: "return JSON.stringify(input.prepared)",
-};
+const pass = { script: "return input.event.data" };
 
 test("each feed receives an event the other feed also saw", async () => {
   const h = await connect();
@@ -101,12 +98,10 @@ test("announces active before delivering the first event of a short stream", asy
           watchId: "short",
           eventKind: event,
           params: {},
-          filter: [],
           expiresInSeconds: 60,
           eventTimeoutSeconds: 30,
           ended: yield* Deferred.make<string>(),
-          prepare: () => Effect.succeed({}),
-          transform: () => Effect.succeed("delivered"),
+          script: () => Effect.succeed("delivered"),
           notify: (n) => Effect.sync(() => types.push(n.type)),
         }).pipe(
           Effect.provideService(

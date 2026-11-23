@@ -50,7 +50,7 @@ Arm it from a merge request or issue link, or a shorthand such as group/project!
 
 Without a target, pass projectId and noteableId as database ids, not iids or global ids, and noteableType as "merge_request" or "issue". GET /projects/:id/merge_requests/:iid returns the merge request's id and project_id, and the issue endpoint does the same.
 
-Prepare recipe. Before you arm, read the newest notes to choose \`START\`. Use GET /projects/:projectId/merge_requests/:iid/notes with sort=desc, order_by=created_at, and per_page=20, or the issues endpoint. Set \`START\` to the newest non-system note's id, or 0 when that returns none. The recipe reads the newest 20 notes and keeps the highest comment id in tools.watch.state. A signal with nothing newer than START or the stored id returns null. More than 20 comments between two signals skips the older ones.
+Script recipe. Before you arm, read the newest notes to choose \`START\`. Use GET /projects/:projectId/merge_requests/:iid/notes with sort=desc, order_by=created_at, and per_page=20, or the issues endpoint. Set \`START\` to the newest non-system note's id, or 0 when that returns none. The recipe reads the newest 20 notes and keeps the highest comment id in tools.watch.state. A signal with nothing newer than START or the stored id returns null. More than 20 comments between two signals skips the older ones.
 
 ${notesRecipe}`;
 

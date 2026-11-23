@@ -196,10 +196,8 @@ const watch = async (options) => {
           arguments: {
             watchId,
             params: { projectFullPath: project },
-            filter: { status: ["SUCCESS", "FAILED", "CANCELED"] },
-            prepare: "return input.event.data",
-            transform:
-              'return "pipeline " + input.prepared.id + " status " + input.prepared.status',
+            script:
+              'const { id, status } = input.event.data; if (!["SUCCESS", "FAILED", "CANCELED"].includes(status)) return null; return "pipeline " + id + " status " + status',
           },
         },
       },

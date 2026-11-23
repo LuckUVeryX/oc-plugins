@@ -25,12 +25,10 @@ it.effect("keeps a watch for its chosen expiry", () =>
           watchId: "watch",
           eventKind: tick,
           params: {},
-          filter: [],
           expiresInSeconds,
           eventTimeoutSeconds: 30,
           ended,
-          prepare: () => Effect.succeed(null),
-          transform: () => Effect.succeed(null),
+          script: () => Effect.succeed(null),
           notify: (n) => Ref.update(seen, (all) => [...all, n.type]),
         }).pipe(
           Effect.provideService(
@@ -68,12 +66,10 @@ it.effect("stop and expiry end a watch whose feed never becomes ready", () =>
           watchId: "never-ready",
           eventKind: tick,
           params: {},
-          filter: [],
           expiresInSeconds,
           eventTimeoutSeconds: 30,
           ended,
-          prepare: () => Effect.succeed(null),
-          transform: () => Effect.succeed(null),
+          script: () => Effect.succeed(null),
           notify: (n) => Ref.update(seen, (all) => [...all, n.type]),
         }).pipe(
           Effect.provideService(Feeds.Service, Feeds.Service.of({ acquire: () => Effect.never })),

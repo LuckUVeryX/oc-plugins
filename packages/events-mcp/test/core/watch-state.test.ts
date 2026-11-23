@@ -12,9 +12,8 @@ test("keeps per-watch state between events and rejects state over 64 KB", async 
   try {
     h.stream({
       watchId: "memory",
-      prepare:
+      script:
         "const previous = await tools.watch.state.get(); await tools.watch.state.set((previous ?? 0) + 1); return { previous }",
-      transform: "return JSON.stringify(input.prepared)",
     });
     await active(h);
     await h.publish({ eventId: "first", payload: {} });
@@ -31,8 +30,7 @@ test("keeps per-watch state between events and rejects state over 64 KB", async 
 
     h.stream({
       watchId: "too-big",
-      prepare: 'await tools.watch.state.set({ text: "x".repeat(70000) }); return null',
-      transform: "return null",
+      script: 'await tools.watch.state.set({ text: "x".repeat(70000) }); return null',
     });
     await active(h, 2);
     await h.publish({ eventId: "oversized", payload: {} });
@@ -42,7 +40,7 @@ test("keeps per-watch state between events and rejects state over 64 KB", async 
       ).toBe(true),
     );
     expect(h.notifications.find((n) => n.type === "terminated")?.reason).toContain(
-      "prepare failed on oversized:",
+      "script failed on oversized:",
     );
   } finally {
     await h.close();

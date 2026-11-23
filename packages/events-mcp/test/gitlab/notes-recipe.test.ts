@@ -85,8 +85,7 @@ test("the notes recipe delivers the first new comment after START and nothing el
       {
         watchId: "comments",
         params: { projectId: 599, noteableType: "merge_request", noteableId: 48090 },
-        prepare: recipe,
-        transform: "return JSON.stringify(input.prepared)",
+        script: recipe,
         expiresInSeconds: 60,
       },
       "gitlab.noteable.notes_changed",

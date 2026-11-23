@@ -208,8 +208,7 @@ test("rejects a database id where a global ID is required", async () => {
         {
           watchId: "database-id",
           params: { pipelineId: "463669" },
-          prepare: "return null",
-          transform: "return null",
+          script: "return null",
           expiresInSeconds: 1,
         },
         "gitlab.ciPipelineStatusUpdated",

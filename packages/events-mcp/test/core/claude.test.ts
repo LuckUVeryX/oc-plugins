@@ -13,9 +13,7 @@ test("a watch armed with the watch tool wakes the session on the channel", async
       event: "lark.im.message.receive_v1",
       watchId: "pipeline",
       params: { group: "mine" },
-      filter: { "message.chat_id": "oc_one" },
-      prepare: "return input.event.data",
-      transform: "return `wake: ${input.prepared.message.chat_id}`",
+      script: "return `wake: ${input.event.data.message.chat_id}`",
     });
     expect(armed.watchId).toBe("pipeline");
 

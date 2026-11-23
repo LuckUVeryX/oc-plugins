@@ -8,8 +8,7 @@ test("heartbeats continue during event traffic and stop on cancellation", async 
   try {
     const watch = h.stream({
       watchId: "heartbeat",
-      prepare: "return input.event.data",
-      transform: "return JSON.stringify(input.prepared)",
+      script: "return input.event.data",
     });
     await vi.advanceTimersByTimeAsync(20_000);
     expect(h.notifications.filter((n) => n.type === "heartbeat")).toHaveLength(1);

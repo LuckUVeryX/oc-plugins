@@ -175,7 +175,7 @@ export const integration: Effect.Effect<
       }),
     ],
     instructions:
-      "GitLab: most events take target. Pass a link or shorthand, and the server reads it into params. list_events shows which events take one. Otherwise read with gitlab_get to find a project, pipeline, or merge request id before arming a watch, or from inside prepare. Most params take a global id, and each param description says how to build it. noteable.notes_changed takes database ids instead.",
+      "GitLab: most events take target. Pass a link or shorthand, and the server reads it into params. list_events shows which events take one. Otherwise read with gitlab_get to find a project, pipeline, or merge request id before arming a watch, or from inside the script. Most params take a global id, and each param description says how to build it. noteable.notes_changed takes database ids instead.",
   };
 });
 

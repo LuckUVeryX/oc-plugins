@@ -75,8 +75,7 @@ test("advertises a param that a real watch accepts", async () => {
         {
           watchId,
           params,
-          prepare: "return null",
-          transform: "return null",
+          script: "return null",
           expiresInSeconds: 1,
         },
         "gitlab.ciPipelineStatusesUpdated",
