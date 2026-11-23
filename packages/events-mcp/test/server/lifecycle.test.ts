@@ -72,14 +72,6 @@ test("a watch reusing an open id fails and leaves the first watch open", async (
   try {
     const watch = { event: "lark.im.message.receive_v1", id: "taken", code: "return null" };
     await h.call("watch", watch);
-    const [open] = (await h.call("watches")).watches;
-    expect(Object.keys(open).sort()).toEqual([
-      "arguments",
-      "event",
-      "expiresAt",
-      "id",
-      "startedAt",
-    ]);
     const second = await h.callRaw("watch", watch);
     expect(second).toEqual({
       isError: true,

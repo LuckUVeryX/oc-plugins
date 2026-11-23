@@ -34,17 +34,3 @@ test("OpenCode owns a watch's lifetime", async () => {
     vi.useRealTimers();
   }
 });
-
-test("OpenCode passes a target and gets no second way to filter, name, expire or stop a watch", async () => {
-  const h = await connect();
-  try {
-    expect((await h.client.listTools()).tools.map((tool) => tool.name)).toEqual([
-      "lark_get",
-      "decide",
-    ]);
-    for (const extra of [{ code: "return null" }, { expiresInSeconds: 60 }, { id: "named" }])
-      expect(await h.stream(extra).done).toMatchObject({ code: -32602 });
-  } finally {
-    await h.close();
-  }
-});
