@@ -31,7 +31,6 @@ interface WatchRunOptions {
   readonly ended: Deferred.Deferred<string>;
   readonly runCode: RunCode;
   readonly notify: (notification: Notification) => Effect.Effect<void>;
-  readonly onSubscribed?: Effect.Effect<void> | undefined;
 }
 
 const messageOf = (cause: Cause.Cause<unknown>): string => {
@@ -96,7 +95,6 @@ export const runWatch = Effect.fn("Watch.run")(function* (
       eventType: options.eventType,
       params: options.params,
     });
-    if (options.onSubscribed) yield* options.onSubscribed;
     const firstHealthAnnounced = yield* Deferred.make<void>();
     return yield* Effect.raceFirst(
       feed.events.pipe(

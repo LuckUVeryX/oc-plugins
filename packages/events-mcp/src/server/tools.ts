@@ -103,22 +103,29 @@ export const registerTools = (options: {
               harness
                 .wake(send, { session, id: armed.id, event: armed.event, text })
                 .pipe(Effect.catchTag("Harness.WakeFailed", onFailure));
-            const notify = (notification: Notification) => {
-              if (notification.type === "event")
-                return wake(notification.data, (error) =>
-                  Deferred.succeed(armed.watch.ended, `Wake failed: ${error.message}`).pipe(
-                    Effect.asVoid,
-                  ),
-                );
-              if (notification.type !== "terminated" || notification.reason === "Stopped")
-                return Effect.void;
-              return wake(`Watch ${armed.id} ended: ${notification.reason}`, (error) =>
-                Effect.logWarning(`Termination wake failed: ${error.message}`),
-              );
-            };
-            // Succeeds once the feed is subscribed, or with the reason the watch ended first.
+            // Succeeds at the watch's first health report, or with the reason it ended first.
             const ready = yield* Deferred.make<string | undefined, Invalid | SourceError>();
-            yield* armed.run({ notify, onSubscribed: Deferred.succeed(ready, undefined) }).pipe(
+            const notify = (notification: Notification) => {
+              switch (notification.type) {
+                case "active":
+                case "error":
+                  return Deferred.succeed(ready, undefined).pipe(Effect.asVoid);
+                case "heartbeat":
+                  return Effect.void;
+                case "event":
+                  return wake(notification.data, (error) =>
+                    Deferred.succeed(armed.watch.ended, `Wake failed: ${error.message}`).pipe(
+                      Effect.asVoid,
+                    ),
+                  );
+                case "terminated":
+                  if (notification.reason === "Stopped") return Effect.void;
+                  return wake(`Watch ${armed.id} ended: ${notification.reason}`, (error) =>
+                    Effect.logWarning(`Termination wake failed: ${error.message}`),
+                  );
+              }
+            };
+            yield* armed.run(notify).pipe(
               Effect.onExit((exit) => {
                 const warn =
                   Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)

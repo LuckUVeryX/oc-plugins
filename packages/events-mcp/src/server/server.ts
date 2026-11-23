@@ -77,10 +77,9 @@ interface Armed {
   readonly event: string;
   readonly watch: Watch;
   /** Claims the id, runs the watch until it ends, and releases the id. */
-  readonly run: (options: {
-    readonly notify: (notification: Notification) => Effect.Effect<void>;
-    readonly onSubscribed?: Effect.Effect<void>;
-  }) => Effect.Effect<string, Invalid | SourceError, Scope.Scope>;
+  readonly run: (
+    notify: (notification: Notification) => Effect.Effect<void>,
+  ) => Effect.Effect<string, Invalid | SourceError, Scope.Scope>;
 }
 
 /** Decodes and resolves a watch without starting it. */
@@ -251,7 +250,7 @@ const buildServer = (options: ServerOptions): McpServer => {
         id: decoded.id,
         event: event.name,
         watch,
-        run: ({ notify, onSubscribed }) =>
+        run: (notify) =>
           Effect.gen(function* () {
             yield* claim;
             return yield* runWatch({
@@ -261,7 +260,6 @@ const buildServer = (options: ServerOptions): McpServer => {
               expiresInSeconds,
               eventTimeoutSeconds: options.eventTimeoutSeconds,
               ended: watch.ended,
-              onSubscribed,
               runCode: makeRunCode({
                 code: decoded.code,
                 sources: options.registry.sources,
@@ -335,7 +333,7 @@ const buildServer = (options: ServerOptions): McpServer => {
           );
         const args = params.arguments ?? {};
         const armed = yield* arm({ name: params.name, args, view: args });
-        yield* armed.run({ notify }).pipe(Effect.scoped);
+        yield* armed.run(notify).pipe(Effect.scoped);
         return {};
       }).pipe(Effect.mapError(protocolError)),
       { signal: ctx.mcpReq.signal },
