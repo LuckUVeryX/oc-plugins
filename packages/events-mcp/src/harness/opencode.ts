@@ -1,4 +1,4 @@
-import { instructions, type Events } from "../core/harness.ts";
+import { instructions, type Events } from "./harness.ts";
 
 export const harness: Events = {
   _tag: "Events",

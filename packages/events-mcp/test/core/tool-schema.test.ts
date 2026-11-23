@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import { expect, test } from "vitest";
-import { IntegrationName, type Integration } from "../../src/core/integration.ts";
-import { makeTool } from "../../src/core/tool.ts";
+import { IntegrationName, type Integration } from "../../src/integration/contract.ts";
+import { makeTool } from "../../src/integration/tool.ts";
 import { connect } from "../harness.ts";
 
 const Label = Schema.String.annotate({ identifier: "Label" });

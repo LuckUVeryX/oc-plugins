@@ -6,7 +6,7 @@ import {
   type IntegrationError,
   IntegrationName,
   Rejected,
-} from "../core/integration.ts";
+} from "../integration/contract.ts";
 import generated from "./events.json";
 import { GitlabSocket, type ChannelIdentifier } from "./socket.ts";
 import { type GitlabEvent, decodeGitlabCatalog } from "./catalog.ts";

@@ -4,7 +4,7 @@ import {
   type IntegrationError,
   Rejected,
   Unavailable,
-} from "../core/integration.ts";
+} from "../integration/contract.ts";
 import type { GitlabClient } from "./client.ts";
 
 export const NoteableType = Schema.Literals(["merge_request", "issue"]);

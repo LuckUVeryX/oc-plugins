@@ -12,9 +12,9 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import { Registry } from "../src/core/registry.ts";
-import { DecisionModel } from "../src/core/decision-model.ts";
-import { Server } from "../src/core/server.ts";
+import { Registry } from "../src/integration/registry.ts";
+import { DecisionModel } from "../src/decision/decision-model.ts";
+import { Server } from "../src/server/server.ts";
 import {
   Health,
   IntegrationName,
@@ -22,10 +22,10 @@ import {
   type Event,
   type Integration,
   type IntegrationError,
-} from "../src/core/integration.ts";
-import { Feeds } from "../src/core/feeds.ts";
+} from "../src/integration/contract.ts";
+import { Feeds } from "../src/watch/feeds.ts";
 import { makeGetTool, type LarkRequester } from "../src/lark/get.ts";
-import type { Name as HarnessName } from "../src/harness/index.ts";
+import type { Name as HarnessName } from "../src/harness/catalog.ts";
 
 const larkApp = { appId: "cli_0123456789abcdef", appSecret: "offline" };
 const lark = Schema.decodeUnknownSync(IntegrationName)("lark");

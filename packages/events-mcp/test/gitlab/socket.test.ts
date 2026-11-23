@@ -6,7 +6,7 @@ import {
   type Json,
   makeGitlabSocket,
 } from "../../src/gitlab/socket.ts";
-import { Health, type IntegrationError } from "../../src/core/integration.ts";
+import { Health, type IntegrationError } from "../../src/integration/contract.ts";
 
 const WireFrame = Schema.Record(Schema.String, Schema.Unknown);
 

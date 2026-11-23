@@ -21,7 +21,7 @@ import {
   type IntegrationError,
   type Feed,
   Unavailable,
-} from "../core/integration.ts";
+} from "../integration/contract.ts";
 import { LarkAuth } from "./auth.ts";
 import { getLark, type LarkRequester } from "./get.ts";
 import { sdkLogger } from "./sdk-logger.ts";

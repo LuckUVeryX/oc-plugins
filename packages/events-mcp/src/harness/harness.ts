@@ -1,6 +1,6 @@
 import type { ServerCapabilities } from "@modelcontextprotocol/server";
 import { type Effect, Schema } from "effect";
-import type { Integration } from "../core/integration.ts";
+import type { Integration } from "../integration/contract.ts";
 
 /** Sends a notification on the MCP connection that serves this harness. */
 export type Send = (notification: {

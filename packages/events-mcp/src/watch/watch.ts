@@ -1,7 +1,12 @@
 import { Cause, Clock, DateTime, Deferred, Effect, Schema, type Scope, Stream } from "effect";
-import { bytes, MAX_EVENT_BYTES } from "./limits.ts";
-import { Health, type EventKind, type Event, type IntegrationError } from "./integration.ts";
-import { Failed, type RunScript } from "./script.ts";
+import { bytes, MAX_EVENT_BYTES } from "../limits.ts";
+import {
+  Health,
+  type EventKind,
+  type Event,
+  type IntegrationError,
+} from "../integration/contract.ts";
+import { Failed, type RunScript } from "../script/script.ts";
 import { Feeds } from "./feeds.ts";
 
 // OpenCode cancels event feeds after 60 seconds without a notification.

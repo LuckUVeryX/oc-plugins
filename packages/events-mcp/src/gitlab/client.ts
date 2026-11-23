@@ -11,8 +11,8 @@ import {
   ToolError,
   type Tool,
   Unavailable,
-} from "../core/integration.ts";
-import { GetInput, makeTool } from "../core/tool.ts";
+} from "../integration/contract.ts";
+import { GetInput, makeTool } from "../integration/tool.ts";
 import { GitlabAuth } from "./auth.ts";
 import type { GitlabIdentity } from "./token.ts";
 

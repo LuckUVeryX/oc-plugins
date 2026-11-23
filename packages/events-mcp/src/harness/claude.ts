@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { instructions, listEventsInstructions, type Tools } from "../core/harness.ts";
+import { instructions, listEventsInstructions, type Tools } from "./harness.ts";
 
 export const harness: Tools = {
   _tag: "Tools",

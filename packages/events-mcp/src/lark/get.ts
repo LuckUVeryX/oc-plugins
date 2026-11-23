@@ -1,6 +1,6 @@
 import { Effect, Option, Schema } from "effect";
-import { ToolError, type Tool } from "../core/integration.ts";
-import { GetInput, makeTool } from "../core/tool.ts";
+import { ToolError, type Tool } from "../integration/contract.ts";
+import { GetInput, makeTool } from "../integration/tool.ts";
 import type { LarkAuth } from "./auth.ts";
 
 const Envelope = Schema.Struct({

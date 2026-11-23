@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import { type EventKind, type Event, Rejected } from "../core/integration.ts";
+import { type EventKind, type Event, Rejected } from "../integration/contract.ts";
 import { GitlabSocket, type ChannelIdentifier } from "./socket.ts";
 import { NoteableType, type TargetSupport } from "./target.ts";
 import { subscribeToChannel } from "./channel.ts";

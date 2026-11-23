@@ -5,7 +5,7 @@ import { GitlabClient } from "../../src/gitlab/client.ts";
 import { GitlabAuth } from "../../src/gitlab/auth.ts";
 import { Gitlab } from "../../src/gitlab/integration.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
-import { Health, type IntegrationError, type Integration } from "../../src/core/integration.ts";
+import { Health, type IntegrationError, type Integration } from "../../src/integration/contract.ts";
 
 const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),

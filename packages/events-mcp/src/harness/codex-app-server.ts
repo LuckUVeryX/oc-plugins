@@ -2,7 +2,7 @@ import { connect } from "node:net";
 import { Effect, Queue, Schema, type Scope } from "effect";
 // Bun resolves "ws" to its built-in module, so no dependency is needed.
 import WebSocket from "ws";
-import { WakeFailed } from "../core/harness.ts";
+import { WakeFailed } from "./harness.ts";
 
 const TIMEOUT = "10 seconds";
 
@@ -202,4 +202,4 @@ export const queue = (
     }),
   );
 
-export * as AppServer from "./app-server.ts";
+export * as AppServer from "./codex-app-server.ts";

@@ -1,5 +1,5 @@
 import { Effect, type JsonSchema, Schema } from "effect";
-import { ToolError, type Tool } from "./integration.ts";
+import { ToolError, type Tool } from "./contract.ts";
 
 const QueryValue = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean]);
 

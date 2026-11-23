@@ -17,7 +17,7 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import { Health, Rejected, type IntegrationError, Unavailable } from "../core/integration.ts";
+import { Health, Rejected, type IntegrationError, Unavailable } from "../integration/contract.ts";
 import { GitlabAuth } from "./auth.ts";
 
 export type Json = Schema.Json;

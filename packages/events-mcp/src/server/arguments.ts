@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { MAX_EVENT_BYTES } from "./limits.ts";
+import { MAX_EVENT_BYTES } from "../limits.ts";
 
 export class Invalid extends Schema.TaggedError<Invalid>()("Arguments.Invalid", {
   message: Schema.String,

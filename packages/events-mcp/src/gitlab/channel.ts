@@ -1,5 +1,5 @@
 import { Effect, type Option, Result, type Schema, type Scope, Stream } from "effect";
-import type { Event, IntegrationError, Feed } from "../core/integration.ts";
+import type { Event, IntegrationError, Feed } from "../integration/contract.ts";
 import { GitlabSocket, type ChannelIdentifier } from "./socket.ts";
 
 /** Turns one socket channel's frames into an integration feed, dropping frames that map to none. */

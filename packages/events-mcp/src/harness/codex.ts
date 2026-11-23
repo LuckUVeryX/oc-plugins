@@ -1,8 +1,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Config, Effect, Schema } from "effect";
-import { AppServer } from "../codex/app-server.ts";
-import { instructions, listEventsInstructions, WakeFailed, type Tools } from "../core/harness.ts";
+import { AppServer } from "./codex-app-server.ts";
+import { instructions, listEventsInstructions, WakeFailed, type Tools } from "./harness.ts";
 
 const ThreadId = Schema.Struct({
   threadId: Schema.String.annotate({

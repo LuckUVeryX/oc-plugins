@@ -1,7 +1,7 @@
 import { Client, Domain } from "@larksuiteoapi/node-sdk";
 import { Config, Context, Effect, Layer, Redacted } from "effect";
-import { Rejected, type IntegrationError } from "../core/integration.ts";
-import type { GetInput } from "../core/tool.ts";
+import { Rejected, type IntegrationError } from "../integration/contract.ts";
+import type { GetInput } from "../integration/tool.ts";
 import type { LarkRequester } from "./get.ts";
 import { sdkLogger } from "./sdk-logger.ts";
 

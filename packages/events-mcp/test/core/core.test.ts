@@ -7,9 +7,9 @@ import {
   Rejected,
   type IntegrationError,
   Unavailable,
-} from "../../src/core/integration.ts";
-import { Feeds } from "../../src/core/feeds.ts";
-import { runWatch } from "../../src/core/watch.ts";
+} from "../../src/integration/contract.ts";
+import { Feeds } from "../../src/watch/feeds.ts";
+import { runWatch } from "../../src/watch/watch.ts";
 import { connect } from "../harness.ts";
 
 const pass = { script: "return input.event.data" };

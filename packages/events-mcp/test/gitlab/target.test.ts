@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
 import { Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
 import { GitlabSocket } from "../../src/gitlab/socket.ts";
-import type { GetInput } from "../../src/core/tool.ts";
+import type { GetInput } from "../../src/integration/tool.ts";
 import { GitlabClient } from "../../src/gitlab/client.ts";
 import { GitlabAuth } from "../../src/gitlab/auth.ts";
 import { Gitlab } from "../../src/gitlab/integration.ts";
@@ -12,7 +12,7 @@ import {
   Unavailable,
   type IntegrationError,
   type Integration,
-} from "../../src/core/integration.ts";
+} from "../../src/integration/contract.ts";
 import { connect } from "../harness.ts";
 
 const identity: GitlabIdentity = {

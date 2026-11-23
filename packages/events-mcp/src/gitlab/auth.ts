@@ -1,6 +1,6 @@
 import { Config, Context, Duration, Effect, Exit, Layer } from "effect";
 import { HttpClient } from "effect/http";
-import { type IntegrationError } from "../core/integration.ts";
+import { type IntegrationError } from "../integration/contract.ts";
 import { resolveIdentity, type GitlabIdentity } from "./token.ts";
 
 export interface Interface {

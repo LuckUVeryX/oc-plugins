@@ -1,9 +1,9 @@
 import { CodeMode, Tool } from "@opencode/codemode";
 import { Effect, Record, Ref, Schema } from "effect";
-import { type Decide, DecideInput } from "./decision-model.ts";
-import type { Integration, Tool as IntegrationTool } from "./integration.ts";
-import { bytes, MAX_SCRIPT_OUTPUT_BYTES, MAX_STATE_BYTES } from "./limits.ts";
-import { inputJsonSchema } from "./tool.ts";
+import { type Decide, DecideInput } from "../decision/decision-model.ts";
+import type { Integration, Tool as IntegrationTool } from "../integration/contract.ts";
+import { bytes, MAX_SCRIPT_OUTPUT_BYTES, MAX_STATE_BYTES } from "../limits.ts";
+import { inputJsonSchema } from "../integration/tool.ts";
 
 export class Failed extends Schema.TaggedError<Failed>()("Script.Failed", {
   message: Schema.String,

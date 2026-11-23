@@ -1,9 +1,9 @@
 import { Effect, Schema } from "effect";
 import { expect, test, vi } from "vitest";
-import { DecisionModel } from "../../src/core/decision-model.ts";
+import { DecisionModel } from "../../src/decision/decision-model.ts";
 import { makeGetTool } from "../../src/lark/get.ts";
-import { makeRunScript, makeWatchState } from "../../src/core/script.ts";
-import { IntegrationName } from "../../src/core/integration.ts";
+import { makeRunScript, makeWatchState } from "../../src/script/script.ts";
+import { IntegrationName } from "../../src/integration/contract.ts";
 import { connect, unusedDecide } from "../harness.ts";
 
 const questions = [

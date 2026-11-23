@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, type Scope } from "effect";
-import type { EventKind, Integration } from "./integration.ts";
+import type { EventKind, Integration } from "./contract.ts";
 
 export interface Interface {
   readonly integrations: ReadonlyArray<Integration>;

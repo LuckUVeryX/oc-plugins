@@ -2,9 +2,9 @@ import { it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
-import { Health, type EventKind } from "../../src/core/integration.ts";
-import { Feeds } from "../../src/core/feeds.ts";
-import { runWatch } from "../../src/core/watch.ts";
+import { Health, type EventKind } from "../../src/integration/contract.ts";
+import { Feeds } from "../../src/watch/feeds.ts";
+import { runWatch } from "../../src/watch/watch.ts";
 
 const tick: EventKind = {
   name: "tick",

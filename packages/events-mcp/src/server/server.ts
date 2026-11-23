@@ -18,16 +18,16 @@ import {
 } from "effect";
 import { isObject } from "effect/Predicate";
 import { decodeArguments, inputSchemaDocument, Invalid } from "./arguments.ts";
-import { Registry } from "./registry.ts";
-import { DecisionModel, type Decide } from "./decision-model.ts";
-import { bytes, MAX_SCRIPT_BYTES } from "./limits.ts";
-import type { EventKind, IntegrationError } from "./integration.ts";
-import { makeRunScript, makeWatchState } from "./script.ts";
-import { inputJsonSchema } from "./tool.ts";
-import { Feeds } from "./feeds.ts";
-import { runWatch, type Notification } from "./watch.ts";
-import type { Harness, Send, Tools } from "./harness.ts";
-import { get, type Name as HarnessName } from "../harness/index.ts";
+import { Registry } from "../integration/registry.ts";
+import { DecisionModel, type Decide } from "../decision/decision-model.ts";
+import { bytes, MAX_SCRIPT_BYTES } from "../limits.ts";
+import type { EventKind, IntegrationError } from "../integration/contract.ts";
+import { makeRunScript, makeWatchState } from "../script/script.ts";
+import { inputJsonSchema } from "../integration/tool.ts";
+import { Feeds } from "../watch/feeds.ts";
+import { runWatch, type Notification } from "../watch/watch.ts";
+import type { Harness, Send, Tools } from "../harness/harness.ts";
+import { get, type Name as HarnessName } from "../harness/catalog.ts";
 
 const DEFAULT_WATCH_SECONDS = 3600;
 const DEFAULT_STEP_TIMEOUT_SECONDS = 120;

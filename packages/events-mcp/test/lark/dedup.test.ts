@@ -4,7 +4,7 @@ import { LarkAuth } from "../../src/lark/auth.ts";
 import { LarkSocket } from "../../src/lark/socket.ts";
 import { Lark } from "../../src/lark/integration.ts";
 import type { LarkRequester } from "../../src/lark/get.ts";
-import type { Integration } from "../../src/core/integration.ts";
+import type { Integration } from "../../src/integration/contract.ts";
 import { connect } from "../harness.ts";
 
 const sdk = vi.hoisted(() => ({

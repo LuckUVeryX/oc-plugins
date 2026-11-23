@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 import { expect, test, vi } from "vitest";
-import { IntegrationName, type Integration } from "../../src/core/integration.ts";
+import { IntegrationName, type Integration } from "../../src/integration/contract.ts";
 import { connect } from "../harness.ts";
 
 const blocked: Integration = {

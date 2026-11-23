@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 import { LarkAuth } from "../../src/lark/auth.ts";
 import { LarkSocket } from "../../src/lark/socket.ts";
 import { Lark } from "../../src/lark/integration.ts";
-import { makeRunScript, makeWatchState } from "../../src/core/script.ts";
+import { makeRunScript, makeWatchState } from "../../src/script/script.ts";
 import { connect, unusedDecide } from "../harness.ts";
 
 const credentialMessage = "No Lark app credentials";

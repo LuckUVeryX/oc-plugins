@@ -1,5 +1,5 @@
 import { Cache, Context, Effect, Layer, RcMap, Ref, Schema, type Scope, Stream } from "effect";
-import type { EventKind, Event, IntegrationError, Feed } from "./integration.ts";
+import type { EventKind, Event, IntegrationError, Feed } from "../integration/contract.ts";
 
 export interface FeedKey {
   readonly eventKind: EventKind;

@@ -1,13 +1,13 @@
 import { expect, test, vi } from "vitest";
 import { Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
-import type { GetInput } from "../../src/core/tool.ts";
+import type { GetInput } from "../../src/integration/tool.ts";
 import { GitlabSocket } from "../../src/gitlab/socket.ts";
 import { GitlabClient } from "../../src/gitlab/client.ts";
 import { GitlabAuth } from "../../src/gitlab/auth.ts";
 import { notesRecipe } from "../../src/gitlab/notes.ts";
 import { Gitlab } from "../../src/gitlab/integration.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
-import { Health, type IntegrationError } from "../../src/core/integration.ts";
+import { Health, type IntegrationError } from "../../src/integration/contract.ts";
 import { connect } from "../harness.ts";
 
 const identity: GitlabIdentity = {

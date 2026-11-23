@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { type EventKind, type Integration, IntegrationName } from "../core/integration.ts";
+import { type EventKind, type Integration, IntegrationName } from "../integration/contract.ts";
 import { LarkAuth } from "./auth.ts";
 import { LarkSocket } from "./socket.ts";
 import generated from "./events.json";

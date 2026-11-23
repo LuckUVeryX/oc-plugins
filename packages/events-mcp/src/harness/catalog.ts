@@ -1,4 +1,4 @@
-import type { Harness } from "../core/harness.ts";
+import type { Harness } from "./harness.ts";
 import { harness as claude } from "./claude.ts";
 import { harness as codex } from "./codex.ts";
 import { harness as opencode } from "./opencode.ts";

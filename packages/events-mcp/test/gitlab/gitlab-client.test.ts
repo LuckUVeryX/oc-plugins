@@ -3,7 +3,7 @@ import { Effect, Redacted, Schema } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { makeGetTool, makeGitlabClient } from "../../src/gitlab/client.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
-import { IntegrationName } from "../../src/core/integration.ts";
+import { IntegrationName } from "../../src/integration/contract.ts";
 import { connect } from "../harness.ts";
 
 const identity: GitlabIdentity = {
