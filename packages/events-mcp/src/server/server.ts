@@ -18,12 +18,12 @@ import {
 } from "effect";
 import { isObject } from "effect/Predicate";
 import { decodeArguments, inputSchemaDocument, Invalid } from "./arguments.ts";
-import { Registry } from "../integration/registry.ts";
+import { Registry } from "../source/registry.ts";
 import { DecisionModel, type Decide } from "../decision/decision-model.ts";
 import { bytes, MAX_SCRIPT_BYTES } from "../limits.ts";
-import type { EventType, IntegrationError } from "../integration/contract.ts";
+import type { EventType, SourceError } from "../source/contract.ts";
 import { makeRunScript, makeWatchState } from "../script/script.ts";
-import { inputJsonSchema } from "../integration/tool.ts";
+import { inputJsonSchema } from "../source/tool.ts";
 import { Feeds } from "../watch/feeds.ts";
 import { runWatch, type Notification } from "../watch/watch.ts";
 import type { Harness, Send, Tools } from "../harness/harness.ts";
@@ -52,13 +52,13 @@ const streamParams = Schema.toStandardSchemaV1(
 );
 
 // OpenCode treats -32024 as a permanent rejection and retries -32603 as a transient failure.
-const protocolError = (error: Invalid | IntegrationError) => {
+const protocolError = (error: Invalid | SourceError) => {
   switch (error._tag) {
     case "Arguments.Invalid":
       return new ProtocolError(INVALID_PARAMS, error.message);
-    case "Integration.Rejected":
+    case "Source.Rejected":
       return new ProtocolError(-32024, error.message);
-    case "Integration.Unavailable":
+    case "Source.Unavailable":
       return new ProtocolError(-32603, error.message);
     default: {
       const _exhaustive: never = error;
@@ -94,7 +94,7 @@ interface Armed {
   readonly run: (options: {
     readonly notify: (notification: Notification) => Effect.Effect<void>;
     readonly onSubscribed?: Effect.Effect<void>;
-  }) => Effect.Effect<string, Invalid | IntegrationError, Scope.Scope>;
+  }) => Effect.Effect<string, Invalid | SourceError, Scope.Scope>;
 }
 
 const watchInputSchema = (options: {
@@ -139,21 +139,21 @@ const buildServer = (options: ServerOptions): McpServer => {
       runOptions,
     );
   const watches = new Map<string, Watch>();
-  const toolPaths = options.registry.integrations.flatMap((integration) =>
-    Object.keys(integration.tools).map((name) => `tools.${integration.name}.${name}`),
+  const toolPaths = options.registry.sources.flatMap((source) =>
+    Object.keys(source.tools).map((name) => `tools.${source.name}.${name}`),
   );
   const server = new McpServer(
     { name: "events-mcp", version: "0.0.0" },
     {
       capabilities: options.harness.capabilities,
-      instructions: options.harness.instructions(options.registry.integrations),
+      instructions: options.harness.instructions(options.registry.sources),
     },
   );
 
-  for (const integration of options.registry.integrations)
-    for (const [name, tool] of Object.entries(integration.tools))
+  for (const source of options.registry.sources)
+    for (const [name, tool] of Object.entries(source.tools))
       server.registerTool(
-        `${integration.name}_${name}`,
+        `${source.name}_${name}`,
         {
           description: tool.description,
           inputSchema: fromJsonSchema({
@@ -243,7 +243,7 @@ const buildServer = (options: ServerOptions): McpServer => {
         .resolve(target)
         .pipe(
           Effect.mapError((error) =>
-            error._tag === "Integration.Rejected" ? new Invalid({ message: error.message }) : error,
+            error._tag === "Source.Rejected" ? new Invalid({ message: error.message }) : error,
           ),
         );
     });
@@ -253,7 +253,7 @@ const buildServer = (options: ServerOptions): McpServer => {
     readonly args: unknown;
     /** What `watches` lists as the arguments, which is enough to arm the watch again. */
     readonly view: Record<string, unknown>;
-  }): Effect.Effect<Armed, Invalid | IntegrationError> =>
+  }): Effect.Effect<Armed, Invalid | SourceError> =>
     Effect.gen(function* () {
       const event = options.registry.get(input.name);
       if (event === undefined)
@@ -312,7 +312,7 @@ const buildServer = (options: ServerOptions): McpServer => {
               onSubscribed,
               script: makeRunScript({
                 code: decoded.script,
-                integrations: options.registry.integrations,
+                sources: options.registry.sources,
                 state: yield* makeWatchState,
                 decide: options.decide,
               }),
@@ -387,7 +387,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                 );
               };
               // Succeeds once the feed is subscribed, or with the reason the watch ended first.
-              const ready = yield* Deferred.make<string | undefined, Invalid | IntegrationError>();
+              const ready = yield* Deferred.make<string | undefined, Invalid | SourceError>();
               yield* armed.run({ notify, onSubscribed: Deferred.succeed(ready, undefined) }).pipe(
                 Effect.onExit((exit) => {
                   const warn =

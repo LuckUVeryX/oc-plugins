@@ -1,18 +1,18 @@
 import { expect, test, vi } from "vitest";
 import { Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
 import { GitlabSocket } from "../../src/gitlab/socket.ts";
-import type { GetInput } from "../../src/integration/tool.ts";
+import type { GetInput } from "../../src/source/tool.ts";
 import { GitlabClient } from "../../src/gitlab/client.ts";
 import { GitlabAuth } from "../../src/gitlab/auth.ts";
-import { Gitlab } from "../../src/gitlab/integration.ts";
+import { Gitlab } from "../../src/gitlab/source.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
 import {
   Health,
   Rejected,
   Unavailable,
-  type IntegrationError,
-  type Integration,
-} from "../../src/integration/contract.ts";
+  type SourceError,
+  type Source,
+} from "../../src/source/contract.ts";
 import { connect } from "../support.ts";
 
 const identity: GitlabIdentity = {
@@ -46,14 +46,14 @@ const makeFakeSocket = () => {
     subscribe: (identifier) =>
       Effect.gen(function* () {
         identifiers.push(identifier);
-        return Stream.fromQueue(yield* Queue.unbounded<Schema.Json, IntegrationError>());
+        return Stream.fromQueue(yield* Queue.unbounded<Schema.Json, SourceError>());
       }),
     health: Stream.succeed(Health.Live()),
   };
   return { identifiers, socket };
 };
 
-const makeFakeClient = (getError?: IntegrationError) => {
+const makeFakeClient = (getError?: SourceError) => {
   const gets: Array<GetInput> = [];
   const client: GitlabClient.Interface = {
     get: (input) => {
@@ -68,11 +68,11 @@ const makeFakeClient = (getError?: IntegrationError) => {
   return { client, gets };
 };
 
-const setup = async (getError?: IntegrationError) => {
+const setup = async (getError?: SourceError) => {
   const socket = makeFakeSocket();
   const client = makeFakeClient(getError);
-  const integration: Integration = await Effect.runPromise(
-    Gitlab.integration.pipe(
+  const source: Source = await Effect.runPromise(
+    Gitlab.source.pipe(
       Effect.provide(
         Layer.mergeAll(
           Layer.succeed(
@@ -85,7 +85,7 @@ const setup = async (getError?: IntegrationError) => {
       ),
     ),
   );
-  return { integration, socket, client };
+  return { source, socket, client };
 };
 
 const scripts = { script: "return null" };
@@ -93,10 +93,10 @@ const scripts = { script: "return null" };
 const rejectionOf = async (
   event: string,
   args: Record<string, unknown>,
-  getError?: IntegrationError,
+  getError?: SourceError,
 ) => {
-  const { integration, socket } = await setup(getError);
-  const h = await connect({ integrations: [integration] });
+  const { source, socket } = await setup(getError);
+  const h = await connect({ sources: [source] });
   try {
     const failure = Schema.decodeUnknownSync(
       Schema.Struct({ code: Schema.Number, message: Schema.String }),
@@ -161,8 +161,8 @@ const resolved = [
 ] as const;
 
 test("a target resolves to the params its event subscribes with", async () => {
-  const { integration, socket } = await setup();
-  const h = await connect({ integrations: [integration], harness: "claude" });
+  const { source, socket } = await setup();
+  const h = await connect({ sources: [source], harness: "claude" });
   try {
     for (const [index, [event, target, params]] of resolved.entries()) {
       const armed = await h.call("watch", {
@@ -266,8 +266,8 @@ test("a target that GitLab cannot answer for is an internal error", async () => 
 });
 
 test("the watch tool returns the params a target resolved to", async () => {
-  const { integration, socket } = await setup();
-  const h = await connect({ integrations: [integration], harness: "claude" });
+  const { source, socket } = await setup();
+  const h = await connect({ sources: [source], harness: "claude" });
   try {
     const armed = await h.call("watch", {
       event: "gitlab.noteable.notes_changed",
@@ -284,8 +284,8 @@ test("the watch tool returns the params a target resolved to", async () => {
 });
 
 test("watches shows the params a target resolved to in OpenCode", async () => {
-  const { integration, socket } = await setup();
-  const h = await connect({ integrations: [integration] });
+  const { source, socket } = await setup();
+  const h = await connect({ sources: [source] });
   try {
     h.stream(
       { watchId: "by-target", target: "group/project!32", ...scripts },
@@ -304,8 +304,8 @@ test("watches shows the params a target resolved to in OpenCode", async () => {
 });
 
 test("list_events requires target only where the event can resolve one", async () => {
-  const { integration } = await setup();
-  const h = await connect({ integrations: [integration], harness: "claude" });
+  const { source } = await setup();
+  const h = await connect({ sources: [source], harness: "claude" });
   try {
     const listed = await h.call("list_events");
     type InputSchema = {

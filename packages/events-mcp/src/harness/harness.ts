@@ -1,6 +1,6 @@
 import type { ServerCapabilities } from "@modelcontextprotocol/server";
 import { type Effect, Schema } from "effect";
-import type { Integration } from "../integration/contract.ts";
+import type { Source } from "../source/contract.ts";
 
 /** Sends a notification on the MCP connection that serves this harness. */
 export type Send = (notification: {
@@ -25,14 +25,14 @@ export interface Wake {
 export interface Events {
   readonly _tag: "Events";
   readonly capabilities: ServerCapabilities;
-  readonly instructions: (integrations: ReadonlyArray<Integration>) => string;
+  readonly instructions: (sources: ReadonlyArray<Source>) => string;
 }
 
 /** The harness arms watches through tools and wakes the session itself. */
 export interface Tools {
   readonly _tag: "Tools";
   readonly capabilities: ServerCapabilities;
-  readonly instructions: (integrations: ReadonlyArray<Integration>) => string;
+  readonly instructions: (sources: ReadonlyArray<Source>) => string;
   /** Extra watch args, such as a session or thread to wake. */
   readonly watchParams: Schema.Struct<Schema.Struct.Fields>;
   /** Runs once after the watch input decodes, before the watch arms. */
@@ -50,12 +50,12 @@ export const listEventsInstructions =
 
 export const instructions =
   (options: { readonly arm: string; readonly wakes?: ReadonlyArray<string> }) =>
-  (integrations: ReadonlyArray<Integration>): string =>
+  (sources: ReadonlyArray<Source>): string =>
     [
       options.arm,
       liveWatchInstructions,
-      ...integrations.flatMap((integration) =>
-        integration.instructions === undefined ? [] : [integration.instructions],
+      ...sources.flatMap((source) =>
+        source.instructions === undefined ? [] : [source.instructions],
       ),
       "When plain code cannot tell whether an event deserves a wake, ask the decision model from the script with tools.events.decide.",
       'When a watch ends with "script failed", fix the script and arm a new watch.',

@@ -12,24 +12,24 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import { Registry } from "../src/integration/registry.ts";
+import { Registry } from "../src/source/registry.ts";
 import { DecisionModel } from "../src/decision/decision-model.ts";
 import { Server } from "../src/server/server.ts";
 import {
   Health,
-  IntegrationName,
+  SourceName,
   type EventType,
   type Event,
-  type Integration,
-  type IntegrationError,
-} from "../src/integration/contract.ts";
+  type Source,
+  type SourceError,
+} from "../src/source/contract.ts";
 import { Feeds } from "../src/watch/feeds.ts";
 import { makeGetTool, type LarkRequester } from "../src/lark/get.ts";
 import type { Name as HarnessName } from "../src/harness/catalog.ts";
 
 const larkApp = { appId: "cli_0123456789abcdef", appSecret: "offline" };
-const lark = Schema.decodeUnknownSync(IntegrationName)("lark");
-const other = Schema.decodeUnknownSync(IntegrationName)("other");
+const lark = Schema.decodeUnknownSync(SourceName)("lark");
+const other = Schema.decodeUnknownSync(SourceName)("other");
 const larkMessage = "lark.im.message.receive_v1";
 
 // A watch that only needs the decide tool to exist, not to answer.
@@ -49,8 +49,8 @@ export async function connect(
     eventTimeoutSeconds?: number;
     harness?: HarnessName;
     request?: LarkRequester;
-    otherSubscribeError?: IntegrationError | undefined;
-    integrations?: ReadonlyArray<Integration>;
+    otherSubscribeError?: SourceError | undefined;
+    sources?: ReadonlyArray<Source>;
     transport?: (transport: ReturnType<typeof InMemoryTransport.createLinkedPair>[1]) => void;
     config?: ConfigProvider.ConfigProvider;
   } = {},
@@ -60,7 +60,7 @@ export async function connect(
   const larkChannel = await Effect.runPromise(PubSub.unbounded<Event>());
   const otherChannel = await Effect.runPromise(PubSub.unbounded<Event>());
   const health = await Effect.runPromise(SubscriptionRef.make<Health>(Health.Live()));
-  const integrations: ReadonlyArray<Integration> = options.integrations ?? [
+  const sources: ReadonlyArray<Source> = options.sources ?? [
     {
       name: lark,
       tools: {
@@ -111,7 +111,7 @@ export async function connect(
       ] satisfies ReadonlyArray<EventType>,
     },
   ];
-  const registryLayer = Registry.layer(Effect.succeed(integrations));
+  const registryLayer = Registry.layer(Effect.succeed(sources));
   const decisionModelLayer = Layer.succeed(
     DecisionModel.Service,
     DecisionModel.Service.of({ decide: options.decide ?? unusedDecide }),
@@ -211,9 +211,9 @@ export async function connect(
       requests.push(done);
       return { done, abort: () => controller.abort() };
     },
-    publish(event: Publish, integration: keyof typeof channels = "lark") {
+    publish(event: Publish, source: keyof typeof channels = "lark") {
       Effect.runSync(
-        PubSub.publish(channels[integration], {
+        PubSub.publish(channels[source], {
           ...(event.eventId === undefined ? {} : { id: event.eventId }),
           occurredAt: DateTime.makeUnsafe(event.occurredAt ?? new Date().toISOString()),
           payload: event.payload,

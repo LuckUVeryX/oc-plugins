@@ -1,11 +1,11 @@
 import { Config, Context, Duration, Effect, Exit, Layer } from "effect";
 import { HttpClient } from "effect/http";
-import { type IntegrationError } from "../integration/contract.ts";
+import { type SourceError } from "../source/contract.ts";
 import { resolveIdentity, type GitlabIdentity } from "./token.ts";
 
 export interface Interface {
   readonly host: string;
-  readonly identity: Effect.Effect<GitlabIdentity, IntegrationError>;
+  readonly identity: Effect.Effect<GitlabIdentity, SourceError>;
 }
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/GitlabAuth") {}

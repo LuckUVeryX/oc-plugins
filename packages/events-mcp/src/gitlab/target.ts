@@ -1,10 +1,5 @@
 import { Data, Effect, Schema } from "effect";
-import {
-  type EventType,
-  type IntegrationError,
-  Rejected,
-  Unavailable,
-} from "../integration/contract.ts";
+import { type EventType, type SourceError, Rejected, Unavailable } from "../source/contract.ts";
 import type { GitlabClient } from "./client.ts";
 
 export const NoteableType = Schema.Literals(["merge_request", "issue"]);
@@ -68,7 +63,7 @@ const projectPart = (
   value: string,
   context: ParseContext,
   input: string,
-): Effect.Effect<string, IntegrationError> => {
+): Effect.Effect<string, SourceError> => {
   const project = trimSlashes(value);
   if (project === "" || /\s/.test(project)) return Effect.fail(invalid(context, input));
   return Effect.succeed(project);
@@ -78,7 +73,7 @@ const fromPath = (
   path: string,
   context: ParseContext,
   input: string,
-): Effect.Effect<Target, IntegrationError> =>
+): Effect.Effect<Target, SourceError> =>
   Effect.gen(function* () {
     const decoded = decode(path);
     if (decoded === undefined) return yield* Effect.fail(invalid(context, input));
@@ -116,10 +111,7 @@ const fromPath = (
     }
   });
 
-const fromShorthand = (
-  value: string,
-  context: ParseContext,
-): Effect.Effect<Target, IntegrationError> =>
+const fromShorthand = (value: string, context: ParseContext): Effect.Effect<Target, SourceError> =>
   Effect.gen(function* () {
     const decoded = decode(value);
     if (decoded === undefined) return yield* Effect.fail(invalid(context, value));
@@ -157,7 +149,7 @@ const parseTarget = (options: {
   readonly host: string;
   readonly target: string;
   readonly context: ParseContext;
-}): Effect.Effect<Target, IntegrationError> => {
+}): Effect.Effect<Target, SourceError> => {
   const value = options.target.trim();
   if (/^https?:\/\//i.test(value)) {
     let url: URL;
@@ -189,7 +181,7 @@ const read = <A>(
   schema: Schema.Decoder<A>,
   path: string,
   label: string,
-): Effect.Effect<A, IntegrationError> =>
+): Effect.Effect<A, SourceError> =>
   client
     .get({ path })
     .pipe(
@@ -208,12 +200,12 @@ const projectPath = (project: string, rest: string): string =>
 type Resolver<K extends TargetTag> = (
   target: Extract<Target, { readonly _tag: K }>,
   client: GitlabClient.Interface,
-) => Effect.Effect<Schema.JsonObject, IntegrationError>;
+) => Effect.Effect<Schema.JsonObject, SourceError>;
 
 type AnyResolver = (
   target: Target,
   client: GitlabClient.Interface,
-) => Effect.Effect<Schema.JsonObject, IntegrationError>;
+) => Effect.Effect<Schema.JsonObject, SourceError>;
 
 interface EventTarget {
   readonly takes: (host: string) => string;

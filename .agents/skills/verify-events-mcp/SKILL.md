@@ -1,6 +1,6 @@
 ---
 name: verify-events-mcp
-description: Prove events-mcp wakes a real agent session. Use when changing a harness, the hub, a watch, or an integration, and you need the wake path driven end to end instead of unit tests.
+description: Prove events-mcp wakes a real agent session. Use when changing a harness, the hub, a watch, or a source, and you need the wake path driven end to end instead of unit tests.
 ---
 
 # Verify events-mcp

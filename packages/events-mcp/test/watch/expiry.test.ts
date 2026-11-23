@@ -2,7 +2,7 @@ import { it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
-import { Health, type EventType } from "../../src/integration/contract.ts";
+import { Health, type EventType } from "../../src/source/contract.ts";
 import { Feeds } from "../../src/watch/feeds.ts";
 import { runWatch } from "../../src/watch/watch.ts";
 

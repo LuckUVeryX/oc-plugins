@@ -5,9 +5,9 @@ import {
   type EventType,
   type Event,
   Rejected,
-  type IntegrationError,
+  type SourceError,
   Unavailable,
-} from "../../src/integration/contract.ts";
+} from "../../src/source/contract.ts";
 import { Feeds } from "../../src/watch/feeds.ts";
 import { runWatch } from "../../src/watch/watch.ts";
 import { connect } from "../support.ts";
@@ -35,7 +35,7 @@ test("watches exposes each watch's public view without its handles", async () =>
 });
 
 // OpenCode treats -32024 as a permanent rejection and retries -32603 as a transient failure.
-const subscribeOnce = async (error: IntegrationError) => {
+const subscribeOnce = async (error: SourceError) => {
   const h = await connect({ otherSubscribeError: error });
   try {
     return await h.stream({ watchId: "subscribe", ...pass }, "other.ping").done;

@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { type EventType, type Integration, IntegrationName } from "../integration/contract.ts";
+import { type EventType, type Source, SourceName } from "../source/contract.ts";
 import { LarkAuth } from "./auth.ts";
 import { LarkSocket } from "./socket.ts";
 import generated from "./events.json";
@@ -17,7 +17,7 @@ const GeneratedEvents = Schema.Struct({
 
 const catalog = Schema.decodeUnknownSync(GeneratedEvents)(generated);
 
-export const integration: Effect.Effect<Integration, never, LarkAuth.Service | LarkSocket.Service> =
+export const source: Effect.Effect<Source, never, LarkAuth.Service | LarkSocket.Service> =
   Effect.gen(function* () {
     const auth = yield* LarkAuth.Service;
     const socket = yield* LarkSocket.Service;
@@ -28,7 +28,7 @@ export const integration: Effect.Effect<Integration, never, LarkAuth.Service | L
       subscribe: () => socket.subscribe({ event: event.name }),
     }));
     return {
-      name: Schema.decodeUnknownSync(IntegrationName)("lark"),
+      name: Schema.decodeUnknownSync(SourceName)("lark"),
       tools: { get: makeGetTool(auth) },
       events,
       instructions:
@@ -36,4 +36,4 @@ export const integration: Effect.Effect<Integration, never, LarkAuth.Service | L
     };
   });
 
-export * as Lark from "./integration.ts";
+export * as Lark from "./source.ts";

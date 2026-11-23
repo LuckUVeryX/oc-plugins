@@ -1,11 +1,6 @@
 import { Cause, Clock, DateTime, Deferred, Effect, Schema, type Scope, Stream } from "effect";
 import { bytes, MAX_EVENT_BYTES } from "../limits.ts";
-import {
-  Health,
-  type EventType,
-  type Event,
-  type IntegrationError,
-} from "../integration/contract.ts";
+import { Health, type EventType, type Event, type SourceError } from "../source/contract.ts";
 import { Failed, type RunScript } from "../script/script.ts";
 import { Feeds } from "./feeds.ts";
 
@@ -46,7 +41,7 @@ const messageOf = (cause: Cause.Cause<unknown>): string => {
 
 export const runWatch = Effect.fn("Watch.run")(function* (
   options: WatchRunOptions,
-): Effect.fn.Return<string, IntegrationError, Feeds.Service | Scope.Scope> {
+): Effect.fn.Return<string, SourceError, Feeds.Service | Scope.Scope> {
   const feeds = yield* Feeds.Service;
   const announce = Health.$match({
     Live: () => options.notify({ type: "active" }),
@@ -109,7 +104,7 @@ export const runWatch = Effect.fn("Watch.run")(function* (
           Deferred.await(firstHealthAnnounced).pipe(Effect.andThen(deliver(event))),
         ),
         Effect.as("Events stopped arriving. Arm a new watch"),
-        Effect.catch((failure: IntegrationError | StepFailed) => Effect.succeed(failure.message)),
+        Effect.catch((failure: SourceError | StepFailed) => Effect.succeed(failure.message)),
       ),
       feed.health.pipe(
         Stream.runForEach((value) =>

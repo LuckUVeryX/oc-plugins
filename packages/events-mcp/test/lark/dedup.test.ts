@@ -2,9 +2,9 @@ import { ConfigProvider, Effect, Fiber, Layer, Schema, type Scope } from "effect
 import { expect, test, vi } from "vitest";
 import { LarkAuth } from "../../src/lark/auth.ts";
 import { LarkSocket } from "../../src/lark/socket.ts";
-import { Lark } from "../../src/lark/integration.ts";
+import { Lark } from "../../src/lark/source.ts";
 import type { LarkRequester } from "../../src/lark/get.ts";
-import type { Integration } from "../../src/integration/contract.ts";
+import type { Source } from "../../src/source/contract.ts";
 import { connect } from "../support.ts";
 
 const sdk = vi.hoisted(() => ({
@@ -47,31 +47,29 @@ const fakeApi = (requester: LarkRequester) =>
     }),
   );
 
-const integrationWith = (
-  requester: LarkRequester,
-): Effect.Effect<Integration, never, Scope.Scope> =>
+const makeSource = (requester: LarkRequester): Effect.Effect<Source, never, Scope.Scope> =>
   Effect.gen(function* () {
     const context = yield* Layer.build(
       LarkSocket.layer.pipe(Layer.provideMerge(fakeApi(requester))),
     );
-    return yield* Lark.integration.pipe(Effect.provide(context));
+    return yield* Lark.source.pipe(Effect.provide(context));
   });
 
 const withLark = <A, E>(
-  body: (integration: Integration) => Effect.Effect<A, E, Scope.Scope>,
+  body: (source: Source) => Effect.Effect<A, E, Scope.Scope>,
   options: { readonly request?: LarkRequester } = {},
 ): Promise<A> =>
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const integration = yield* integrationWith(options.request ?? request);
-        return yield* body(integration);
+        const source = yield* makeSource(options.request ?? request);
+        return yield* body(source);
       }),
     ),
   );
 
-const messageEvent = (integration: Integration) => {
-  const event = integration.events.find((item) => item.name === "im.message.receive_v1");
+const messageEvent = (source: Source) => {
+  const event = source.events.find((item) => item.name === "im.message.receive_v1");
   if (event === undefined) throw new Error("Lark message event is missing");
   return event;
 };
@@ -82,9 +80,9 @@ const Events = Schema.Struct({
 
 test("delivers fresh events once and drops stale events", async () => {
   sdk.silent = false;
-  await withLark((integration) =>
+  await withLark((source) =>
     Effect.promise(async () => {
-      const h = await connect({ integrations: [integration] });
+      const h = await connect({ sources: [source] });
       try {
         const listing = await h.client.request(
           { method: "events/list", params: {} },
@@ -163,8 +161,8 @@ test("closes the socket when an interrupted watch is still waiting for readiness
   const fiber = Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
-        const integration = yield* integrationWith(request);
-        yield* messageEvent(integration).subscribe({});
+        const source = yield* makeSource(request);
+        yield* messageEvent(source).subscribe({});
       }),
     ),
   );
@@ -182,14 +180,14 @@ test("refuses to connect while another app connection is online", async () => {
   sdk.starts = 0;
   sdk.silent = false;
   await withLark(
-    (integration) =>
-      messageEvent(integration)
+    (source) =>
+      messageEvent(source)
         .subscribe({})
         .pipe(
           Effect.flip,
           Effect.tap((error) =>
             Effect.sync(() => {
-              expect(error).toMatchObject({ _tag: "Integration.Unavailable" });
+              expect(error).toMatchObject({ _tag: "Source.Unavailable" });
               expect(error.message).toContain("Another connection for this Lark app is online (1)");
               expect(error.message).toContain("Lark delivers each event to only one connection");
               expect(sdk.starts).toBe(0);
@@ -207,9 +205,9 @@ test("a watch without Lark credentials is rejected and names both variables", as
         const context = yield* Layer.build(
           LarkSocket.layer.pipe(Layer.provideMerge(LarkAuth.layer)),
         );
-        const integration = yield* Lark.integration.pipe(Effect.provide(context));
-        const error = yield* messageEvent(integration).subscribe({}).pipe(Effect.flip);
-        expect(error).toMatchObject({ _tag: "Integration.Rejected" });
+        const source = yield* Lark.source.pipe(Effect.provide(context));
+        const error = yield* messageEvent(source).subscribe({}).pipe(Effect.flip);
+        expect(error).toMatchObject({ _tag: "Source.Rejected" });
         expect(error.message).toContain("LARK_APP_ID");
         expect(error.message).toContain("LARK_APP_SECRET");
       }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({})))),

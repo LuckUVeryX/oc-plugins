@@ -1,5 +1,5 @@
 import { Cache, Context, Effect, Layer, RcMap, Ref, Schema, type Scope, Stream } from "effect";
-import type { EventType, Event, IntegrationError, Feed } from "../integration/contract.ts";
+import type { EventType, Event, SourceError, Feed } from "../source/contract.ts";
 
 export interface FeedKey {
   readonly eventType: EventType;
@@ -7,7 +7,7 @@ export interface FeedKey {
 }
 
 export interface Interface {
-  readonly acquire: (key: FeedKey) => Effect.Effect<Feed, IntegrationError, Scope.Scope>;
+  readonly acquire: (key: FeedKey) => Effect.Effect<Feed, SourceError, Scope.Scope>;
 }
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/Feeds") {}

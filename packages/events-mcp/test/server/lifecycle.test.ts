@@ -1,10 +1,10 @@
 import { Effect, Schema } from "effect";
 import { expect, test, vi } from "vitest";
-import { IntegrationName, type Integration } from "../../src/integration/contract.ts";
+import { SourceName, type Source } from "../../src/source/contract.ts";
 import { connect } from "../support.ts";
 
-const blocked: Integration = {
-  name: Schema.decodeUnknownSync(IntegrationName)("blocked"),
+const blocked: Source = {
+  name: Schema.decodeUnknownSync(SourceName)("blocked"),
   tools: {},
   events: [
     {
@@ -20,7 +20,7 @@ test(
   "a watch that expires before its feed is ready returns the reason",
   { timeout: 8_000 },
   async () => {
-    const h = await connect({ harness: "claude", integrations: [blocked] });
+    const h = await connect({ harness: "claude", sources: [blocked] });
     try {
       const armed = await h.call("watch", {
         event: "blocked.ping",

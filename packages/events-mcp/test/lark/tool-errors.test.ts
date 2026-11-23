@@ -2,7 +2,7 @@ import { Effect, Layer } from "effect";
 import { expect, test } from "vitest";
 import { LarkAuth } from "../../src/lark/auth.ts";
 import { LarkSocket } from "../../src/lark/socket.ts";
-import { Lark } from "../../src/lark/integration.ts";
+import { Lark } from "../../src/lark/source.ts";
 import { makeRunScript, makeWatchState } from "../../src/script/script.ts";
 import { connect, unusedDecide } from "../support.ts";
 
@@ -12,7 +12,7 @@ delete process.env["LARK_APP_ID"];
 delete process.env["LARK_APP_SECRET"];
 
 const larkSource = await Effect.runPromise(
-  Lark.integration.pipe(
+  Lark.source.pipe(
     Effect.provide(
       Layer.merge(
         LarkAuth.layer,
@@ -28,7 +28,7 @@ const larkSource = await Effect.runPromise(
 );
 
 test("a Lark credential failure reaches the MCP tool result", async () => {
-  const h = await connect({ integrations: [larkSource] });
+  const h = await connect({ sources: [larkSource] });
   try {
     const result = await h.callRaw("lark_get", { path: "/im/v1/messages" });
     expect(result.isError).toBe(true);
@@ -41,7 +41,7 @@ test("a Lark credential failure reaches the MCP tool result", async () => {
 test("a Lark credential failure reaches a script failure", async () => {
   const script = makeRunScript({
     code: 'return await tools.lark.get({ path: "/im/v1/messages" })',
-    integrations: [larkSource],
+    sources: [larkSource],
     state: await Effect.runPromise(makeWatchState),
     decide: unusedDecide,
   });

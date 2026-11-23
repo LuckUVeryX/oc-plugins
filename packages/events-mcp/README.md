@@ -1,6 +1,6 @@
 # events-mcp
 
-events-mcp is a local MCP server that wakes an agent session in OpenCode, Claude Code, or Codex when something happens in Lark or GitLab. It connects to each integration, delivers the raw events a watch asks for, and gives the watch read tools and memory. The agent chooses what to watch and what deserves a wake-up.
+events-mcp is a local MCP server that wakes an agent session in OpenCode, Claude Code, or Codex when something happens in Lark or GitLab. It connects to each source, delivers the raw events a watch asks for, and gives the watch read tools and memory. The agent chooses what to watch and what deserves a wake-up.
 
 ## What you can watch
 
@@ -50,7 +50,7 @@ Every GitLab event except `gitlab.userMergeRequestUpdated` needs a `target`: a l
 - A Lark app in WebSocket event mode, with its app ID (`cli_` followed by 16 hex characters) and app secret.
 - A GitLab personal access token for the GitLab host with `read_api` and `read_repository`, or `glab` authenticated for that host. The host defaults to `gitlab.com`.
 
-The server reads events and integration data. The agent replies with its own tools, such as `lark-cli` or `glab`.
+The server reads events and data from each source. The agent replies with its own tools, such as `lark-cli` or `glab`.
 
 ### Install
 
@@ -172,7 +172,7 @@ End every session after you change the config or environment.
 
 ### Settings
 
-No settings are required to start the server. Each integration needs its own credentials. The decision model has a default and needs setting only to override it.
+No settings are required to start the server. Each source needs its own credentials. The decision model has a default and needs setting only to override it.
 
 | Variable                 | Default                                          | Effect                                                                                                                                                                                                                 |
 | ------------------------ | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -213,7 +213,7 @@ A watch stays open until it expires or you stop it. Every event the script does 
 
 The wake text is the script's result: a string as is, or JSON as `JSON.stringify` of the value. In Claude Code it arrives as a channel message from the server, and in Codex as a new user turn in the same thread. To stop a watch early, call `unwatch({ "watchId": "..." })`. `watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again, and the params a target resolved to. If a watch stops with `script failed`, fix the script and arm a new watch.
 
-A script is at most 64 KB and sees `input.event = { eventId, timestamp, data }`. The event `data` is the raw integration payload.
+A script is at most 64 KB and sees `input.event = { eventId, timestamp, data }`. The event `data` is the raw source payload.
 
 A script that wakes on every event returns the data unchanged:
 

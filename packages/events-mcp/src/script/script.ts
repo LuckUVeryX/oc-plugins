@@ -1,9 +1,9 @@
 import { CodeMode, Tool } from "@opencode/codemode";
 import { Effect, Record, Ref, Schema } from "effect";
 import { type Decide, DecideInput } from "../decision/decision-model.ts";
-import type { Integration, Tool as IntegrationTool } from "../integration/contract.ts";
+import type { Source, Tool as SourceTool } from "../source/contract.ts";
 import { bytes, MAX_SCRIPT_BYTES } from "../limits.ts";
-import { inputJsonSchema } from "../integration/tool.ts";
+import { inputJsonSchema } from "../source/tool.ts";
 
 export class Failed extends Schema.TaggedError<Failed>()("Script.Failed", {
   message: Schema.String,
@@ -47,7 +47,7 @@ export const makeWatchState: Effect.Effect<WatchState> = Effect.gen(function* ()
 
 // Code Mode renders the signature from JSON Schema and passes the raw value to run,
 // so a provider decodes its input once whether the call comes from a script or MCP.
-const codeModeTool = (tool: IntegrationTool) =>
+const codeModeTool = (tool: SourceTool) =>
   Tool.make({
     description: tool.description,
     input: inputJsonSchema(tool),
@@ -83,7 +83,7 @@ const decideTool = (decide: Decide) =>
 
 export const makeRunScript = (options: {
   readonly code: string;
-  readonly integrations: ReadonlyArray<Integration>;
+  readonly sources: ReadonlyArray<Source>;
   readonly state: WatchState;
   readonly decide: Decide;
 }): RunScript => {
@@ -91,10 +91,7 @@ export const makeRunScript = (options: {
     tools: {
       watch: { state: { get: stateGet(options.state), set: stateSet(options.state) } },
       ...Object.fromEntries(
-        options.integrations.map((integration) => [
-          integration.name,
-          Record.map(integration.tools, codeModeTool),
-        ]),
+        options.sources.map((source) => [source.name, Record.map(source.tools, codeModeTool)]),
       ),
       events: { decide: decideTool(options.decide) },
     },

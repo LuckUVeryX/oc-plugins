@@ -1,8 +1,8 @@
 import type { DateTime, Effect, JsonSchema, Scope, Stream } from "effect";
 import { Data, Schema } from "effect";
 
-export const IntegrationName = Schema.NonEmptyString.pipe(Schema.brand("IntegrationName"));
-export type IntegrationName = typeof IntegrationName.Type;
+export const SourceName = Schema.NonEmptyString.pipe(Schema.brand("SourceName"));
+export type SourceName = typeof SourceName.Type;
 
 export interface Event {
   readonly id?: string;
@@ -16,18 +16,18 @@ export type Health = Data.TaggedEnum<{
 }>;
 export const Health = Data.taggedEnum<Health>();
 
-export class Rejected extends Schema.TaggedError<Rejected>()("Integration.Rejected", {
+export class Rejected extends Schema.TaggedError<Rejected>()("Source.Rejected", {
   message: Schema.String,
 }) {}
 
-export class Unavailable extends Schema.TaggedError<Unavailable>()("Integration.Unavailable", {
+export class Unavailable extends Schema.TaggedError<Unavailable>()("Source.Unavailable", {
   message: Schema.String,
 }) {}
 
-export type IntegrationError = Rejected | Unavailable;
+export type SourceError = Rejected | Unavailable;
 
 export interface Feed {
-  readonly events: Stream.Stream<Event, IntegrationError>;
+  readonly events: Stream.Stream<Event, SourceError>;
   /** Emits the current health first, then each change. */
   readonly health: Stream.Stream<Health>;
 }
@@ -40,11 +40,11 @@ export interface EventType {
   readonly target?:
     | {
         readonly description: string;
-        readonly resolve: (target: string) => Effect.Effect<Schema.JsonObject, IntegrationError>;
+        readonly resolve: (target: string) => Effect.Effect<Schema.JsonObject, SourceError>;
       }
     | undefined;
   /** Receives the params a target resolved to, or {} for an event without a target. */
-  subscribe(params: Schema.JsonObject): Effect.Effect<Feed, IntegrationError, Scope.Scope>;
+  subscribe(params: Schema.JsonObject): Effect.Effect<Feed, SourceError, Scope.Scope>;
 }
 
 export class ToolError extends Schema.TaggedError<ToolError>()("Tool.Failed", {
@@ -58,8 +58,8 @@ export interface Tool {
   readonly run: (input: unknown) => Effect.Effect<Schema.Json, ToolError>;
 }
 
-export interface Integration {
-  readonly name: IntegrationName;
+export interface Source {
+  readonly name: SourceName;
   readonly tools: Readonly<Record<string, Tool>>;
   readonly events: ReadonlyArray<EventType>;
   readonly instructions?: string;

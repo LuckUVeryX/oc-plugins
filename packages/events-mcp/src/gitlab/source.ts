@@ -2,11 +2,11 @@ import { Effect, Option, Schema } from "effect";
 import {
   type EventType,
   type Event,
-  type Integration,
-  type IntegrationError,
-  IntegrationName,
+  type Source,
+  type SourceError,
+  SourceName,
   Rejected,
-} from "../integration/contract.ts";
+} from "../source/contract.ts";
 import generated from "./events.json";
 import { GitlabSocket, type ChannelIdentifier } from "./socket.ts";
 import { type GitlabEvent, decodeGitlabCatalog } from "./catalog.ts";
@@ -34,7 +34,7 @@ const GraphqlMessage = Schema.Struct({
 const toEvent = (
   event: GitlabEvent,
   message: Schema.Json,
-): Effect.Effect<Option.Option<Event>, IntegrationError> =>
+): Effect.Effect<Option.Option<Event>, SourceError> =>
   Effect.gen(function* () {
     const decoded = Schema.decodeUnknownOption(GraphqlMessage)(message);
     if (Option.isNone(decoded)) {
@@ -72,9 +72,7 @@ const graphqlEvent = (options: {
   readonly event: GitlabEvent;
   readonly socket: GitlabSocket.Interface;
   readonly target: TargetSupport | undefined;
-  readonly variables: (
-    params: Schema.JsonObject,
-  ) => Effect.Effect<Schema.JsonObject, IntegrationError>;
+  readonly variables: (params: Schema.JsonObject) => Effect.Effect<Schema.JsonObject, SourceError>;
 }): EventType => ({
   name: options.event.name,
   description: options.event.description,
@@ -91,8 +89,8 @@ const graphqlEvent = (options: {
     }),
 });
 
-export const integration: Effect.Effect<
-  Integration,
+export const source: Effect.Effect<
+  Source,
   never,
   GitlabAuth.Service | GitlabClient.Service | GitlabSocket.Service
 > = Effect.gen(function* () {
@@ -110,7 +108,7 @@ export const integration: Effect.Effect<
       return yield* Effect.die(new Error(`No target table entry for GitLab event ${event}`));
     });
   return {
-    name: Schema.decodeUnknownSync(IntegrationName)("gitlab"),
+    name: Schema.decodeUnknownSync(SourceName)("gitlab"),
     tools: { get: makeGetTool(client) },
     events: [
       ...(yield* Effect.forEach(catalog.events, (event) =>
@@ -134,4 +132,4 @@ export const integration: Effect.Effect<
   };
 });
 
-export * as Gitlab from "./integration.ts";
+export * as Gitlab from "./source.ts";

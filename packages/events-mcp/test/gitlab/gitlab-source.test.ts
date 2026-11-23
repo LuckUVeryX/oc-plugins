@@ -3,9 +3,9 @@ import { Effect, Fiber, Layer, Queue, Redacted, type Schema, type Scope, Stream 
 import { GitlabSocket } from "../../src/gitlab/socket.ts";
 import { GitlabClient } from "../../src/gitlab/client.ts";
 import { GitlabAuth } from "../../src/gitlab/auth.ts";
-import { Gitlab } from "../../src/gitlab/integration.ts";
+import { Gitlab } from "../../src/gitlab/source.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
-import { Health, type IntegrationError, type Integration } from "../../src/integration/contract.ts";
+import { Health, type SourceError, type Source } from "../../src/source/contract.ts";
 
 const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),
@@ -16,12 +16,12 @@ const identity: GitlabIdentity = {
 interface FakeSocket {
   readonly socket: GitlabSocket.Interface;
   readonly identifiers: Array<Schema.Json>;
-  readonly queues: Array<Queue.Queue<Schema.Json, IntegrationError>>;
+  readonly queues: Array<Queue.Queue<Schema.Json, SourceError>>;
 }
 
 const makeFakeSocket = (): FakeSocket => {
   const identifiers: Array<Schema.Json> = [];
-  const queues: Array<Queue.Queue<Schema.Json, IntegrationError>> = [];
+  const queues: Array<Queue.Queue<Schema.Json, SourceError>> = [];
   return {
     identifiers,
     queues,
@@ -29,7 +29,7 @@ const makeFakeSocket = (): FakeSocket => {
       subscribe: (identifier) =>
         Effect.gen(function* () {
           identifiers.push(identifier);
-          const queue = yield* Queue.unbounded<Schema.Json, IntegrationError>();
+          const queue = yield* Queue.unbounded<Schema.Json, SourceError>();
           queues.push(queue);
           return Stream.fromQueue(queue);
         }),
@@ -42,8 +42,8 @@ const client: GitlabClient.Interface = {
   get: () => Effect.die(new Error("subscribe never reads GitLab")),
 };
 
-const integrationWith = (socket: GitlabSocket.Interface): Effect.Effect<Integration> =>
-  Gitlab.integration.pipe(
+const makeSource = (socket: GitlabSocket.Interface): Effect.Effect<Source> =>
+  Gitlab.source.pipe(
     Effect.provide(
       Layer.mergeAll(
         Layer.succeed(
@@ -59,21 +59,21 @@ const integrationWith = (socket: GitlabSocket.Interface): Effect.Effect<Integrat
     ),
   );
 
-const runIntegration = <A, E>(
+const runSource = <A, E>(
   socket: GitlabSocket.Interface,
-  body: (integration: Integration) => Effect.Effect<A, E, Scope.Scope>,
+  body: (source: Source) => Effect.Effect<A, E, Scope.Scope>,
 ): Promise<A> =>
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const integration = yield* integrationWith(socket);
-        return yield* body(integration);
+        const source = yield* makeSource(socket);
+        return yield* body(source);
       }),
     ),
   );
 
-const eventNamed = (integration: Integration, name: string) => {
-  const event = integration.events.find((candidate) => candidate.name === name);
+const eventNamed = (source: Source, name: string) => {
+  const event = source.events.find((candidate) => candidate.name === name);
   if (event === undefined) throw new Error(`missing event ${name}`);
   return event;
 };
@@ -86,9 +86,9 @@ const onlyQueue = (fake: FakeSocket) => {
 
 test("drops the initial null and maps the next payload to an event", async () => {
   const fake = makeFakeSocket();
-  const values = await runIntegration(fake.socket, (integration) =>
+  const values = await runSource(fake.socket, (source) =>
     Effect.gen(function* () {
-      const event = eventNamed(integration, "ciPipelineStatusesUpdated");
+      const event = eventNamed(source, "ciPipelineStatusesUpdated");
       const feed = yield* event.subscribe({ projectFullPath: "group/project" });
       const fiber = yield* feed.events.pipe(Stream.take(1), Stream.runCollect, Effect.forkScoped);
       const queue = onlyQueue(fake);
@@ -124,8 +124,8 @@ test("drops the initial null and maps the next payload to an event", async () =>
 
 test("subscribes to merge requests as the token's user", async () => {
   const fake = makeFakeSocket();
-  await runIntegration(fake.socket, (integration) =>
-    Effect.scoped(eventNamed(integration, "userMergeRequestUpdated").subscribe({})),
+  await runSource(fake.socket, (source) =>
+    Effect.scoped(eventNamed(source, "userMergeRequestUpdated").subscribe({})),
   );
   expect(fake.identifiers).toEqual([
     expect.objectContaining({ variables: { userId: "gid://gitlab/User/256" } }),
@@ -134,9 +134,9 @@ test("subscribes to merge requests as the token's user", async () => {
 
 test("subscribes to a merge request's notes and maps an updated signal", async () => {
   const fake = makeFakeSocket();
-  const values = await runIntegration(fake.socket, (integration) =>
+  const values = await runSource(fake.socket, (source) =>
     Effect.gen(function* () {
-      const event = eventNamed(integration, "noteable.notes_changed");
+      const event = eventNamed(source, "noteable.notes_changed");
       const feed = yield* event.subscribe({
         projectId: 599,
         noteableType: "merge_request",
@@ -172,9 +172,9 @@ test("subscribes to a merge request's notes and maps an updated signal", async (
 
 test("delivers a merge request event whose updatedAt is old", async () => {
   const fake = makeFakeSocket();
-  const values = await runIntegration(fake.socket, (integration) =>
+  const values = await runSource(fake.socket, (source) =>
     Effect.gen(function* () {
-      const event = eventNamed(integration, "mergeRequestApprovalStateUpdated");
+      const event = eventNamed(source, "mergeRequestApprovalStateUpdated");
       const feed = yield* event.subscribe({ issuableId: "gid://gitlab/MergeRequest/1" });
       const fiber = yield* feed.events.pipe(Stream.take(1), Stream.runCollect, Effect.forkScoped);
       yield* Queue.offer(onlyQueue(fake), {

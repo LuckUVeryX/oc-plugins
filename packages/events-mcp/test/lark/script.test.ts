@@ -3,7 +3,7 @@ import { expect, test, vi } from "vitest";
 import { DecisionModel } from "../../src/decision/decision-model.ts";
 import { makeGetTool } from "../../src/lark/get.ts";
 import { makeRunScript, makeWatchState } from "../../src/script/script.ts";
-import { IntegrationName } from "../../src/integration/contract.ts";
+import { SourceName } from "../../src/source/contract.ts";
 import { connect, unusedDecide } from "../support.ts";
 
 const questions = [
@@ -133,9 +133,9 @@ test("Lark GET rejects unsafe paths", async () => {
   const script = (code: string) =>
     makeRunScript({
       code,
-      integrations: [
+      sources: [
         {
-          name: Schema.decodeUnknownSync(IntegrationName)("lark"),
+          name: Schema.decodeUnknownSync(SourceName)("lark"),
           tools: {
             get: makeGetTool({
               credentials: () =>

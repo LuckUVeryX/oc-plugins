@@ -1,7 +1,7 @@
 import { Client, Domain } from "@larksuiteoapi/node-sdk";
 import { Config, Context, Effect, Layer, Redacted } from "effect";
-import { Rejected, type IntegrationError } from "../integration/contract.ts";
-import type { GetInput } from "../integration/tool.ts";
+import { Rejected, type SourceError } from "../source/contract.ts";
+import type { GetInput } from "../source/tool.ts";
 import type { LarkRequester } from "./get.ts";
 import { sdkLogger } from "./sdk-logger.ts";
 
@@ -12,7 +12,7 @@ interface Credentials {
 }
 
 export interface Interface {
-  readonly credentials: () => Effect.Effect<Credentials, IntegrationError>;
+  readonly credentials: () => Effect.Effect<Credentials, SourceError>;
 }
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/LarkAuth") {}
