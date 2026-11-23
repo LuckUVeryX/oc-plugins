@@ -20,12 +20,12 @@ const validPath = (path: string) =>
 
 export const getLark = Effect.fn("Lark.get")(function* (
   request: LarkRequester,
-  { path, query }: GetInput,
+  input: GetInput,
 ): Effect.fn.Return<Schema.Json, ToolError> {
-  if (!validPath(path))
+  if (!validPath(input.path))
     return yield* Effect.fail(new ToolError({ message: "Invalid Lark GET path" }));
   const response = yield* Effect.tryPromise({
-    try: (signal) => request({ path, ...(query === undefined ? {} : { query }) }, signal),
+    try: (signal) => request(input, signal),
     catch: (error) => {
       const response = Schema.decodeUnknownOption(ErrorResponse)(error);
       if (Option.isSome(response))
@@ -35,7 +35,7 @@ export const getLark = Effect.fn("Lark.get")(function* (
       const http = Schema.decodeUnknownOption(HttpErrorResponse)(error);
       if (Option.isSome(http))
         return new ToolError({
-          message: `Lark HTTP ${http.value.response.status} on ${path}; check the path`,
+          message: `Lark HTTP ${http.value.response.status} on ${input.path}; check the path`,
         });
       return new ToolError({ message: String(error) });
     },
