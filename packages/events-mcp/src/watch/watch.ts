@@ -2,7 +2,7 @@ import { Cause, Clock, DateTime, Deferred, Effect, Schema, type Scope, Stream } 
 import { bytes, MAX_EVENT_BYTES } from "../limits.ts";
 import {
   Health,
-  type EventKind,
+  type EventType,
   type Event,
   type IntegrationError,
 } from "../integration/contract.ts";
@@ -29,7 +29,7 @@ class StepFailed extends Schema.TaggedError<StepFailed>()("Watch.StepFailed", {
 
 interface WatchRunOptions {
   readonly watchId: string;
-  readonly eventKind: EventKind;
+  readonly eventType: EventType;
   readonly params: Schema.JsonObject;
   readonly expiresInSeconds: number;
   readonly eventTimeoutSeconds: number;
@@ -91,14 +91,14 @@ export const runWatch = Effect.fn("Watch.run")(function* (
       yield* options.notify({
         type: "event",
         eventId,
-        name: options.eventKind.name,
+        name: options.eventType.name,
         timestamp: delivered.timestamp,
         data: result,
       });
     });
   const session = Effect.gen(function* () {
     const feed = yield* feeds.acquire({
-      eventKind: options.eventKind,
+      eventType: options.eventType,
       params: options.params,
     });
     if (options.onSubscribed) yield* options.onSubscribed;

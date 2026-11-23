@@ -1,11 +1,11 @@
 import { Context, Effect, Layer, type Scope } from "effect";
-import type { EventKind, Integration } from "./contract.ts";
+import type { EventType, Integration } from "./contract.ts";
 
 export interface Interface {
   readonly integrations: ReadonlyArray<Integration>;
   /** Each event is named `<integration>.<event>`. */
-  readonly events: ReadonlyArray<EventKind>;
-  readonly get: (name: string) => EventKind | undefined;
+  readonly events: ReadonlyArray<EventType>;
+  readonly get: (name: string) => EventType | undefined;
 }
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/Registry") {}
@@ -17,7 +17,7 @@ export const layer = <R>(
     Service,
     Effect.gen(function* () {
       const built = yield* integrations;
-      const byName = new Map<string, EventKind>();
+      const byName = new Map<string, EventType>();
       for (const integration of built)
         for (const event of integration.events) {
           const name = `${integration.name}.${event.name}`;

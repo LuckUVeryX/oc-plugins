@@ -18,7 +18,7 @@ import { Server } from "../src/server/server.ts";
 import {
   Health,
   IntegrationName,
-  type EventKind,
+  type EventType,
   type Event,
   type Integration,
   type IntegrationError,
@@ -86,7 +86,7 @@ export async function connect(
               };
             }),
         },
-      ] satisfies ReadonlyArray<EventKind>,
+      ] satisfies ReadonlyArray<EventType>,
     },
     {
       name: other,
@@ -108,7 +108,7 @@ export async function connect(
                 })
               : Effect.fail(options.otherSubscribeError),
         },
-      ] satisfies ReadonlyArray<EventKind>,
+      ] satisfies ReadonlyArray<EventType>,
     },
   ];
   const registryLayer = Registry.layer(Effect.succeed(integrations));

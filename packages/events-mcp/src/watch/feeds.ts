@@ -1,8 +1,8 @@
 import { Cache, Context, Effect, Layer, RcMap, Ref, Schema, type Scope, Stream } from "effect";
-import type { EventKind, Event, IntegrationError, Feed } from "../integration/contract.ts";
+import type { EventType, Event, IntegrationError, Feed } from "../integration/contract.ts";
 
 export interface FeedKey {
-  readonly eventKind: EventKind;
+  readonly eventType: EventType;
   readonly params: Schema.JsonObject;
 }
 
@@ -29,7 +29,7 @@ export const layer = Layer.effect(
               const claim = yield* Cache.get(claims, event.id);
               return !(yield* Ref.getAndSet(claim, true));
             });
-          const feed = yield* key.eventKind.subscribe(key.params);
+          const feed = yield* key.eventType.subscribe(key.params);
           const events = yield* feed.events.pipe(
             Stream.filterEffect(admit),
             Stream.share({ capacity: "unbounded" }),

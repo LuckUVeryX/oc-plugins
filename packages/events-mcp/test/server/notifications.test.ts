@@ -2,7 +2,7 @@ import { DateTime, Deferred, Effect, Stream } from "effect";
 import { expect, test, vi } from "vitest";
 import {
   Health,
-  type EventKind,
+  type EventType,
   type Event,
   Rejected,
   type IntegrationError,
@@ -69,14 +69,14 @@ test("announces active before delivering the first event of a short stream", asy
     description: "A tick.",
     payload: { type: "object" },
     subscribe: () => Effect.succeed({ events, health }),
-  } satisfies EventKind;
+  } satisfies EventType;
   const types: Array<string> = [];
   const reason = await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
         return yield* runWatch({
           watchId: "short",
-          eventKind: event,
+          eventType: event,
           params: {},
           expiresInSeconds: 60,
           eventTimeoutSeconds: 30,

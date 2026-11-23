@@ -1,6 +1,6 @@
 import { Data, Effect, Schema } from "effect";
 import {
-  type EventKind,
+  type EventType,
   type IntegrationError,
   Rejected,
   Unavailable,
@@ -327,7 +327,7 @@ const events: Readonly<Record<string, EventTarget>> = {
   },
 };
 
-export type TargetSupport = NonNullable<EventKind["target"]>;
+export type TargetSupport = NonNullable<EventType["target"]>;
 
 export const targetFor = (options: {
   readonly event: string;

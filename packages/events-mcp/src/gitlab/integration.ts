@@ -1,6 +1,6 @@
 import { Effect, Option, Schema } from "effect";
 import {
-  type EventKind,
+  type EventType,
   type Event,
   type Integration,
   type IntegrationError,
@@ -75,7 +75,7 @@ const graphqlEvent = (options: {
   readonly variables: (
     params: Schema.JsonObject,
   ) => Effect.Effect<Schema.JsonObject, IntegrationError>;
-}): EventKind => ({
+}): EventType => ({
   name: options.event.name,
   description: options.event.description,
   payload: options.event.payload,

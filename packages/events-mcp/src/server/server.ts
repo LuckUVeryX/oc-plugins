@@ -21,7 +21,7 @@ import { decodeArguments, inputSchemaDocument, Invalid } from "./arguments.ts";
 import { Registry } from "../integration/registry.ts";
 import { DecisionModel, type Decide } from "../decision/decision-model.ts";
 import { bytes, MAX_SCRIPT_BYTES } from "../limits.ts";
-import type { EventKind, IntegrationError } from "../integration/contract.ts";
+import type { EventType, IntegrationError } from "../integration/contract.ts";
 import { makeRunScript, makeWatchState } from "../script/script.ts";
 import { inputJsonSchema } from "../integration/tool.ts";
 import { Feeds } from "../watch/feeds.ts";
@@ -229,7 +229,7 @@ const buildServer = (options: ServerOptions): McpServer => {
       payloadSchema: { anyOf: [event.payload, { type: "string" }] },
     }));
 
-  const resolveParams = (event: EventKind, target: string | undefined) =>
+  const resolveParams = (event: EventType, target: string | undefined) =>
     Effect.gen(function* () {
       if (event.target === undefined) {
         if (target === undefined) return {};
@@ -304,7 +304,7 @@ const buildServer = (options: ServerOptions): McpServer => {
             yield* claim;
             return yield* runWatch({
               watchId: decoded.watchId,
-              eventKind: event,
+              eventType: event,
               params,
               expiresInSeconds,
               eventTimeoutSeconds: options.eventTimeoutSeconds,

@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { type EventKind, type Integration, IntegrationName } from "../integration/contract.ts";
+import { type EventType, type Integration, IntegrationName } from "../integration/contract.ts";
 import { LarkAuth } from "./auth.ts";
 import { LarkSocket } from "./socket.ts";
 import generated from "./events.json";
@@ -21,7 +21,7 @@ export const integration: Effect.Effect<Integration, never, LarkAuth.Service | L
   Effect.gen(function* () {
     const auth = yield* LarkAuth.Service;
     const socket = yield* LarkSocket.Service;
-    const events: ReadonlyArray<EventKind> = catalog.events.map((event) => ({
+    const events: ReadonlyArray<EventType> = catalog.events.map((event) => ({
       name: event.name,
       description: event.description ?? event.name,
       payload: event.payloadSchema,

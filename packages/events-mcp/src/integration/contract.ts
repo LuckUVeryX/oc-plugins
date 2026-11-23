@@ -32,7 +32,7 @@ export interface Feed {
   readonly health: Stream.Stream<Health>;
 }
 
-export interface EventKind {
+export interface EventType {
   readonly name: string;
   readonly description: string;
   readonly payload: JsonSchema.JsonSchema;
@@ -61,6 +61,6 @@ export interface Tool {
 export interface Integration {
   readonly name: IntegrationName;
   readonly tools: Readonly<Record<string, Tool>>;
-  readonly events: ReadonlyArray<EventKind>;
+  readonly events: ReadonlyArray<EventType>;
   readonly instructions?: string;
 }

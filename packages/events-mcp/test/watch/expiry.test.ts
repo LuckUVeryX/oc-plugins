@@ -2,11 +2,11 @@ import { it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
-import { Health, type EventKind } from "../../src/integration/contract.ts";
+import { Health, type EventType } from "../../src/integration/contract.ts";
 import { Feeds } from "../../src/watch/feeds.ts";
 import { runWatch } from "../../src/watch/watch.ts";
 
-const tick: EventKind = {
+const tick: EventType = {
   name: "tick",
   description: "A tick.",
   payload: {},
@@ -22,7 +22,7 @@ it.effect("keeps a watch for its chosen expiry", () =>
         const seen = yield* Ref.make<ReadonlyArray<string>>([]);
         const fiber = yield* runWatch({
           watchId: "watch",
-          eventKind: tick,
+          eventType: tick,
           params: {},
           expiresInSeconds,
           eventTimeoutSeconds: 30,
@@ -63,7 +63,7 @@ it.effect("stop and expiry end a watch whose feed never becomes ready", () =>
         const seen = yield* Ref.make<ReadonlyArray<string>>([]);
         const fiber = yield* runWatch({
           watchId: "never-ready",
-          eventKind: tick,
+          eventType: tick,
           params: {},
           expiresInSeconds,
           eventTimeoutSeconds: 30,

@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import { type EventKind, type Event, Rejected } from "../integration/contract.ts";
+import { type EventType, type Event, Rejected } from "../integration/contract.ts";
 import { GitlabSocket, type ChannelIdentifier } from "./socket.ts";
 import { NoteableType, type TargetSupport } from "./target.ts";
 import { subscribeToChannel } from "./channel.ts";
@@ -65,7 +65,7 @@ interface NotesEventOptions {
   readonly target: TargetSupport | undefined;
 }
 
-export const makeNotesEvent = (options: NotesEventOptions): EventKind => ({
+export const makeNotesEvent = (options: NotesEventOptions): EventType => ({
   name: "noteable.notes_changed",
   description,
   payload,
