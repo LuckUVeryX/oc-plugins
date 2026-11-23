@@ -2,7 +2,7 @@ import { CodeMode, Tool } from "@opencode/codemode";
 import { Effect, Record, Ref, Schema } from "effect";
 import { type Decide, DecideInput } from "../decision/decision-model.ts";
 import type { Integration, Tool as IntegrationTool } from "../integration/contract.ts";
-import { bytes, MAX_SCRIPT_OUTPUT_BYTES, MAX_STATE_BYTES } from "../limits.ts";
+import { bytes, MAX_SCRIPT_BYTES } from "../limits.ts";
 import { inputJsonSchema } from "../integration/tool.ts";
 
 export class Failed extends Schema.TaggedError<Failed>()("Script.Failed", {
@@ -33,10 +33,10 @@ export const makeWatchState: Effect.Effect<WatchState> = Effect.gen(function* ()
     get: Ref.get(value),
     set: (next) =>
       Effect.gen(function* () {
-        if (bytes(JSON.stringify(next)) > MAX_STATE_BYTES)
+        if (bytes(JSON.stringify(next)) > MAX_SCRIPT_BYTES)
           return yield* Effect.fail(
             new StateTooLarge({
-              message: `Watch state exceeds ${MAX_STATE_BYTES} bytes; keep the stored JSON smaller`,
+              message: `Watch state exceeds ${MAX_SCRIPT_BYTES} bytes; keep the stored JSON smaller`,
             }),
           );
         yield* Ref.set(value, next);
@@ -66,7 +66,7 @@ const stateGet = (state: WatchState) =>
 
 const stateSet = (state: WatchState) =>
   Tool.make({
-    description: `Replace this watch's own JSON memory and return the new value. It holds up to ${MAX_STATE_BYTES / 1024} KB and lasts only as long as the watch.`,
+    description: `Replace this watch's own JSON memory and return the new value. It holds up to ${MAX_SCRIPT_BYTES / 1024} KB and lasts only as long as the watch.`,
     input: Schema.Json,
     output: Schema.Json,
     execute: (value) => state.set(value),
@@ -98,7 +98,7 @@ export const makeRunScript = (options: {
       ),
       events: { decide: decideTool(options.decide) },
     },
-    limits: { maxOutputBytes: MAX_SCRIPT_OUTPUT_BYTES },
+    limits: { maxOutputBytes: MAX_SCRIPT_BYTES },
   });
   return (event) =>
     Effect.gen(function* () {
