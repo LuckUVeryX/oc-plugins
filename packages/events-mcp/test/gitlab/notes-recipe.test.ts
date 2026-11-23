@@ -1,14 +1,14 @@
 import { expect, test, vi } from "vitest";
 import { Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
-import type { GetInput } from "../../src/core/tool.ts";
+import type { GetInput } from "../../src/source/tool.ts";
 import { GitlabSocket } from "../../src/gitlab/socket.ts";
 import { GitlabClient } from "../../src/gitlab/client.ts";
 import { GitlabAuth } from "../../src/gitlab/auth.ts";
 import { notesRecipe } from "../../src/gitlab/notes.ts";
-import { Gitlab } from "../../src/gitlab/integration.ts";
+import { Gitlab } from "../../src/gitlab/source.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
-import { Health, type IntegrationError } from "../../src/core/integration.ts";
-import { connect } from "../harness.ts";
+import { Health, type SourceError } from "../../src/source/contract.ts";
+import { connect } from "../support.ts";
 
 const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),
@@ -40,7 +40,7 @@ test("the notes recipe delivers the first new comment after START and nothing el
     ],
   ];
   const responseCount = responses.length;
-  const queuePromise = Promise.withResolvers<Queue.Queue<Schema.Json, IntegrationError>>();
+  const queuePromise = Promise.withResolvers<Queue.Queue<Schema.Json, SourceError>>();
   const gets: Array<GetInput> = [];
   const client: GitlabClient.Interface = {
     get: (input) => {
@@ -53,14 +53,14 @@ test("the notes recipe delivers the first new comment after START and nothing el
   const socket: GitlabSocket.Interface = {
     subscribe: () =>
       Effect.gen(function* () {
-        const queue = yield* Queue.unbounded<Schema.Json, IntegrationError>();
+        const queue = yield* Queue.unbounded<Schema.Json, SourceError>();
         queuePromise.resolve(queue);
         return Stream.fromQueue(queue);
       }),
     health: Stream.succeed(Health.Live()),
   };
-  const integration = await Effect.runPromise(
-    Gitlab.integration.pipe(
+  const source = await Effect.runPromise(
+    Gitlab.source.pipe(
       Effect.provide(
         Layer.mergeAll(
           Layer.succeed(
@@ -73,13 +73,13 @@ test("the notes recipe delivers the first new comment after START and nothing el
       ),
     ),
   );
-  const h = await connect({ integrations: [integration] });
+  const h = await connect({ sources: [source] });
   try {
     h.stream(
       {
-        watchId: "comments",
+        id: "comments",
         target: "group/project!32",
-        script: recipe,
+        code: recipe,
         expiresInSeconds: 60,
       },
       "gitlab.noteable.notes_changed",

@@ -6,7 +6,7 @@ An OpenCode session lists the watchable events, arms one through the `events` MC
 
 - `opencode-list` answers `events/list` with 22 events, 14 Lark and 8 GitLab.
 - `opencode-arm` opens `events/stream` and reports the watch live with `notifications/events/active`.
-- `opencode-wake` delivers a matching GitLab pipeline change as `notifications/events/event` with the script's text.
+- `opencode-wake` delivers a matching GitLab pipeline change as `notifications/events/event` with the code's text.
 - `opencode-terminate` ends the watch when the stream request ends, with no replay.
 
 ## How to get to it (user POV)
@@ -24,8 +24,8 @@ Preconditions:
 - No OpenCode TUI is launched. The client speaks the same MCP connection with the `opencode` harness.
 
 - **List the catalogue.** Run `bun scripts/mcp-client.mjs list`. It prints `protocol: 2026-07-28`, `events: 22`, `lark: 14`, `gitlab: 8`, and the tools `lark_get`, `gitlab_get`, `watches`, `unwatch`. It writes `opencode-list.json`.
-- **Arm, trigger, and wait.** Run `bun scripts/mcp-client.mjs watch --watch-id stream-verify --timeout 600 --trigger`. It arms the watch on `gitlab.ciPipelineStatusesUpdated` for `$VERIFY_GITLAB_PROJECT`, waits for `active`, creates one pipeline, and waits for the first event. For a pipeline triggered separately, omit `--trigger` and run `bun scripts/target.ts trigger` after the armed record appears.
-- **Armed output.** The command prints `{"armed": {"watchId": "stream-verify", "subscriptionId": <n>, ...}}` and writes `opencode-armed.json`. The subscription id is the `events/stream` request id.
+- **Arm, trigger, and wait.** Run `bun scripts/mcp-client.mjs watch --id stream-verify --timeout 600 --trigger`. It arms the watch on `gitlab.ciPipelineStatusesUpdated` for `$VERIFY_GITLAB_PROJECT`, waits for `active`, creates one pipeline, and waits for the first event. For a pipeline triggered separately, omit `--trigger` and run `bun scripts/target.ts trigger` after the armed record appears.
+- **Armed output.** The command prints `{"armed": {"id": "stream-verify", "subscriptionId": <n>, ...}}` and writes `opencode-armed.json`. The subscription id is the `events/stream` request id.
 - **Wake output.** It prints `receivedAt` and `event.data` of the form `pipeline gid://gitlab/Ci::Pipeline/<id> status SUCCESS` and writes `opencode-wake.json`. The exit code is 0 only when the event names the pipeline it triggered.
 - **Proof.** `opencode-wake.json` holds the subscription id, the `active` and `event` notification times, and the event id. With `--trigger`, the client writes the pipeline to `opencode-trigger.json`; compare `event.data` with its `id`. For a pipeline triggered separately, run `bun scripts/target.ts trigger | tee "$VERIFY_EVIDENCE/trigger.json"` and compare with that `id`.
 - **Cleanup.** Run `scripts/run.sh cleanup "$VERIFY_RUN_DIR"`. The hub exits on its own when the client disconnects; cleanup copies its log into evidence.

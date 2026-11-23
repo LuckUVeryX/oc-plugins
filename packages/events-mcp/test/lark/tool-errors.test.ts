@@ -2,9 +2,9 @@ import { Effect, Layer } from "effect";
 import { expect, test } from "vitest";
 import { LarkAuth } from "../../src/lark/auth.ts";
 import { LarkSocket } from "../../src/lark/socket.ts";
-import { Lark } from "../../src/lark/integration.ts";
-import { makeRunScript, makeWatchState } from "../../src/core/script.ts";
-import { connect, unusedDecide } from "../harness.ts";
+import { Lark } from "../../src/lark/source.ts";
+import { makeRunCode, makeWatchState } from "../../src/code/code.ts";
+import { connect, unusedDecide } from "../support.ts";
 
 const credentialMessage = "No Lark app credentials";
 
@@ -12,7 +12,7 @@ delete process.env["LARK_APP_ID"];
 delete process.env["LARK_APP_SECRET"];
 
 const larkSource = await Effect.runPromise(
-  Lark.integration.pipe(
+  Lark.source.pipe(
     Effect.provide(
       Layer.merge(
         LarkAuth.layer,
@@ -28,7 +28,7 @@ const larkSource = await Effect.runPromise(
 );
 
 test("a Lark credential failure reaches the MCP tool result", async () => {
-  const h = await connect({ integrations: [larkSource] });
+  const h = await connect({ sources: [larkSource] });
   try {
     const result = await h.callRaw("lark_get", { path: "/im/v1/messages" });
     expect(result.isError).toBe(true);
@@ -38,15 +38,15 @@ test("a Lark credential failure reaches the MCP tool result", async () => {
   }
 });
 
-test("a Lark credential failure reaches a script failure", async () => {
-  const script = makeRunScript({
+test("a Lark credential failure reaches a code failure", async () => {
+  const run = makeRunCode({
     code: 'return await tools.lark.get({ path: "/im/v1/messages" })',
-    integrations: [larkSource],
+    sources: [larkSource],
     state: await Effect.runPromise(makeWatchState),
     decide: unusedDecide,
   });
   const failure = await Effect.runPromise(
-    script({
+    run({
       eventId: "event",
       timestamp: new Date().toISOString(),
       data: {},

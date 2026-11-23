@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-/** The generated catalog's contract, decoded by both the generator and the integration. */
+/** The generated catalog's contract, decoded by both the generator and the source. */
 export const GitlabEvent = Schema.Struct({
   name: Schema.NonEmptyString,
   description: Schema.NonEmptyString,

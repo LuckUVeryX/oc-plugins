@@ -6,7 +6,7 @@ import {
   type Json,
   makeGitlabSocket,
 } from "../../src/gitlab/socket.ts";
-import { Health, type IntegrationError } from "../../src/core/integration.ts";
+import { Health, type SourceError } from "../../src/source/contract.ts";
 
 const WireFrame = Schema.Record(Schema.String, Schema.Unknown);
 
@@ -196,7 +196,7 @@ test("fails the feed when the server rejects it", async () => {
     const failure = await Effect.runPromise(
       Effect.scoped(socket.subscribe(identifier("rejected"))).pipe(Effect.flip),
     );
-    expect(failure._tag).toBe("Integration.Rejected");
+    expect(failure._tag).toBe("Source.Rejected");
   } finally {
     await stop();
     server.stop();
@@ -231,16 +231,14 @@ test("resubscribes and returns to Live after a dropped connection", async () => 
 test("fails every feed when the server refuses to reconnect", async () => {
   const server = startServer();
   const { socket, stop } = await startCable(server.url);
-  const failed = Promise.withResolvers<IntegrationError>();
+  const failed = Promise.withResolvers<SourceError>();
   const fiber = Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
         const stream = yield* socket.subscribe(identifier("unauthorized"));
         yield* stream.pipe(
           Stream.runDrain,
-          Effect.catchTag("Integration.Rejected", (error) =>
-            Effect.sync(() => failed.resolve(error)),
-          ),
+          Effect.catchTag("Source.Rejected", (error) => Effect.sync(() => failed.resolve(error))),
         );
       }),
     ),
@@ -248,7 +246,7 @@ test("fails every feed when the server refuses to reconnect", async () => {
   try {
     await server.waitFor(() => server.subscribes().length === 1);
     server.disconnect(false, "unauthorized");
-    expect((await failed.promise)._tag).toBe("Integration.Rejected");
+    expect((await failed.promise)._tag).toBe("Source.Rejected");
   } finally {
     await Effect.runPromise(Fiber.interrupt(fiber));
     await stop();
@@ -287,7 +285,7 @@ test("fails the feed when the server refuses the token before welcoming", async 
     const failure = await Effect.runPromise(
       Effect.scoped(socket.subscribe(identifier("unauthorized-before-welcome"))).pipe(Effect.flip),
     );
-    expect(failure._tag).toBe("Integration.Rejected");
+    expect(failure._tag).toBe("Source.Rejected");
     expect(server.connections()).toBe(1);
   } finally {
     await stop();

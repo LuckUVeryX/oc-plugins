@@ -17,7 +17,7 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import { Health, Rejected, type IntegrationError, Unavailable } from "../core/integration.ts";
+import { Health, Rejected, type SourceError, Unavailable } from "../source/contract.ts";
 import { GitlabAuth } from "./auth.ts";
 
 export type Json = Schema.Json;
@@ -30,7 +30,7 @@ export interface ChannelIdentifier extends Schema.JsonObject {
 export interface Interface {
   readonly subscribe: (
     identifier: ChannelIdentifier,
-  ) => Effect.Effect<Stream.Stream<Json, IntegrationError>, IntegrationError, Scope.Scope>;
+  ) => Effect.Effect<Stream.Stream<Json, SourceError>, SourceError, Scope.Scope>;
   readonly health: Stream.Stream<Health>;
 }
 
@@ -39,7 +39,7 @@ export class Service extends Context.Service<Service, Interface>()("@events-mcp/
 interface GitlabSocketOptions {
   readonly url: string;
   /** Resolved when the connection is acquired, so a token failure fails that subscribe. */
-  readonly headers: Effect.Effect<Readonly<Record<string, string>>, IntegrationError>;
+  readonly headers: Effect.Effect<Readonly<Record<string, string>>, SourceError>;
   readonly pingTimeout?: Duration.Input | undefined;
   readonly backoff?: Schedule.Schedule<unknown> | undefined;
 }
@@ -94,11 +94,11 @@ const attach = (socket: WebSocket, events: Queue.Queue<SocketEvent>) => {
 type ConnectionState =
   | { readonly _tag: "Closed" }
   | { readonly _tag: "Open"; readonly socket: WebSocket }
-  | { readonly _tag: "Failed"; readonly error: IntegrationError };
+  | { readonly _tag: "Failed"; readonly error: SourceError };
 
 type SessionEnd =
   | { readonly _tag: "Disconnected"; readonly reason: string }
-  | { readonly _tag: "Fatal"; readonly error: IntegrationError };
+  | { readonly _tag: "Fatal"; readonly error: SourceError };
 
 type SessionOutcome =
   | { readonly _tag: "Opened" }
@@ -107,8 +107,8 @@ type SessionOutcome =
 
 interface Entry {
   readonly identifier: string;
-  readonly messages: Queue.Queue<Json, IntegrationError>;
-  readonly settled: Deferred.Deferred<void, IntegrationError>;
+  readonly messages: Queue.Queue<Json, SourceError>;
+  readonly settled: Deferred.Deferred<void, SourceError>;
   readonly confirmed: Ref.Ref<boolean>;
 }
 
@@ -194,7 +194,7 @@ export const makeGitlabSocket: (
           }),
         );
 
-      const failEntries = (entries: ReadonlyArray<Entry>, error: IntegrationError) =>
+      const failEntries = (entries: ReadonlyArray<Entry>, error: SourceError) =>
         Effect.forEach(
           entries,
           (entry) =>
@@ -367,8 +367,8 @@ export const makeGitlabSocket: (
       const acquireChannel = Effect.fn("GitlabSocket.acquireChannel")(function* (
         identifier: string,
       ) {
-        const messages = yield* Queue.unbounded<Json, IntegrationError>();
-        const settled = yield* Deferred.make<void, IntegrationError>();
+        const messages = yield* Queue.unbounded<Json, SourceError>();
+        const settled = yield* Deferred.make<void, SourceError>();
         const confirmed = yield* Ref.make(false);
         const entry: Entry = { identifier, messages, settled, confirmed };
         yield* mutex.withPermits(1)(
@@ -394,7 +394,7 @@ export const makeGitlabSocket: (
 
   const subscribe = Effect.fn("GitlabSocket.subscribe")(function* (
     identifier: ChannelIdentifier,
-  ): Effect.fn.Return<Stream.Stream<Json, IntegrationError>, IntegrationError, Scope.Scope> {
+  ): Effect.fn.Return<Stream.Stream<Json, SourceError>, SourceError, Scope.Scope> {
     const acquireChannel = yield* RcRef.get(connection);
     return yield* acquireChannel(JSON.stringify(identifier));
   });

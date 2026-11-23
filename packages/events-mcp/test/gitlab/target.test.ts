@@ -1,19 +1,19 @@
 import { expect, test, vi } from "vitest";
 import { Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
 import { GitlabSocket } from "../../src/gitlab/socket.ts";
-import type { GetInput } from "../../src/core/tool.ts";
+import type { GetInput } from "../../src/source/tool.ts";
 import { GitlabClient } from "../../src/gitlab/client.ts";
 import { GitlabAuth } from "../../src/gitlab/auth.ts";
-import { Gitlab } from "../../src/gitlab/integration.ts";
+import { Gitlab } from "../../src/gitlab/source.ts";
 import type { GitlabIdentity } from "../../src/gitlab/token.ts";
 import {
   Health,
   Rejected,
   Unavailable,
-  type IntegrationError,
-  type Integration,
-} from "../../src/core/integration.ts";
-import { connect } from "../harness.ts";
+  type SourceError,
+  type Source,
+} from "../../src/source/contract.ts";
+import { connect } from "../support.ts";
 
 const identity: GitlabIdentity = {
   token: Redacted.make("test-token"),
@@ -46,14 +46,14 @@ const makeFakeSocket = () => {
     subscribe: (identifier) =>
       Effect.gen(function* () {
         identifiers.push(identifier);
-        return Stream.fromQueue(yield* Queue.unbounded<Schema.Json, IntegrationError>());
+        return Stream.fromQueue(yield* Queue.unbounded<Schema.Json, SourceError>());
       }),
     health: Stream.succeed(Health.Live()),
   };
   return { identifiers, socket };
 };
 
-const makeFakeClient = (getError?: IntegrationError) => {
+const makeFakeClient = (getError?: SourceError) => {
   const gets: Array<GetInput> = [];
   const client: GitlabClient.Interface = {
     get: (input) => {
@@ -68,11 +68,11 @@ const makeFakeClient = (getError?: IntegrationError) => {
   return { client, gets };
 };
 
-const setup = async (getError?: IntegrationError) => {
+const setup = async (getError?: SourceError) => {
   const socket = makeFakeSocket();
   const client = makeFakeClient(getError);
-  const integration: Integration = await Effect.runPromise(
-    Gitlab.integration.pipe(
+  const source: Source = await Effect.runPromise(
+    Gitlab.source.pipe(
       Effect.provide(
         Layer.mergeAll(
           Layer.succeed(
@@ -85,22 +85,22 @@ const setup = async (getError?: IntegrationError) => {
       ),
     ),
   );
-  return { integration, socket, client };
+  return { source, socket, client };
 };
 
-const scripts = { script: "return null" };
+const dropCode = { code: "return null" };
 
 const rejectionOf = async (
   event: string,
   args: Record<string, unknown>,
-  getError?: IntegrationError,
+  getError?: SourceError,
 ) => {
-  const { integration, socket } = await setup(getError);
-  const h = await connect({ integrations: [integration] });
+  const { source, socket } = await setup(getError);
+  const h = await connect({ sources: [source] });
   try {
     const failure = Schema.decodeUnknownSync(
       Schema.Struct({ code: Schema.Number, message: Schema.String }),
-    )(await h.stream({ ...scripts, ...args }, event).done);
+    )(await h.stream({ ...dropCode, ...args }, event).done);
     return { failure, identifiers: socket.identifiers };
   } finally {
     await h.close();
@@ -161,15 +161,15 @@ const resolved = [
 ] as const;
 
 test("a target resolves to the params its event subscribes with", async () => {
-  const { integration, socket } = await setup();
-  const h = await connect({ integrations: [integration], harness: "claude" });
+  const { source, socket } = await setup();
+  const h = await connect({ sources: [source], harness: "claude" });
   try {
     for (const [index, [event, target, params]] of resolved.entries()) {
       const armed = await h.call("watch", {
         event,
-        watchId: `target-${index}`,
+        id: `target-${index}`,
         target,
-        ...scripts,
+        ...dropCode,
       });
       expect(armed.params).toEqual(params);
     }
@@ -186,7 +186,7 @@ test("a target that cannot arm the watch is rejected before subscribing", async 
     {
       event: "gitlab.noteable.notes_changed",
       args: {
-        watchId: "foreign-host",
+        id: "foreign-host",
         target: "https://gitlab.com/group/project/-/merge_requests/32",
       },
       message: ["gitlab.com", "gitlab.test"],
@@ -194,7 +194,7 @@ test("a target that cannot arm the watch is rejected before subscribing", async 
     {
       event: "gitlab.ciJobStatusUpdated",
       args: {
-        watchId: "wrong-kind",
+        id: "wrong-kind",
         target: "https://gitlab.test/group/project/-/merge_requests/32",
       },
       message: ["gitlab.ciJobStatusUpdated takes a job link", "not a merge request link"],
@@ -202,47 +202,47 @@ test("a target that cannot arm the watch is rejected before subscribing", async 
     {
       event: "gitlab.ciPipelineStatusesUpdated",
       args: {
-        watchId: "missing-commit",
+        id: "missing-commit",
         target: `https://gitlab.test/group/project/-/commit/${"f".repeat(40)}`,
       },
       message: ["404", "repository/commits"],
     },
     {
       event: "gitlab.ciPipelineStatusesUpdated",
-      args: { watchId: "private-project", target: "group/private" },
+      args: { id: "private-project", target: "group/private" },
       message: ["404", "/projects/group%2Fprivate"],
     },
     {
       event: "gitlab.noteable.notes_changed",
-      args: { watchId: "file-scheme", target: "file:///group/project/-/merge_requests/32" },
+      args: { id: "file-scheme", target: "file:///group/project/-/merge_requests/32" },
       message: ["must be an http or https link"],
     },
     {
       event: "gitlab.noteable.notes_changed",
       args: {
-        watchId: "protocol-relative",
+        id: "protocol-relative",
         target: "//gitlab.test/group/project/-/merge_requests/32",
       },
       message: ["must be an http or https link"],
     },
     {
       event: "gitlab.noteable.notes_changed",
-      args: { watchId: "space", target: "group/project #30" },
+      args: { id: "space", target: "group/project #30" },
       message: ["not valid for gitlab.noteable.notes_changed"],
     },
     {
       event: "gitlab.noteable.notes_changed",
-      args: { watchId: "empty-suffix", target: "group/project#" },
+      args: { id: "empty-suffix", target: "group/project#" },
       message: ["needs an iid or sha"],
     },
     {
       event: "gitlab.mergeRequestApprovalStateUpdated",
-      args: { watchId: "missing" },
+      args: { id: "missing" },
       message: ["gitlab.mergeRequestApprovalStateUpdated needs a target", "group/project!123"],
     },
     {
       event: "gitlab.userMergeRequestUpdated",
-      args: { watchId: "no-target", target: "group/project" },
+      args: { id: "no-target", target: "group/project" },
       message: ["gitlab.userMergeRequestUpdated does not take a target"],
     },
   ] as const;
@@ -257,7 +257,7 @@ test("a target that cannot arm the watch is rejected before subscribing", async 
 test("a target that GitLab cannot answer for is an internal error", async () => {
   const { failure, identifiers } = await rejectionOf(
     "gitlab.noteable.notes_changed",
-    { watchId: "unavailable", target: "https://gitlab.test/group/project/-/merge_requests/32" },
+    { id: "unavailable", target: "https://gitlab.test/group/project/-/merge_requests/32" },
     new Unavailable({ message: "GitLab is restarting" }),
   );
   expect(failure.code).toBe(-32603);
@@ -266,16 +266,16 @@ test("a target that GitLab cannot answer for is an internal error", async () => 
 });
 
 test("the watch tool returns the params a target resolved to", async () => {
-  const { integration, socket } = await setup();
-  const h = await connect({ integrations: [integration], harness: "claude" });
+  const { source, socket } = await setup();
+  const h = await connect({ sources: [source], harness: "claude" });
   try {
     const armed = await h.call("watch", {
       event: "gitlab.noteable.notes_changed",
-      watchId: "mr-comments",
+      id: "mr-comments",
       target: "group/project!32",
-      ...scripts,
+      ...dropCode,
     });
-    expect(armed).toMatchObject({ watchId: "mr-comments", params: mergeRequest });
+    expect(armed).toMatchObject({ id: "mr-comments", params: mergeRequest });
     expect(armed.expiresAt).toEqual(expect.any(String));
     expect(socket.identifiers).toHaveLength(1);
   } finally {
@@ -284,17 +284,17 @@ test("the watch tool returns the params a target resolved to", async () => {
 });
 
 test("watches shows the params a target resolved to in OpenCode", async () => {
-  const { integration, socket } = await setup();
-  const h = await connect({ integrations: [integration] });
+  const { source, socket } = await setup();
+  const h = await connect({ sources: [source] });
   try {
     h.stream(
-      { watchId: "by-target", target: "group/project!32", ...scripts },
+      { id: "by-target", target: "group/project!32", ...dropCode },
       "gitlab.noteable.notes_changed",
     );
     await vi.waitFor(() => expect(socket.identifiers).toHaveLength(1));
     const [watch] = (await h.call("watches")).watches;
     expect(watch).toMatchObject({
-      watchId: "by-target",
+      id: "by-target",
       arguments: { target: "group/project!32" },
       params: mergeRequest,
     });
@@ -304,8 +304,8 @@ test("watches shows the params a target resolved to in OpenCode", async () => {
 });
 
 test("list_events requires target only where the event can resolve one", async () => {
-  const { integration } = await setup();
-  const h = await connect({ integrations: [integration], harness: "claude" });
+  const { source } = await setup();
+  const h = await connect({ sources: [source], harness: "claude" });
   try {
     const listed = await h.call("list_events");
     type InputSchema = {

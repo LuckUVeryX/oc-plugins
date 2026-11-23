@@ -18,10 +18,10 @@ import {
 import {
   Health,
   type Event,
-  type IntegrationError,
+  type SourceError,
   type Feed,
   Unavailable,
-} from "../core/integration.ts";
+} from "../source/contract.ts";
 import { LarkAuth } from "./auth.ts";
 import { getLark, type LarkRequester } from "./get.ts";
 import { sdkLogger } from "./sdk-logger.ts";
@@ -98,7 +98,7 @@ const forward =
 export interface Interface {
   readonly subscribe: (options: {
     readonly event: string;
-  }) => Effect.Effect<Feed, IntegrationError, Scope.Scope>;
+  }) => Effect.Effect<Feed, SourceError, Scope.Scope>;
 }
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/LarkSocket") {}
@@ -113,7 +113,7 @@ export const layer = Layer.effect(
         yield* assertSoleConnection(credentials.request);
         const health = yield* SubscriptionRef.make<Health>(Health.Live());
         const publishHealth = (next: Health) => Effect.runFork(SubscriptionRef.set(health, next));
-        const terminal = yield* Deferred.make<never, IntegrationError>();
+        const terminal = yield* Deferred.make<never, SourceError>();
         const dispatcher = new EventDispatcher({ logger: sdkLogger });
         const channels = yield* RcMap.make({
           lookup: (event: string) =>
@@ -126,8 +126,8 @@ export const layer = Layer.effect(
               return channel;
             }),
         });
-        const ready = yield* Deferred.make<void, IntegrationError>();
-        const abort = (error: IntegrationError) => {
+        const ready = yield* Deferred.make<void, SourceError>();
+        const abort = (error: SourceError) => {
           Effect.runFork(Deferred.fail(terminal, error));
           Effect.runFork(Deferred.fail(ready, error));
         };

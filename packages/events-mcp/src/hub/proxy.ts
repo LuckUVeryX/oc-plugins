@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { spawn } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
 import net from "node:net";
-import type { Name } from "../harness/index.ts";
+import type { Name } from "../harness/catalog.ts";
 import { directories, ensureDirectory, logPath, socketPath } from "./paths.ts";
 
 const CONNECT_TIMEOUT_MS = 60_000;

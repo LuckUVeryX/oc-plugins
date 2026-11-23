@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { isName, names } from "./harness/index.ts";
+import { isName, names } from "./harness/catalog.ts";
 
 const name = process.argv[2];
 if (name === undefined) {

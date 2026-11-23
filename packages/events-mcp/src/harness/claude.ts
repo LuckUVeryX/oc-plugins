@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { instructions, listEventsInstructions, type Tools } from "../core/harness.ts";
+import { instructions, listEventsInstructions, type Tools } from "./harness.ts";
 
 export const harness: Tools = {
   _tag: "Tools",
@@ -11,9 +11,9 @@ export const harness: Tools = {
     ],
   }),
   watchParams: Schema.Struct({}),
-  wake: (send, { watchId, event, text }) =>
+  wake: (send, { id, event, text }) =>
     send({
       method: "notifications/claude/channel",
-      params: { content: text, meta: { watch_id: watchId, event } },
+      params: { content: text, meta: { watch_id: id, event } },
     }),
 };

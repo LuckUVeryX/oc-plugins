@@ -33,7 +33,7 @@ test("the auth layer retries a failed token check and caches the success", async
   const failure = await Effect.runPromise(
     Effect.flip(identity.identity).pipe(Effect.provide(config)),
   );
-  expect(failure._tag).toBe("Integration.Unavailable");
+  expect(failure._tag).toBe("Source.Unavailable");
   const first = await Effect.runPromise(identity.identity.pipe(Effect.provide(config)));
   expect(first.username).toBe("tester");
   const second = await Effect.runPromise(identity.identity.pipe(Effect.provide(config)));

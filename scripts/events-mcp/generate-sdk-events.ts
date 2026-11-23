@@ -45,13 +45,13 @@ const clean = (text: string): string =>
 
 const overrides: Readonly<Record<string, string>> = {
   "im.chat.member.user.deleted_v1":
-    "用户出群\n\n用户主动退出群聊或被移出群聊时触发。只关心某个群时，在脚本中比较 chat_id。",
+    "用户出群\n\n用户主动退出群聊或被移出群聊时触发。只关心某个群时，在代码中比较 chat_id。",
   "im.chat.member.user.withdrawn_v1":
-    "撤销拉用户进群\n\n撤销拉用户进群后触发。撤销操作指群内的「撤销邀请」。只关心某个群时，在脚本中比较 chat_id。",
+    "撤销拉用户进群\n\n撤销拉用户进群后触发。撤销操作指群内的「撤销邀请」。只关心某个群时，在代码中比较 chat_id。",
   "task.task.update_user_access_v2":
-    "任务事件\n\n监听任务创建、删除或变更。需要区分变更类型时，在脚本中读取 input.event.data.event_types。",
+    "任务事件\n\n监听任务创建、删除或变更。需要区分变更类型时，在代码中读取 input.event.data.event_types。",
   "im.message.reaction.deleted_v1":
-    "监听表情回复被移除的消息。只关心某条消息时，在脚本中比较 message_id。",
+    "监听表情回复被移除的消息。只关心某条消息时，在代码中比较 message_id。",
 };
 
 const program = ts.createProgram([input], {

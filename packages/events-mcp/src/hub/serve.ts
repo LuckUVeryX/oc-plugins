@@ -20,17 +20,17 @@ import { FetchHttpClient } from "effect/http";
 import { rmSync } from "node:fs";
 import net from "node:net";
 import { PassThrough } from "node:stream";
-import { DecisionModel } from "../core/decision-model.ts";
-import { Feeds } from "../core/feeds.ts";
-import { Registry } from "../core/registry.ts";
-import { Server } from "../core/server.ts";
+import { DecisionModel } from "../decision/decision-model.ts";
+import { Feeds } from "../watch/feeds.ts";
+import { Registry } from "../source/registry.ts";
+import { Server } from "../server/server.ts";
 import { GitlabAuth } from "../gitlab/auth.ts";
 import { GitlabClient } from "../gitlab/client.ts";
-import { Gitlab } from "../gitlab/integration.ts";
+import { Gitlab } from "../gitlab/source.ts";
 import { GitlabSocket } from "../gitlab/socket.ts";
-import { isName, type Name } from "../harness/index.ts";
+import { isName, type Name } from "../harness/catalog.ts";
 import { LarkAuth } from "../lark/auth.ts";
-import { Lark } from "../lark/integration.ts";
+import { Lark } from "../lark/source.ts";
 import { LarkSocket } from "../lark/socket.ts";
 import { directories, ensureDirectory, lockPath, socketPath } from "./paths.ts";
 
@@ -292,11 +292,11 @@ const LarkLayers = LarkSocket.layer.pipe(Layer.provideMerge(LarkAuth.layer));
 const GitlabLayers = Layer.merge(GitlabSocket.layer, GitlabClient.layer).pipe(
   Layer.provideMerge(GitlabAuth.layer),
 );
-const IntegrationLayers = Layer.merge(LarkLayers, GitlabLayers).pipe(
+const SourceLayers = Layer.merge(LarkLayers, GitlabLayers).pipe(
   Layer.provide(FetchHttpClient.layer),
 );
-const RegistryLayer = Registry.layer(Effect.all([Lark.integration, Gitlab.integration])).pipe(
-  Layer.provide(IntegrationLayers),
+const RegistryLayer = Registry.layer(Effect.all([Lark.source, Gitlab.source])).pipe(
+  Layer.provide(SourceLayers),
 );
 const CoreLayer = Layer.mergeAll(Feeds.layer, DecisionModel.layer, RegistryLayer);
 

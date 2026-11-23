@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import { type EventKind, type Event, Rejected } from "../core/integration.ts";
+import { type EventType, type Event, Rejected } from "../source/contract.ts";
 import { GitlabSocket, type ChannelIdentifier } from "./socket.ts";
 import { NoteableType, type TargetSupport } from "./target.ts";
 import { subscribeToChannel } from "./channel.ts";
@@ -36,7 +36,7 @@ const description = `Watch for note changes on a merge request or issue. The rec
 
 Arm it from a merge request or issue link, or a shorthand such as group/project!123 or group/project#123, by passing target. The payload carries projectId, noteableType, and noteableIid for the notes endpoint.
 
-Script recipe. Before you arm, read the newest notes to choose \`START\`. Use GET /projects/:projectId/merge_requests/:iid/notes with sort=desc, order_by=created_at, and per_page=20, or the issues endpoint. Set \`START\` to the newest non-system note's id, or 0 when that returns none. The recipe reads the newest 20 notes and keeps the highest comment id in tools.watch.state. A signal with nothing newer than START or the stored id returns null. More than 20 comments between two signals skips the older ones.
+Code recipe. Before you arm, read the newest notes to choose \`START\`. Use GET /projects/:projectId/merge_requests/:iid/notes with sort=desc, order_by=created_at, and per_page=20, or the issues endpoint. Set \`START\` to the newest non-system note's id, or 0 when that returns none. The recipe reads the newest 20 notes and keeps the highest comment id in tools.watch.state. A signal with nothing newer than START or the stored id returns null. More than 20 comments between two signals skips the older ones.
 
 ${notesRecipe}`;
 
@@ -65,7 +65,7 @@ interface NotesEventOptions {
   readonly target: TargetSupport | undefined;
 }
 
-export const makeNotesEvent = (options: NotesEventOptions): EventKind => ({
+export const makeNotesEvent = (options: NotesEventOptions): EventType => ({
   name: "noteable.notes_changed",
   description,
   payload,

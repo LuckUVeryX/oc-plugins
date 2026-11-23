@@ -7,24 +7,24 @@ import {
 } from "effect/http";
 import {
   Rejected,
-  type IntegrationError,
+  type SourceError,
   ToolError,
   type Tool,
   Unavailable,
-} from "../core/integration.ts";
-import { GetInput, makeTool } from "../core/tool.ts";
+} from "../source/contract.ts";
+import { GetInput, makeTool } from "../source/tool.ts";
 import { GitlabAuth } from "./auth.ts";
 import type { GitlabIdentity } from "./token.ts";
 
 export interface Interface {
-  readonly get: (input: GetInput) => Effect.Effect<Schema.Json, IntegrationError>;
+  readonly get: (input: GetInput) => Effect.Effect<Schema.Json, SourceError>;
 }
 
 export class Service extends Context.Service<Service, Interface>()("@events-mcp/GitlabClient") {}
 
 interface GitlabClientOptions {
   readonly host: string;
-  readonly identity: Effect.Effect<GitlabIdentity, IntegrationError>;
+  readonly identity: Effect.Effect<GitlabIdentity, SourceError>;
   readonly http?: HttpClient.HttpClient | undefined;
 }
 
@@ -33,7 +33,7 @@ const ErrorBody = Schema.Union([
   Schema.Struct({ error: Schema.String }),
 ]);
 
-const invalidPath = (reason: string): IntegrationError =>
+const invalidPath = (reason: string): SourceError =>
   new Rejected({ message: `Invalid GitLab REST path. ${reason}` });
 
 const validPath = (path: string): boolean =>
@@ -48,7 +48,7 @@ const errorBody = (body: string): string => {
   });
 };
 
-const statusError = (status: number, label: string, body: string): IntegrationError => {
+const statusError = (status: number, label: string, body: string): SourceError => {
   const detail = errorBody(body);
   const message = `GitLab HTTP ${status} on ${label}${detail === "" ? "" : `: ${detail}`}`;
   return status === 408 || status === 429 || status >= 500
@@ -87,7 +87,7 @@ export const makeGitlabClient = (options: GitlabClientOptions): Effect.Effect<In
     const run = (
       request: HttpClientRequest.HttpClientRequest,
       label: string,
-    ): Effect.Effect<Schema.Json, IntegrationError> =>
+    ): Effect.Effect<Schema.Json, SourceError> =>
       Effect.gen(function* () {
         const response = yield* http
           .execute(request)
@@ -144,7 +144,7 @@ export const layer = Layer.effect(
 export const makeGetTool = (client: Interface): Tool =>
   makeTool({
     description:
-      "Read GitLab REST data with the token's permissions, for example to find the database id behind a merge request or to read notes before arming a watch or from inside the script. path starts with /, stays under /api/v4, and carries no query string. Pass parameters in query. Percent-encode a project path as /projects/group%2Fproject. Returns the JSON body.",
+      "Read GitLab REST data with the token's permissions, for example to find the database id behind a merge request or to read notes before arming a watch, or from inside its code. path starts with /, stays under /api/v4, and carries no query string. Pass parameters in query. Percent-encode a project path as /projects/group%2Fproject. Returns the JSON body.",
     input: GetInput,
     run: (input) =>
       client.get(input).pipe(Effect.mapError((error) => new ToolError({ message: error.message }))),

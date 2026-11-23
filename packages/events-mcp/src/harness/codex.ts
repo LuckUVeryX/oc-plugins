@@ -1,8 +1,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Config, Effect, Schema } from "effect";
-import { AppServer } from "../codex/app-server.ts";
-import { instructions, listEventsInstructions, WakeFailed, type Tools } from "../core/harness.ts";
+import { AppServer } from "./codex-app-server.ts";
+import { instructions, listEventsInstructions, WakeFailed, type Tools } from "./harness.ts";
 
 const ThreadId = Schema.Struct({
   threadId: Schema.String.annotate({
@@ -42,14 +42,14 @@ export const harness: Tools = {
       const path = yield* socketPath;
       yield* AppServer.checkThread(path, threadId);
     }),
-  wake: (_, { session, text, watchId }) =>
+  wake: (_, { session, text, id }) =>
     Effect.gen(function* () {
       const { threadId } = yield* threadIdOf(session);
       const path = yield* socketPath;
       yield* AppServer.queue(path, {
         threadId,
         text,
-        clientUserMessageId: `${watchId}:${crypto.randomUUID()}`,
+        clientUserMessageId: `${id}:${crypto.randomUUID()}`,
       });
     }),
 };
