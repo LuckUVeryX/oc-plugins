@@ -301,6 +301,30 @@ test("the watch tool returns the params a target resolved to", async () => {
   }
 });
 
+test("watches shows the params a target resolved to in OpenCode", async () => {
+  const { integration, socket } = await setup();
+  const h = await connect({ integrations: [integration] });
+  try {
+    h.stream(
+      { watchId: "by-target", target: "group/project!32", ...scripts },
+      "gitlab.noteable.notes_changed",
+    );
+    h.stream({ watchId: "by-params", params: issue, ...scripts }, "gitlab.noteable.notes_changed");
+    await vi.waitFor(() => expect(socket.identifiers).toHaveLength(2));
+    const listed = await h.call("watches");
+    const byId = new Map(
+      listed.watches.map((watch: { watchId: string }) => [watch.watchId, watch]),
+    );
+    expect(byId.get("by-target")).toMatchObject({
+      arguments: { target: "group/project!32" },
+      params: mergeRequest,
+    });
+    expect(byId.get("by-params")).not.toHaveProperty("params");
+  } finally {
+    await h.close();
+  }
+});
+
 test("list_events offers target only where the event can resolve one", async () => {
   const { integration } = await setup();
   const h = await connect({ integrations: [integration], harness: "claude" });
