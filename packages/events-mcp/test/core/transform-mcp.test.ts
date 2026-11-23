@@ -95,7 +95,7 @@ test("transforms filtered events independently of raw watches and stops delivery
   const slow = h.notifications.filter((n) => n.type === "active")[2]?.id;
   await publish("slow-event");
   await observed.entered.promise;
-  await h.call("stop_watch", { watchId: "slow" });
+  await h.call("unwatch", { watchId: "slow" });
   expect(await observed.exited.promise).toBe(true);
   await publish("after-stop");
   await vi.waitFor(() =>

@@ -137,7 +137,7 @@ TOML
     printf '#!/bin/sh\nset -eu\n'
     printf '. %s\n' "$(quote "$bin/env")"
     printf 'MCP_PROTOCOL_NEGOTIATION=legacy\nexport MCP_PROTOCOL_NEGOTIATION\n'
-    printf 'exec claude --strict-mcp-config --mcp-config %s --dangerously-load-development-channels server:events-mcp --allowedTools mcp__events-mcp__list_events mcp__events-mcp__watch mcp__events-mcp__list_watches mcp__events-mcp__gitlab_get mcp__events-mcp__stop_watch "$@"\n' "$(quote "$work/.mcp.json")"
+    printf 'exec claude --strict-mcp-config --mcp-config %s --dangerously-load-development-channels server:events-mcp --allowedTools mcp__events-mcp__list_events mcp__events-mcp__watch mcp__events-mcp__watches mcp__events-mcp__gitlab_get mcp__events-mcp__unwatch "$@"\n' "$(quote "$work/.mcp.json")"
   } >"$bin/claude"
   {
     printf '#!/bin/sh\nset -eu\n'

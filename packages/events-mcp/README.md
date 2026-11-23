@@ -132,7 +132,7 @@ claude --dangerously-load-development-channels server:events-mcp
 
 The channel confirmation appears on every launch during the preview. Without the flag, Claude Code connects to the server but does not register the channel, so no wake arrives. The flag is ignored in `claude -p` and in the Agent SDK, so a headless session cannot receive wakes.
 
-Claude Code queues channel messages while it is busy and delivers them together on the next turn. It sends no acknowledgement, so use `list_watches` to check that a watch is still armed.
+Claude Code queues channel messages while it is busy and delivers them together on the next turn. It sends no acknowledgement, so use `watches` to check that a watch is still armed.
 
 End every session after you change the config or environment.
 
@@ -209,7 +209,7 @@ Each event passes filter → prepare → transform, and transform's string wakes
 
 A watch stays open until it expires or you stop it. Every event that passes filter and prepare wakes you.
 
-The wake text carries the string transform returned. In Claude Code it arrives as a channel message from the server, and in Codex as a new user turn in the same thread. To stop a watch early, call `stop_watch({ "watchId": "..." })`. `list_watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again. If a watch stops with `<step> failed`, fix that step and arm a new watch.
+The wake text carries the string transform returned. In Claude Code it arrives as a channel message from the server, and in Codex as a new user turn in the same thread. To stop a watch early, call `unwatch({ "watchId": "..." })`. `watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again. If a watch stops with `<step> failed`, fix that step and arm a new watch.
 
 Each script is at most 64 KB, and both see `input.event = { eventId, timestamp, data }`. The event `data` is the raw integration payload.
 
@@ -408,7 +408,7 @@ return JSON.stringify(input.prepared);
 | A watch disappears without a stop message                         | OpenCode reloaded, restarted, or unloaded the idle location, or the Claude Code or Codex session exited. For OpenCode, set `location_idle_timeout` to `false` and arm a new watch.                                                                                                   |
 | A watch stops with a timeout                                      | The event exceeded the 120-second limit for prepare and transform together. Inspect the named step or shorten the work.                                                                                                                                                              |
 | A watch stops with "Watch state exceeds 65536 bytes"              | Prepare stores too much in `tools.watch.state`. Keep less, or derive it again on each event.                                                                                                                                                                                         |
-| Memory grows over time                                            | Watches and their buffers live in one long-running hub process, and buffers are unbounded. Run `list_watches` and stop unused watches.                                                                                                                                               |
+| Memory grows over time                                            | Watches and their buffers live in one long-running hub process, and buffers are unbounded. Call `watches`, then `unwatch` the ones you no longer need.                                                                                                                               |
 
 ### Update
 
