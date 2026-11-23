@@ -5,10 +5,9 @@ export class Invalid extends Schema.TaggedError<Invalid>()("Arguments.Invalid", 
   message: Schema.String,
 }) {}
 
-export const WatchId = Schema.NonEmptyString.pipe(Schema.brand("WatchId"));
-export type WatchId = typeof WatchId.Type;
+const WatchId = Schema.NonEmptyString.pipe(Schema.brand("WatchId"));
 
-export const WatchArguments = Schema.Struct({
+const WatchArguments = Schema.Struct({
   watchId: WatchId,
   target: Schema.optionalKey(Schema.NonEmptyString),
   script: Schema.String,
@@ -17,14 +16,14 @@ export const WatchArguments = Schema.Struct({
   ),
 });
 
-export const watchIdProperty = {
+const watchIdProperty = {
   type: "string",
   minLength: 1,
   description:
     "Your name for this watch, unique among open watches. The `watches` tool lists it, and `unwatch` takes it.",
 };
 
-export const scriptProperty = (toolPaths: ReadonlyArray<string>) => {
+const scriptProperty = (toolPaths: ReadonlyArray<string>) => {
   const tools = [
     ...toolPaths,
     "tools.watch.state.get",
@@ -37,27 +36,29 @@ export const scriptProperty = (toolPaths: ReadonlyArray<string>) => {
   };
 };
 
-export const expiresInSecondsProperty = (defaultExpiresInSeconds: number) => ({
+const expiresInSecondsProperty = (defaultExpiresInSeconds: number) => ({
   type: "integer",
   minimum: 1,
   description: `How long the watch stays open, in seconds. When it elapses the watch closes and sends nothing more. Defaults to ${defaultExpiresInSeconds} seconds.`,
 });
 
+/** The JSON Schema for one watch's arguments, without the event name. */
 export const inputSchemaDocument = (options: {
-  readonly target?: string | undefined;
+  readonly target: { readonly description: string; readonly required: boolean } | undefined;
   readonly toolPaths: ReadonlyArray<string>;
   readonly defaultExpiresInSeconds: number;
-}): Record<string, unknown> => ({
+}) => ({
   type: "object",
   properties: {
     watchId: watchIdProperty,
     ...(options.target === undefined
       ? {}
-      : { target: { type: "string", minLength: 1, description: options.target } }),
+      : { target: { type: "string", minLength: 1, description: options.target.description } }),
     script: scriptProperty(options.toolPaths),
     expiresInSeconds: expiresInSecondsProperty(options.defaultExpiresInSeconds),
   },
-  required: options.target === undefined ? ["watchId", "script"] : ["watchId", "target", "script"],
+  required:
+    options.target?.required === true ? ["watchId", "target", "script"] : ["watchId", "script"],
   additionalProperties: false,
 });
 

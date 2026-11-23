@@ -66,3 +66,21 @@ test("a failed watch wakes the session, and unwatch does not", async () => {
     await h.close();
   }
 });
+
+test("a watch with an open watchId fails and leaves the first watch open", async () => {
+  const h = await connect({ harness: "claude" });
+  try {
+    const watch = { event: "lark.im.message.receive_v1", watchId: "taken", script: "return null" };
+    await h.call("watch", watch);
+    const second = await h.callRaw("watch", watch);
+    expect(second).toEqual({
+      isError: true,
+      text: "watchId is already active; choose another ID or stop the watch",
+    });
+    expect(
+      (await h.call("watches")).watches.map((open: { watchId: string }) => open.watchId),
+    ).toEqual(["taken"]);
+  } finally {
+    await h.close();
+  }
+});

@@ -31,8 +31,7 @@ interface WatchRunOptions {
   readonly ended: Deferred.Deferred<string>;
   readonly script: RunScript;
   readonly notify: (notification: Notification) => Effect.Effect<void>;
-  /** Succeeds with undefined once the feed is subscribed, or with the reason the watch ended before that. */
-  readonly ready?: Deferred.Deferred<string | undefined, IntegrationError> | undefined;
+  readonly onSubscribed?: Effect.Effect<void> | undefined;
 }
 
 const messageOf = (cause: Cause.Cause<unknown>): string => {
@@ -97,7 +96,7 @@ export const runWatch = Effect.fn("Watch.run")(function* (
       eventKind: options.eventKind,
       params: options.params,
     });
-    if (options.ready) yield* Deferred.succeed(options.ready, undefined);
+    if (options.onSubscribed) yield* options.onSubscribed;
     const firstHealthAnnounced = yield* Deferred.make<void>();
     return yield* Effect.raceFirst(
       feed.events.pipe(
