@@ -15,6 +15,7 @@ const isScalar = Schema.is(Scalar);
 export const WatchArguments = Schema.Struct({
   watchId: WatchId,
   params: Schema.optionalKey(Schema.JsonObject),
+  target: Schema.optionalKey(Schema.NonEmptyString),
   filter: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
   prepare: Schema.String,
   transform: Schema.String,
@@ -112,6 +113,7 @@ export const filterProperty = (options: {
 export const inputSchemaDocument = (options: {
   readonly filter: CompiledFilter;
   readonly params: JsonSchema.JsonSchema;
+  readonly target?: string | undefined;
   readonly toolPaths: ReadonlyArray<string>;
   readonly defaultExpiresInSeconds: number;
 }): Record<string, unknown> => {
@@ -134,6 +136,15 @@ export const inputSchemaDocument = (options: {
             ? "This event takes no params."
             : "Selects the resource to watch. The schema lists the fields."),
       },
+      ...(options.target === undefined
+        ? {}
+        : {
+            target: {
+              type: "string",
+              minLength: 1,
+              description: options.target,
+            },
+          }),
       filter: filterProperty({ properties }),
       prepare: prepareProperty(options.toolPaths),
       transform: transformProperty,
@@ -164,7 +175,8 @@ export const decodeArguments = (options: {
     }).pipe(Effect.mapError((issue) => new Invalid({ message: issue.message })));
     const {
       watchId,
-      params = {},
+      params,
+      target,
       filter: raw = {},
       prepare,
       transform,
@@ -194,7 +206,7 @@ export const decodeArguments = (options: {
         );
       filter.push([leaf.segments, values]);
     }
-    return { filter, params, prepare, transform, watchId, expiresInSeconds };
+    return { filter, params, target, prepare, transform, watchId, expiresInSeconds };
   });
 
 export const matchesFilter = (filter: Filter, payload: unknown): boolean =>

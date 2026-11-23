@@ -14,6 +14,7 @@ import { GitlabClient, GraphqlResult, graphqlFailure, makeGetTool } from "./clie
 import { GitlabAuth } from "./auth.ts";
 import { globalIdHint, readNoteable } from "./noteable.ts";
 import { makeNotesEvent } from "./notes.ts";
+import { targetFor, type TargetSupport } from "./target.ts";
 import { subscribeToChannel } from "./channel.ts";
 import type { GitlabIdentity } from "./token.ts";
 
@@ -101,12 +102,14 @@ const checkUser = (
 const graphqlEvent = (options: {
   readonly event: GitlabEvent;
   readonly socket: GitlabSocket.Interface;
+  readonly target: TargetSupport | undefined;
   readonly checkAccess: (params: Schema.JsonObject) => Effect.Effect<void, IntegrationError>;
 }): EventKind => ({
   name: options.event.name,
   description: options.event.description,
   params: options.event.params,
   payload: options.event.payload,
+  target: options.target,
   subscribe: (params) =>
     Effect.gen(function* () {
       yield* options.checkAccess(params);
@@ -144,21 +147,35 @@ export const integration: Effect.Effect<
         globalIdHint("merge_request"),
       ).pipe(Effect.asVoid);
   });
+  const supportFor = (event: string) =>
+    Effect.gen(function* () {
+      const support = targetFor({ event, host: identity.host, client });
+      if (support !== undefined) return support;
+      if (event === "userMergeRequestUpdated") return undefined;
+      return yield* Effect.die(new Error(`No target table entry for GitLab event ${event}`));
+    });
   return {
     name: Schema.decodeUnknownSync(IntegrationName)("gitlab"),
     tools: { get: makeGetTool(client) },
     events: [
-      ...catalog.events.map((event) =>
-        graphqlEvent({
-          event,
-          socket,
-          checkAccess,
+      ...(yield* Effect.forEach(catalog.events, (event) =>
+        Effect.gen(function* () {
+          return graphqlEvent({
+            event,
+            socket,
+            target: yield* supportFor(event.name),
+            checkAccess,
+          });
         }),
-      ),
-      makeNotesEvent({ client, socket }),
+      )),
+      makeNotesEvent({
+        client,
+        socket,
+        target: yield* supportFor("noteable.notes_changed"),
+      }),
     ],
     instructions:
-      "GitLab: read with gitlab_get to find a project, pipeline, or merge request id before arming a watch, or from inside prepare. Most params take a global id, and each param description says how to build it. noteable.notes_changed takes database ids instead.",
+      "GitLab: most events take target. Pass a link or shorthand, and the server reads it into params. list_events shows which events take one. Otherwise read with gitlab_get to find a project, pipeline, or merge request id before arming a watch, or from inside prepare. Most params take a global id, and each param description says how to build it. noteable.notes_changed takes database ids instead.",
   };
 });
 

@@ -3,11 +3,13 @@ import { type EventKind, type Event, Rejected } from "../core/integration.ts";
 import { GitlabSocket, type ChannelIdentifier } from "./socket.ts";
 import { GitlabClient } from "./client.ts";
 import { databaseIdHint, globalIdFor, NoteableType, readNoteable } from "./noteable.ts";
+import type { TargetSupport } from "./target.ts";
 import { subscribeToChannel } from "./channel.ts";
 
 const NotesParams = Schema.Struct({
   projectId: Schema.Int.annotate({
-    description: "Project database id, from the id field of GET /projects/:id.",
+    description:
+      "Project database id, from the id field of GET /projects/:id. Pass target instead to fill all three params.",
   }),
   noteableType: NoteableType.annotate({ description: `"merge_request" or "issue".` }),
   noteableId: Schema.Int.annotate({
@@ -44,7 +46,9 @@ return fresh.length === 0 ? null : { notes: fresh };`;
 
 const description = `Watch for note changes on a merge request or issue. The recipe below wakes only for new non-system notes.
 
-Pass projectId and noteableId as database ids, not iids or global ids, and noteableType as "merge_request" or "issue". GET /projects/:id/merge_requests/:iid returns the merge request's id and project_id, and the issue endpoint does the same.
+Arm it from a merge request or issue link, or a shorthand such as group/project!123 or group/project#123, by passing target. The server reads the noteable and fills the params.
+
+Without a target, pass projectId and noteableId as database ids, not iids or global ids, and noteableType as "merge_request" or "issue". GET /projects/:id/merge_requests/:iid returns the merge request's id and project_id, and the issue endpoint does the same.
 
 Prepare recipe. Before you arm, read the newest notes to choose \`START\`. Use GET /projects/:projectId/merge_requests/:iid/notes with sort=desc, order_by=created_at, and per_page=20, or the issues endpoint. Set \`START\` to the newest non-system note's id, or 0 when that returns none. The recipe reads the newest 20 notes and keeps the highest comment id in tools.watch.state. A signal with nothing newer than START or the stored id returns null. More than 20 comments between two signals skips the older ones.
 
@@ -85,6 +89,7 @@ const params = Schema.toJsonSchemaDocument(NotesParams, { onExcessProperty: "err
 interface NotesEventOptions {
   readonly client: GitlabClient.Interface;
   readonly socket: GitlabSocket.Interface;
+  readonly target: TargetSupport | undefined;
 }
 
 export const makeNotesEvent = (options: NotesEventOptions): EventKind => ({
@@ -92,6 +97,7 @@ export const makeNotesEvent = (options: NotesEventOptions): EventKind => ({
   description,
   params,
   payload,
+  target: options.target,
   subscribe: (input) =>
     Effect.gen(function* () {
       const decoded = yield* Schema.decodeUnknownEffect(NotesParams)(input).pipe(
