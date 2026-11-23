@@ -36,21 +36,21 @@ test("each feed receives an event the other feed also saw", async () => {
   }
 });
 
-test("list_watches exposes each watch's public view without its handles", async () => {
+test("watches exposes each watch's public view without its handles", async () => {
   const h = await connect();
   try {
     h.stream({ watchId: "listed", ...pass });
-    const listed = () => h.call("list_watches");
+    const listed = () => h.call("watches");
     await vi.waitFor(async () => expect((await listed()).watches).toHaveLength(1));
     const [watch] = (await listed()).watches;
     expect(Object.keys(watch).sort()).toEqual([
       "arguments",
-      "eventName",
+      "event",
       "expiresAt",
       "startedAt",
       "watchId",
     ]);
-    expect(watch).toMatchObject({ watchId: "listed", eventName: "lark.im.message.receive_v1" });
+    expect(watch).toMatchObject({ watchId: "listed", event: "lark.im.message.receive_v1" });
   } finally {
     await h.close();
   }

@@ -43,7 +43,7 @@ export interface Tools {
 export type Harness = Events | Tools;
 
 export const liveWatchInstructions =
-  "A watch is live. It sees events from the moment it arms until it expires or you stop it, and nothing older is replayed. Choose a watchId. list_watches shows the arguments of every open watch, and stop_watch ends one early.";
+  "A watch is live. It sees events from the moment it arms until it expires or you stop it, and nothing older is replayed. Choose a watchId. The `watches` tool shows the arguments of every open watch, and `unwatch` ends one early.";
 
 export const listEventsInstructions =
   "Call list_events to see what this server can watch, with each event's arguments and payload. Arm one with the watch tool. The watch runs filter, prepare, and transform in turn, and transform's returned string reaches this session.";

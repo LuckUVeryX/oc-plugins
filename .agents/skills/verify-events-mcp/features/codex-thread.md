@@ -32,7 +32,7 @@ Preconditions:
 
   ```sh
   scripts/tui.sh prompt <<'EOF'
-  Run the shell command: printf %s "$CODEX_THREAD_ID". Then call the events list_events tool, and call its watch tool with watchId codex-verify, event gitlab.ciPipelineStatusesUpdated, params {"projectFullPath": "<project path>"}, filter {"status": ["SUCCESS", "FAILED", "CANCELED"]}, prepare `return input.event.data`, transform `return input.prepared.id`, expiresInSeconds 600, and threadId set to the exact value you printed. Then call list_watches and reply with one line: ARMED-OK <threadId> <expiresAt>. Do nothing else.
+  Run the shell command: printf %s "$CODEX_THREAD_ID". Then call the events list_events tool, and call its watch tool with watchId codex-verify, event gitlab.ciPipelineStatusesUpdated, params {"projectFullPath": "<project path>"}, filter {"status": ["SUCCESS", "FAILED", "CANCELED"]}, prepare `return input.event.data`, transform `return input.prepared.id`, expiresInSeconds 600, and threadId set to the exact value you printed. Then call watches and reply with one line: ARMED-OK <threadId> <expiresAt>. Do nothing else.
   EOF
   ```
 

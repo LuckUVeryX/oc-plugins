@@ -119,7 +119,7 @@ const text = (value: unknown) => ({
 
 interface Watch {
   readonly view: {
-    readonly eventName: string;
+    readonly event: string;
     readonly startedAt: string;
     readonly expiresAt: string;
     readonly arguments: Record<string, unknown>;
@@ -206,7 +206,7 @@ const buildServer = (options: ServerOptions): McpServer => {
       );
 
   server.registerTool(
-    "list_watches",
+    "watches",
     {
       description:
         "List open watches with their event, arguments, and expiry, so you can reuse the arguments or find a watchId. A watch that already ended is not listed.",
@@ -217,7 +217,7 @@ const buildServer = (options: ServerOptions): McpServer => {
       }),
   );
   server.registerTool(
-    "stop_watch",
+    "unwatch",
     {
       description:
         "End a watch early and wait until it has closed. Returns { watchId, stopped }. stopped is false when no open watch has that id.",
@@ -227,7 +227,8 @@ const buildServer = (options: ServerOptions): McpServer => {
           watchId: {
             type: "string",
             minLength: 1,
-            description: "The watch to end, from list_watches or from when you armed it.",
+            description:
+              "The watch to end, as the `watches` tool lists it or as you named it when you armed it.",
           },
         },
         required: ["watchId"],
@@ -291,7 +292,7 @@ const buildServer = (options: ServerOptions): McpServer => {
     });
 
   const newWatch = (watch: {
-    readonly eventName: string;
+    readonly event: string;
     readonly arguments: Record<string, unknown>;
     readonly expiresInSeconds: number;
   }) =>
@@ -301,7 +302,7 @@ const buildServer = (options: ServerOptions): McpServer => {
       const finished = yield* Deferred.make<void>();
       return {
         view: {
-          eventName: watch.eventName,
+          event: watch.event,
           startedAt: new Date(startedAt).toISOString(),
           expiresAt: new Date(startedAt + watch.expiresInSeconds * 1000).toISOString(),
           arguments: watch.arguments,
@@ -409,7 +410,7 @@ const buildServer = (options: ServerOptions): McpServer => {
               });
               const expiresInSeconds = decoded.expiresInSeconds ?? options.defaultExpiresInSeconds;
               const watch = yield* newWatch({
-                eventName: event.name,
+                event: event.name,
                 arguments: input,
                 expiresInSeconds,
               });
@@ -543,7 +544,7 @@ const buildServer = (options: ServerOptions): McpServer => {
           ).pipe(Effect.mapError((error) => invalidParams(error.message)));
           const expiresInSeconds = decoded.expiresInSeconds ?? options.defaultExpiresInSeconds;
           const watch = yield* newWatch({
-            eventName: params.name,
+            event: params.name,
             arguments: params.arguments ?? {},
             expiresInSeconds,
           });
