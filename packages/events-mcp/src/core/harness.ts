@@ -42,18 +42,22 @@ export interface Tools {
 
 export type Harness = Events | Tools;
 
-export const liveWatchInstructions =
+const liveWatchInstructions =
   "A watch is live. It sees events from the moment it arms until it expires or you stop it, and nothing older is replayed. Choose a watchId. The `watches` tool shows the arguments of every open watch, and `unwatch` ends one early.";
 
 export const listEventsInstructions =
   "Call list_events to see what this server can watch, with each event's arguments and payload. Arm one with the watch tool. The watch runs its script on each event, and whatever the script returns, unless null, reaches this session.";
 
-export const commonInstructions = [
-  "When plain code cannot tell whether an event deserves a wake, ask the decision model from the script with tools.events.decide.",
-  'When a watch ends with "script failed", fix the script and arm a new watch.',
-];
-
-export const integrationInstructions = (integrations: ReadonlyArray<Integration>) =>
-  integrations.flatMap((integration) =>
-    integration.instructions === undefined ? [] : [integration.instructions],
-  );
+export const instructions =
+  (options: { readonly arm: string; readonly wakes?: ReadonlyArray<string> }) =>
+  (integrations: ReadonlyArray<Integration>): string =>
+    [
+      options.arm,
+      liveWatchInstructions,
+      ...integrations.flatMap((integration) =>
+        integration.instructions === undefined ? [] : [integration.instructions],
+      ),
+      "When plain code cannot tell whether an event deserves a wake, ask the decision model from the script with tools.events.decide.",
+      'When a watch ends with "script failed", fix the script and arm a new watch.',
+      ...(options.wakes ?? []),
+    ].join("\n\n");

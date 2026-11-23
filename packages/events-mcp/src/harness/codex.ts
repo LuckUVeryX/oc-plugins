@@ -2,25 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Config, Effect, Schema } from "effect";
 import { AppServer } from "../codex/app-server.ts";
-import {
-  commonInstructions,
-  integrationInstructions,
-  listEventsInstructions,
-  liveWatchInstructions,
-  WakeFailed,
-  type Tools,
-} from "../core/harness.ts";
-import type { Integration } from "../core/integration.ts";
-
-const instructions = (integrations: ReadonlyArray<Integration>) =>
-  [
-    listEventsInstructions,
-    liveWatchInstructions,
-    ...integrationInstructions(integrations),
-    ...commonInstructions,
-    'Pass threadId to the watch tool. Read it in this thread\'s shell with printf %s "$CODEX_THREAD_ID" and pass the exact value. Codex does not tell this server which thread it serves, and a watch with a missing or unknown threadId fails.',
-    "Wakes arrive as a new user turn in this thread. They are one-way. Act on the wake in that turn.",
-  ].join("\n\n");
+import { instructions, listEventsInstructions, WakeFailed, type Tools } from "../core/harness.ts";
 
 const ThreadId = Schema.Struct({
   threadId: Schema.String.annotate({
@@ -46,7 +28,13 @@ const threadIdOf = (session: Record<string, Schema.Json>) =>
 export const harness: Tools = {
   _tag: "Tools",
   capabilities: {},
-  instructions,
+  instructions: instructions({
+    arm: listEventsInstructions,
+    wakes: [
+      'Pass threadId to the watch tool. Read it in this thread\'s shell with printf %s "$CODEX_THREAD_ID" and pass the exact value. Codex does not tell this server which thread it serves, and a watch with a missing or unknown threadId fails.',
+      "Wakes arrive as a new user turn in this thread. They are one-way. Act on the wake in that turn.",
+    ],
+  }),
   watchParams: ThreadId,
   check: (session) =>
     Effect.gen(function* () {
