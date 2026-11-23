@@ -23,7 +23,7 @@ import { PassThrough } from "node:stream";
 import { DecisionModel } from "../decision/decision-model.ts";
 import { Feeds } from "../watch/feeds.ts";
 import { Registry } from "../source/registry.ts";
-import { Server } from "../server/server.ts";
+import { Server, type Watch } from "../server/server.ts";
 import { GitlabAuth } from "../gitlab/auth.ts";
 import { GitlabClient } from "../gitlab/client.ts";
 import { Gitlab } from "../gitlab/source.ts";
@@ -161,6 +161,7 @@ interface Hub {
   readonly state: HubState;
   readonly scope: Scope.Scope;
   readonly idle: Deferred.Deferred<void>;
+  readonly watches: Map<string, Watch>;
 }
 
 const idleNow = (hub: Hub) => hub.state.connections === 0 && Queue.sizeUnsafe(hub.queue) === 0;
@@ -187,7 +188,7 @@ const evaluate = (hub: Hub) =>
     yield* Effect.forkIn(hub.scope)(retire(hub));
   });
 
-const connection = (socket: net.Socket) =>
+const connection = (socket: net.Socket, watches: Map<string, Watch>) =>
   Effect.scopedWith((scope) =>
     Effect.gen(function* () {
       const hello = yield* readHello(socket);
@@ -204,7 +205,7 @@ const connection = (socket: net.Socket) =>
 
       const transport = new StdioServerTransport(input, socket);
       const closed = yield* Deferred.make<void>();
-      const server = yield* Server.make({ harness: hello.name, scope });
+      const server = yield* Server.make({ harness: hello.name, scope, watches });
       yield* Effect.acquireRelease(
         Effect.sync(() => {
           const handle = serveStdio(() => server, {
@@ -233,7 +234,7 @@ const serve = (hub: Hub) =>
     while (true) {
       const socket = yield* Queue.take(hub.queue);
       yield* Effect.forkScoped(
-        connection(socket).pipe(
+        connection(socket, hub.watches).pipe(
           Effect.ensuring(
             Effect.gen(function* () {
               hub.state.connections -= 1;
@@ -279,6 +280,7 @@ export const layer: Layer.Layer<Service, never, Dependencies> = Layer.effect(
       state,
       scope: yield* Effect.scope,
       idle,
+      watches: new Map(),
     };
     yield* Effect.forkScoped(serve(hub));
     yield* Effect.forkIn(hub.scope)(

@@ -126,6 +126,7 @@ export async function connect(
     Server.make({
       harness: options.harness ?? "opencode",
       scope,
+      watches: new Map(),
       defaultExpiresInSeconds: options.defaultExpiresInSeconds ?? 60,
       eventTimeoutSeconds: options.eventTimeoutSeconds ?? 30,
     }).pipe(

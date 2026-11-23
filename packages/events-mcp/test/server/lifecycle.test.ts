@@ -75,7 +75,7 @@ test("a watch reusing an open id fails and leaves the first watch open", async (
     const second = await h.callRaw("watch", watch);
     expect(second).toEqual({
       isError: true,
-      text: "id is already active; choose another id or stop the watch",
+      text: "id is already open in this or another session; choose another id",
     });
     expect((await h.call("watches")).watches.map((open: { id: string }) => open.id)).toEqual([
       "taken",

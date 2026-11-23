@@ -114,7 +114,7 @@ No settings are required to start the server. Each source needs its own credenti
 ## Limits
 
 - Everything is in memory. Watches, per-watch state, and the dedup cache live in the hub process. A hub restart starts fresh.
-- A watch belongs to the connection that armed it. When that session disconnects, its watches end. Sessions that stay connected share upstream subscriptions and dedup.
+- Watch ids are shared by every session on the machine. `watches` lists every open watch, and `unwatch` can stop any of them. A watch still ends when the session that armed it disconnects. Sessions that stay connected share upstream subscriptions and dedup.
 - A watch stays open for 3600 seconds unless `expiresInSeconds` says otherwise. One event's code has a 120-second limit, and a watch handles one event at a time, so a slow event delays the ones behind it.
 - Delivery is live only. Events that arrive while no watch is open, or while a connection reconnects, are dropped. The stream reports `cursor: null`, so there is no replay.
 - Duplicate event IDs are dropped within each shared feed. Lark drops events older than an hour.

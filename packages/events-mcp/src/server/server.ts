@@ -38,6 +38,7 @@ interface ServerOptions {
   readonly scope: Scope.Scope;
   readonly registry: Registry.Interface;
   readonly feeds: Feeds.Interface;
+  readonly watches: Map<string, Watch>;
   readonly decide: Decide;
   readonly defaultExpiresInSeconds: number;
   readonly eventTimeoutSeconds: number;
@@ -73,7 +74,7 @@ const text = (value: unknown) => ({
   ],
 });
 
-interface Watch {
+export interface Watch {
   readonly view: {
     readonly event: string;
     readonly startedAt: string;
@@ -138,7 +139,7 @@ const buildServer = (options: ServerOptions): McpServer => {
       ),
       runOptions,
     );
-  const watches = new Map<string, Watch>();
+  const { watches } = options;
   const toolPaths = options.registry.sources.flatMap((source) =>
     Object.keys(source.tools).map((name) => `tools.${source.name}.${name}`),
   );
@@ -174,7 +175,7 @@ const buildServer = (options: ServerOptions): McpServer => {
     "watches",
     {
       description:
-        "List open watches with their event, arguments, and expiry, so you can reuse the arguments or find a watch by its id. A watch armed with target also lists the params the target resolved to. A watch that already ended is not listed.",
+        "List every open watch from every session with its event, arguments, and expiry, so you can reuse the arguments or find a watch by its id. A watch armed with target also lists the params the target resolved to. A watch that already ended is not listed.",
     },
     () =>
       text({
@@ -284,7 +285,7 @@ const buildServer = (options: ServerOptions): McpServer => {
           if (watches.has(decoded.id))
             return Effect.fail(
               new Invalid({
-                message: "id is already active; choose another id or stop the watch",
+                message: "id is already open in this or another session; choose another id",
               }),
             );
           watches.set(decoded.id, watch);
@@ -482,6 +483,8 @@ export const make = (options: {
   readonly harness: HarnessName;
   /** Owns every watch this connection arms; closing it ends them. */
   readonly scope: Scope.Scope;
+  /** Every open watch in the hub, shared by all connections. */
+  readonly watches: Map<string, Watch>;
   readonly defaultExpiresInSeconds?: number;
   readonly eventTimeoutSeconds?: number;
 }): Effect.Effect<McpServer, never, Registry.Service | Feeds.Service | DecisionModel.Service> =>
@@ -494,6 +497,7 @@ export const make = (options: {
       harness: get(options.harness),
       config,
       scope: options.scope,
+      watches: options.watches,
       registry,
       feeds,
       decide: decisionModel.decide,

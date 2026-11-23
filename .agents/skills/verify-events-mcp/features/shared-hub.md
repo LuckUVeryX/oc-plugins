@@ -6,7 +6,7 @@ Every harness session for this user connects to one hub, so one Lark WebSocket a
 
 - `hub-single` starts one hub per hub directory and binds one socket.
 - `hub-share` serves several simultaneous sessions from that one process.
-- `hub-forward` gives every session its own watches, and `watches` lists only that session's.
+- `hub-forward` serves every session from one list of watches, so `watches` in any session lists the watches of all of them.
 - `hub-exit` ends the hub after the last session closes.
 - `hub-log` records the listen line with the hub pid, which is what cleanup and proof read.
 
@@ -27,7 +27,7 @@ Preconditions:
 - **Open two sessions.** Run `bun scripts/mcp-client.mjs hub --sessions 2`. It opens two stdio connections with the `opencode` harness against the run's hub, lists events in each, and writes `shared-hub.json`.
 - **One process.** The output has `"hubPids": ["<pid>"]`, one element. Two pids, or a pid from another run's log, means sessions did not share a hub.
 - **Two live sessions.** The output has `"concurrent": 2` and two connection ids in `openConnections`. `opened` is larger because the client opens a short negotiation connection first; only the open set counts.
-- **Same catalogue.** Each entry in `sessions` reads `{"session": <n>, "events": 22, "watches": 0}`. Both counts are per session.
+- **Same catalogue.** Each entry in `sessions` reads `{"session": <n>, "events": 22, "watches": 0}`. `watches` counts the whole hub, so it is 0 only while no session has a watch open.
 - **Evidence.** `shared-hub.json` holds the hub dir, `sessions`, the pids, `reusedHub`, `opened`, `concurrent`, the open connections, and the log path. Copy `hub.log` through cleanup, which keeps the `listening at ... as pid <pid>` line and each `connection opened`.
 - **Exit.** Run `scripts/run.sh cleanup "$VERIFY_RUN_DIR"`. With no connections left, the hub logs `no connections, exiting` and stops.
 
