@@ -15,7 +15,7 @@ import { GitlabAuth } from "./auth.ts";
 import { globalIdHint, readNoteable } from "./noteable.ts";
 import { makeNotesEvent } from "./notes.ts";
 import { subscribeToChannel } from "./channel.ts";
-import type { GitlabIdentity as TokenIdentity } from "./token.ts";
+import type { GitlabIdentity } from "./token.ts";
 
 const catalog = decodeGitlabCatalog(generated);
 
@@ -87,7 +87,7 @@ const checkProject = (
 };
 
 const checkUser = (
-  identity: TokenIdentity,
+  identity: GitlabIdentity,
   userId: string,
 ): Effect.Effect<void, IntegrationError> => {
   if (databaseId(userId) === String(identity.userId)) return Effect.void;
