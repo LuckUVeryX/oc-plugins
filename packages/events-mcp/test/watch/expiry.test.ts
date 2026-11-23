@@ -27,7 +27,7 @@ it.effect("keeps a watch for its chosen expiry", () =>
           expiresInSeconds,
           eventTimeoutSeconds: 30,
           ended,
-          script: () => Effect.succeed(null),
+          runCode: () => Effect.succeed(null),
           notify: (n) => Ref.update(seen, (all) => [...all, n.type]),
         }).pipe(
           Effect.provideService(
@@ -68,7 +68,7 @@ it.effect("stop and expiry end a watch whose feed never becomes ready", () =>
           expiresInSeconds,
           eventTimeoutSeconds: 30,
           ended,
-          script: () => Effect.succeed(null),
+          runCode: () => Effect.succeed(null),
           notify: (n) => Ref.update(seen, (all) => [...all, n.type]),
         }).pipe(
           Effect.provideService(Feeds.Service, Feeds.Service.of({ acquire: () => Effect.never })),

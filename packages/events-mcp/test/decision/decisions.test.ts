@@ -37,7 +37,7 @@ const answer = {
   native: { fixture: true },
 };
 
-test("decide sends its input and surfaces model failures through the script", async () => {
+test("decide sends its input and surfaces model failures through the code", async () => {
   const bodies: unknown[] = [];
   let fail = false;
   const http = Bun.serve({
@@ -64,7 +64,7 @@ test("decide sends its input and surfaces model failures through the script", as
     try {
       h.stream({
         id: "model-failure",
-        script: `await tools.events.decide({ questions: ${JSON.stringify(questions)} }); return "ok"`,
+        code: `await tools.events.decide({ questions: ${JSON.stringify(questions)} }); return "ok"`,
       });
       await vi.waitFor(() => expect(h.notifications.some((n) => n.type === "active")).toBe(true));
       await h.publish({ eventId: "model-event", payload: {} });
@@ -72,7 +72,7 @@ test("decide sends its input and surfaces model failures through the script", as
         expect(h.notifications.some((n) => n.type === "terminated")).toBe(true),
       );
       const reason = h.notifications.find((n) => n.type === "terminated")?.reason;
-      expect(reason).toContain("script failed on model-event:");
+      expect(reason).toContain("code failed on model-event:");
       expect(reason).toContain("provider down");
     } finally {
       await h.close();

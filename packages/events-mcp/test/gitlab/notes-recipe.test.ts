@@ -79,7 +79,7 @@ test("the notes recipe delivers the first new comment after START and nothing el
       {
         id: "comments",
         target: "group/project!32",
-        script: recipe,
+        code: recipe,
         expiresInSeconds: 60,
       },
       "gitlab.noteable.notes_changed",

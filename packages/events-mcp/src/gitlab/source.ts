@@ -128,7 +128,7 @@ export const source: Effect.Effect<
       makeNotesEvent({ socket, target: yield* supportFor("noteable.notes_changed") }),
     ],
     instructions:
-      "GitLab: every event except userMergeRequestUpdated takes a target, a link or shorthand such as group/project!123. The server reads the resource to check access, and `watches` lists the params it resolved to. Read more with gitlab_get, before arming a watch or from inside the script.",
+      "GitLab: every event except userMergeRequestUpdated takes a target, a link or shorthand such as group/project!123. The server reads the resource to check access, and `watches` lists the params it resolved to. Read more with gitlab_get, before arming a watch or from inside its code.",
   };
 });
 

@@ -26,7 +26,7 @@ const reply = (socket: WebSocket, frame: Frame, body: Record<string, unknown>) =
 const watchParams = {
   event: "lark.im.message.receive_v1",
   id: "pipeline",
-  script: "return 'wake'",
+  code: "return 'wake'",
 };
 
 const fakeCodex = async (options: { failFirstAdd?: boolean } = {}) => {
@@ -117,14 +117,14 @@ const codexConnect = (home: string) =>
     config: ConfigProvider.fromUnknown({ CODEX_HOME: home }),
   });
 
-test("a watch wakes the given Codex thread with one queue add carrying the script result", async () => {
+test("a watch wakes the given Codex thread with one queue add carrying the code result", async () => {
   await withCodex(async (codex) => {
     const h = await codexConnect(codex.home);
     try {
       const armed = await h.call("watch", {
         ...watchParams,
         threadId: "thread-1",
-        script: "return `wake: ${input.event.data.message.chat_id}`",
+        code: "return `wake: ${input.event.data.message.chat_id}`",
       });
       expect(armed.id).toBe("pipeline");
 

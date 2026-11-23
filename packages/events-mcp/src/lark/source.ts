@@ -32,7 +32,7 @@ export const source: Effect.Effect<Source, never, LarkAuth.Service | LarkSocket.
       tools: { get: makeGetTool(auth) },
       events,
       instructions:
-        "Lark: read with lark_get to find a chat, message, or user id before arming a watch, or from inside the script.",
+        "Lark: read with lark_get to find a chat, message, or user id before arming a watch, or from inside its code.",
     };
   });
 

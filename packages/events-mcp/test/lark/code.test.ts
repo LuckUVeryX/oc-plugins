@@ -2,7 +2,7 @@ import { Effect, Schema } from "effect";
 import { expect, test, vi } from "vitest";
 import { DecisionModel } from "../../src/decision/decision-model.ts";
 import { makeGetTool } from "../../src/lark/get.ts";
-import { makeRunScript, makeWatchState } from "../../src/script/script.ts";
+import { makeRunCode, makeWatchState } from "../../src/code/code.ts";
 import { SourceName } from "../../src/source/contract.ts";
 import { connect, unusedDecide } from "../support.ts";
 
@@ -23,7 +23,7 @@ async function terminated(h: Awaited<ReturnType<typeof connect>>) {
   return h.notifications.find((n) => n.type === "terminated")?.reason;
 }
 
-test("a script wakes with what decide answers", async () => {
+test("a watch's code wakes with what decide answers", async () => {
   const calls: Array<DecisionModel.DecideInput> = [];
   const h = await connect({
     decide: (input) => {
@@ -34,11 +34,11 @@ test("a script wakes with what decide answers", async () => {
   try {
     h.stream({
       id: "decided",
-      script: `if (input.event.eventId === "drop") return null; const { answers } = await tools.events.decide({ questions: ${JSON.stringify(questions)}, input: [{ type: "json", value: { parent: "memes" } }] }); return answers[0].name`,
+      code: `if (input.event.eventId === "drop") return null; const { answers } = await tools.events.decide({ questions: ${JSON.stringify(questions)}, input: [{ type: "json", value: { parent: "memes" } }] }); return answers[0].name`,
     });
     h.stream({
       id: "without-decide-call",
-      script: 'return "plain"',
+      code: 'return "plain"',
     });
     await active(h, 2);
     await h.publish({ eventId: "drop", payload: {} });
@@ -70,12 +70,12 @@ test("Lark failure stops the watch without leaking content to stderr", async () 
   try {
     h.stream({
       id: "scope",
-      script: 'return await tools.lark.get({path:"/im/v1/messages"})',
+      code: 'return await tools.lark.get({path:"/im/v1/messages"})',
     });
     await active(h);
     await h.publish({ eventId: "scope-event", payload: { text: "private message" } });
     expect(await terminated(h)).toContain(
-      "script failed on scope-event: ToolFailure: Lark API 99991672: fake secret scope message",
+      "code failed on scope-event: ToolFailure: Lark API 99991672: fake secret scope message",
     );
     expect((await h.call("watches")).watches).toEqual([]);
     const output = JSON.stringify(log.mock.calls);
@@ -109,13 +109,13 @@ test("timeout aborts an in-flight Lark request", async () => {
   try {
     h.stream({
       id: "abort-timeout",
-      script: 'return await tools.lark.get({path:"/im/v1/messages"})',
+      code: 'return await tools.lark.get({path:"/im/v1/messages"})',
     });
     await active(h);
     await h.publish({ eventId: "blocked-request", payload: {} });
     await started.promise;
     expect(await terminated(h)).toBe(
-      "script failed on blocked-request: TimeoutError: Operation timed out after '1s'",
+      "code failed on blocked-request: TimeoutError: Operation timed out after '1s'",
     );
     await Promise.race([
       aborted.promise,
@@ -130,8 +130,8 @@ test("timeout aborts an in-flight Lark request", async () => {
 
 test("Lark GET rejects unsafe paths", async () => {
   const request = vi.fn(async () => ({ code: 0, msg: "ok", data: { parent: "memes" } }));
-  const script = (code: string) =>
-    makeRunScript({
+  const run = (code: string) =>
+    makeRunCode({
       code,
       sources: [
         {
@@ -160,7 +160,7 @@ test("Lark GET rejects unsafe paths", async () => {
   ]) {
     await expect(
       Effect.runPromise(
-        script(`return await tools.lark.get({ path: ${JSON.stringify(path)} })`)({
+        run(`return await tools.lark.get({ path: ${JSON.stringify(path)} })`)({
           eventId: "event",
           timestamp: new Date().toISOString(),
           data: {},

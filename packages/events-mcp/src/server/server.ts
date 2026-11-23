@@ -20,9 +20,9 @@ import { isObject } from "effect/Predicate";
 import { decodeArguments, inputSchemaDocument, Invalid } from "./arguments.ts";
 import { Registry } from "../source/registry.ts";
 import { DecisionModel, type Decide } from "../decision/decision-model.ts";
-import { bytes, MAX_SCRIPT_BYTES } from "../limits.ts";
+import { bytes, MAX_CODE_BYTES } from "../limits.ts";
 import type { EventType, SourceError } from "../source/contract.ts";
-import { makeRunScript, makeWatchState } from "../script/script.ts";
+import { makeRunCode, makeWatchState } from "../code/code.ts";
 import { inputJsonSchema } from "../source/tool.ts";
 import { Feeds } from "../watch/feeds.ts";
 import { runWatch, type Notification } from "../watch/watch.ts";
@@ -261,9 +261,9 @@ const buildServer = (options: ServerOptions): McpServer => {
           new Invalid({ message: `Unknown event: ${input.name}; choose a listed event` }),
         );
       const decoded = yield* decodeArguments(input.args);
-      if (bytes(decoded.script) > MAX_SCRIPT_BYTES)
+      if (bytes(decoded.code) > MAX_CODE_BYTES)
         return yield* Effect.fail(
-          new Invalid({ message: `script exceeds ${MAX_SCRIPT_BYTES} bytes; shorten it` }),
+          new Invalid({ message: `code exceeds ${MAX_CODE_BYTES} bytes; shorten it` }),
         );
       const params = yield* resolveParams(event, decoded.target);
       const expiresInSeconds = decoded.expiresInSeconds ?? options.defaultExpiresInSeconds;
@@ -310,8 +310,8 @@ const buildServer = (options: ServerOptions): McpServer => {
               eventTimeoutSeconds: options.eventTimeoutSeconds,
               ended: watch.ended,
               onSubscribed,
-              script: makeRunScript({
-                code: decoded.script,
+              runCode: makeRunCode({
+                code: decoded.code,
                 sources: options.registry.sources,
                 state: yield* makeWatchState,
                 decide: options.decide,
@@ -340,7 +340,7 @@ const buildServer = (options: ServerOptions): McpServer => {
       "watch",
       {
         description:
-          "Arm a watch and return once it is live. Each event the script does not drop reaches this session as the script's result, until the watch expires or you stop it. Read the event's payload from list_events before you write the script.",
+          "Arm a watch and return once it is live. Each event the code does not drop reaches this session as the code's result, until the watch expires or you stop it. Read the event's payload from list_events before you write the code.",
         inputSchema: fromJsonSchema<Record<string, unknown>>(
           watchInputSchema({
             watchParams: harness.watchParams,

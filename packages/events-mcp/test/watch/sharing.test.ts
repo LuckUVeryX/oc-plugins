@@ -22,12 +22,12 @@ test("an event published as the second watch becomes active reaches both watches
       h.notifications.filter((notification) => notification.type === type);
     h.stream({
       id: "first",
-      script: "return input.event.data",
+      code: "return input.event.data",
     });
     await vi.waitFor(() => expect(ofType("active")).toHaveLength(1));
     h.stream({
       id: "second",
-      script: "return input.event.data",
+      code: "return input.event.data",
     });
     await vi.waitFor(() => expect(ofType("event")).toHaveLength(2));
     expect(new Set(ofType("event").map((notification) => notification.id))).toEqual(

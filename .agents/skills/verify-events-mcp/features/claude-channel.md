@@ -15,7 +15,7 @@ An agent in Claude Code arms a watch on GitLab, a pipeline changes, and the wake
 - Start Claude Code with the events-mcp server entry and `MCP_PROTOCOL_NEGOTIATION=legacy`.
 - Launch it with `--dangerously-load-development-channels server:<name>`, where `<name>` is the server entry name (`events-mcp` here), and confirm the development-channel warning.
 - Ask the agent to list events and arm a watch on a GitLab project.
-- Change a pipeline in that project. The wake appears as `← events-mcp: <script result>` and the agent acts on it in a new turn.
+- Change a pipeline in that project. The wake appears as `← events-mcp: <code result>` and the agent acts on it in a new turn.
 
 ## Driving it with tmux + Claude Code
 
@@ -31,7 +31,7 @@ Preconditions:
 
   ```sh
   scripts/tui.sh prompt <<'EOF'
-  Use the events-mcp list_events tool, then the events-mcp watch tool. Arm the watch with id claude-verify, event gitlab.ciPipelineStatusesUpdated, target "<project path>", script `if (!["SUCCESS", "FAILED", "CANCELED"].includes(input.event.data.status)) return null; return input.event.data.id`, expiresInSeconds 600. Then call watches and reply with one line: ARMED-OK <id> <expiresAt> <params as JSON>. Do nothing else.
+  Use the events-mcp list_events tool, then the events-mcp watch tool. Arm the watch with id claude-verify, event gitlab.ciPipelineStatusesUpdated, target "<project path>", code `if (!["SUCCESS", "FAILED", "CANCELED"].includes(input.event.data.status)) return null; return input.event.data.id`, expiresInSeconds 600. Then call watches and reply with one line: ARMED-OK <id> <expiresAt> <params as JSON>. Do nothing else.
   EOF
   ```
 
@@ -52,5 +52,5 @@ Preconditions:
 - Without `MCP_PROTOCOL_NEGOTIATION=legacy` the channel registers nothing and the server logs no wake. The banner then reads that channel messages are unavailable.
 - Claude sends no acknowledgement for a channel message, and it queues messages while busy. `watches` is the only proof that the watch is still live.
 - The composer can show a gray suggestion such as `stop the claude-verify watch`. It is not typed input and does not affect the run.
-- A script that throws stops the watch, and the session gets one last channel message, `Watch <id> ended: script failed on <eventId>: ...`. A script that returns JSON wakes with `JSON.stringify` of it.
+- Code that throws stops the watch, and the session gets one last channel message, `Watch <id> ended: code failed on <eventId>: ...`. Code that returns JSON wakes with `JSON.stringify` of it.
 - The isolated home holds copies of the real `~/.claude.json` and credentials. Cleanup deletes them; never copy the run home into evidence.

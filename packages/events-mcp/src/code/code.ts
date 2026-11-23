@@ -2,10 +2,10 @@ import { CodeMode, Tool } from "@opencode/codemode";
 import { Effect, Record, Ref, Schema } from "effect";
 import { type Decide, DecideInput } from "../decision/decision-model.ts";
 import type { Source, Tool as SourceTool } from "../source/contract.ts";
-import { bytes, MAX_SCRIPT_BYTES } from "../limits.ts";
+import { bytes, MAX_CODE_BYTES } from "../limits.ts";
 import { inputJsonSchema } from "../source/tool.ts";
 
-export class Failed extends Schema.TaggedError<Failed>()("Script.Failed", {
+export class Failed extends Schema.TaggedError<Failed>()("Code.Failed", {
   message: Schema.String,
 }) {}
 
@@ -15,8 +15,8 @@ export type WatchEvent = {
   readonly data: Schema.JsonObject;
 };
 
-/** Runs a watch's script on one event. null drops the event, and a string is the wake text. */
-export type RunScript = (event: WatchEvent) => Effect.Effect<string | null, Failed>;
+/** Runs a watch's code on one event. null drops the event, and a string is the wake text. */
+export type RunCode = (event: WatchEvent) => Effect.Effect<string | null, Failed>;
 
 export class StateTooLarge extends Schema.TaggedError<StateTooLarge>()("WatchState.TooLarge", {
   message: Schema.String,
@@ -33,10 +33,10 @@ export const makeWatchState: Effect.Effect<WatchState> = Effect.gen(function* ()
     get: Ref.get(value),
     set: (next) =>
       Effect.gen(function* () {
-        if (bytes(JSON.stringify(next)) > MAX_SCRIPT_BYTES)
+        if (bytes(JSON.stringify(next)) > MAX_CODE_BYTES)
           return yield* Effect.fail(
             new StateTooLarge({
-              message: `Watch state exceeds ${MAX_SCRIPT_BYTES} bytes; keep the stored JSON smaller`,
+              message: `Watch state exceeds ${MAX_CODE_BYTES} bytes; keep the stored JSON smaller`,
             }),
           );
         yield* Ref.set(value, next);
@@ -46,7 +46,7 @@ export const makeWatchState: Effect.Effect<WatchState> = Effect.gen(function* ()
 });
 
 // Code Mode renders the signature from JSON Schema and passes the raw value to run,
-// so a provider decodes its input once whether the call comes from a script or MCP.
+// so a provider decodes its input once whether the call comes from code or MCP.
 const codeModeTool = (tool: SourceTool) =>
   Tool.make({
     description: tool.description,
@@ -66,7 +66,7 @@ const stateGet = (state: WatchState) =>
 
 const stateSet = (state: WatchState) =>
   Tool.make({
-    description: `Replace this watch's own JSON memory and return the new value. It holds up to ${MAX_SCRIPT_BYTES / 1024} KB and lasts only as long as the watch.`,
+    description: `Replace this watch's own JSON memory and return the new value. It holds up to ${MAX_CODE_BYTES / 1024} KB and lasts only as long as the watch.`,
     input: Schema.Json,
     output: Schema.Json,
     execute: (value) => state.set(value),
@@ -81,12 +81,12 @@ const decideTool = (decide: Decide) =>
     execute: (input) => decide(input),
   });
 
-export const makeRunScript = (options: {
+export const makeRunCode = (options: {
   readonly code: string;
   readonly sources: ReadonlyArray<Source>;
   readonly state: WatchState;
   readonly decide: Decide;
-}): RunScript => {
+}): RunCode => {
   const runtime = CodeMode.make({
     tools: {
       watch: { state: { get: stateGet(options.state), set: stateSet(options.state) } },
@@ -95,7 +95,7 @@ export const makeRunScript = (options: {
       ),
       events: { decide: decideTool(options.decide) },
     },
-    limits: { maxOutputBytes: MAX_SCRIPT_BYTES },
+    limits: { maxOutputBytes: MAX_CODE_BYTES },
   });
   return (event) =>
     Effect.gen(function* () {

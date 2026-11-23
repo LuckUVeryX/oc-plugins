@@ -37,21 +37,20 @@ vi.mock("@opencode/codemode", async (importOriginal) => {
   };
 });
 
-test("a script drops, rewrites, and fails events independently of raw watches", async () => {
+test("a watch's code drops, rewrites, and fails events independently of raw watches", async () => {
   const stdout = vi.spyOn(console, "log").mockImplementation(() => undefined);
   onTestFinished(() => stdout.mockRestore());
   const h = await connect();
   onTestFinished(() => h.close());
-  h.stream({ id: "raw", script: "return input.event.data" });
+  h.stream({ id: "raw", code: "return input.event.data" });
   h.stream({
-    id: "scripted",
-    script:
-      'const { eventId, data } = input.event; if (data.message.chat_id !== "match" || eventId === "suppressed") return null; if (eventId === "failed") throw new Error("failure"); return data.message.chat_id',
+    id: "filtered",
+    code: 'const { eventId, data } = input.event; if (data.message.chat_id !== "match" || eventId === "suppressed") return null; if (eventId === "failed") throw new Error("failure"); return data.message.chat_id',
   });
   await vi.waitFor(() =>
     expect(h.notifications.filter((n) => n.type === "active")).toHaveLength(2),
   );
-  const [raw, scripted] = h.notifications.filter((n) => n.type === "active").map((n) => n.id);
+  const [raw, filtered] = h.notifications.filter((n) => n.type === "active").map((n) => n.id);
   const publish = (eventId: string, chat = "match") =>
     h.publish({ eventId, payload: { message: { chat_id: chat } } });
   await publish("one", "other");
@@ -60,13 +59,13 @@ test("a script drops, rewrites, and fails events independently of raw watches", 
   await publish("failed");
   await publish("sentinel");
   await vi.waitFor(() =>
-    expect(h.notifications.some((n) => n.id === scripted && n.type === "terminated")).toBe(true),
+    expect(h.notifications.some((n) => n.id === filtered && n.type === "terminated")).toBe(true),
   );
   const events = () => h.notifications.filter((n) => n.type === "event");
-  expect(events().filter((n) => n.id === scripted)).toEqual([
+  expect(events().filter((n) => n.id === filtered)).toEqual([
     {
       type: "event",
-      id: scripted,
+      id: filtered,
       data: "match",
       eventId: "two",
       name: "lark.im.message.receive_v1",
@@ -80,9 +79,9 @@ test("a script drops, rewrites, and fails events independently of raw watches", 
   ).toEqual(["one", "two", "suppressed", "failed", "sentinel"]);
   expect(stdout).not.toHaveBeenCalled();
   expect(
-    h.notifications.find((n) => n.id === scripted && n.type === "terminated")?.reason,
-  ).toContain("script failed on failed:");
-  h.stream({ id: "slow", script: "while (true) {}" });
+    h.notifications.find((n) => n.id === filtered && n.type === "terminated")?.reason,
+  ).toContain("code failed on failed:");
+  h.stream({ id: "slow", code: "while (true) {}" });
   await vi.waitFor(() =>
     expect(h.notifications.filter((n) => n.type === "active")).toHaveLength(3),
   );
@@ -95,6 +94,6 @@ test("a script drops, rewrites, and fails events independently of raw watches", 
   await vi.waitFor(() =>
     expect(events().some((n) => n.id === raw && n.eventId === "after-stop")).toBe(true),
   );
-  expect(events().filter((n) => n.id === scripted)).toHaveLength(1);
+  expect(events().filter((n) => n.id === filtered)).toHaveLength(1);
   expect(events().filter((n) => n.id === slow)).toEqual([]);
 });

@@ -95,7 +95,7 @@ test("delivers fresh events once and drops stale events", async () => {
           await h.stream(
             {
               id: "dedup",
-              script: "return input.event.data",
+              code: "return input.event.data",
             },
             "order_paid",
           ).done,
@@ -105,7 +105,7 @@ test("delivers fresh events once and drops stale events", async () => {
         h.stream(
           {
             id: "dedup",
-            script: "return input.event.data",
+            code: "return input.event.data",
           },
           "lark.im.message.receive_v1",
         );

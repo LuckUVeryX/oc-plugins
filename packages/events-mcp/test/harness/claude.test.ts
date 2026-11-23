@@ -12,7 +12,7 @@ test("a watch armed with the watch tool wakes the session on the channel", async
     const armed = await h.call("watch", {
       event: "lark.im.message.receive_v1",
       id: "pipeline",
-      script: "return `wake: ${input.event.data.message.chat_id}`",
+      code: "return `wake: ${input.event.data.message.chat_id}`",
     });
     expect(armed.id).toBe("pipeline");
 

@@ -196,8 +196,7 @@ const watch = async (options) => {
           arguments: {
             id,
             target: project,
-            script:
-              'const { id, status } = input.event.data; if (!["SUCCESS", "FAILED", "CANCELED"].includes(status)) return null; return "pipeline " + id + " status " + status',
+            code: 'const { id, status } = input.event.data; if (!["SUCCESS", "FAILED", "CANCELED"].includes(status)) return null; return "pipeline " + id + " status " + status',
           },
         },
       },

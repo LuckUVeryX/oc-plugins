@@ -12,7 +12,7 @@ import { Feeds } from "../../src/watch/feeds.ts";
 import { runWatch } from "../../src/watch/watch.ts";
 import { connect } from "../support.ts";
 
-const pass = { script: "return input.event.data" };
+const pass = { code: "return input.event.data" };
 
 test("watches exposes each watch's public view without its handles", async () => {
   const h = await connect();
@@ -81,7 +81,7 @@ test("announces active before delivering the first event of a short stream", asy
           expiresInSeconds: 60,
           eventTimeoutSeconds: 30,
           ended: yield* Deferred.make<string>(),
-          script: () => Effect.succeed("delivered"),
+          runCode: () => Effect.succeed("delivered"),
           notify: (n) => Effect.sync(() => types.push(n.type)),
         }).pipe(
           Effect.provideService(

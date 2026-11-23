@@ -10,7 +10,7 @@ const WatchId = Schema.NonEmptyString.pipe(Schema.brand("WatchId"));
 const WatchArguments = Schema.Struct({
   id: WatchId,
   target: Schema.optionalKey(Schema.NonEmptyString),
-  script: Schema.String,
+  code: Schema.String,
   expiresInSeconds: Schema.optionalKey(
     Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
   ),
@@ -23,7 +23,7 @@ const idProperty = {
     "Your name for this watch, unique among open watches. The `watches` tool lists it, and `unwatch` takes it.",
 };
 
-const scriptProperty = (toolPaths: ReadonlyArray<string>) => {
+const codeProperty = (toolPaths: ReadonlyArray<string>) => {
   const tools = [
     ...toolPaths,
     "tools.watch.state.get",
@@ -32,7 +32,7 @@ const scriptProperty = (toolPaths: ReadonlyArray<string>) => {
   ].join(", ");
   return {
     type: "string",
-    description: `JavaScript that runs for each event and decides whether to wake you. Read the payload at input.event.data and its metadata at input.event.eventId and input.event.timestamp. It can await any of ${tools}. Return null to drop the event, or a string or JSON value to wake you with it. JSON is sent as JSON.stringify of the value. The delivered event is capped at ${MAX_EVENT_BYTES} bytes, so return only what the session needs. One event's script has a time limit, and a slow event delays the ones behind it. Wake on every event with \`return input.event.data\`.`,
+    description: `JavaScript that runs for each event and decides whether to wake you. Read the payload at input.event.data and its metadata at input.event.eventId and input.event.timestamp. It can await any of ${tools}. Return null to drop the event, or a string or JSON value to wake you with it. JSON is sent as JSON.stringify of the value. The delivered event is capped at ${MAX_EVENT_BYTES} bytes, so return only what the session needs. One event's code has a time limit, and a slow event delays the ones behind it. Wake on every event with \`return input.event.data\`.`,
   };
 };
 
@@ -54,10 +54,10 @@ export const inputSchemaDocument = (options: {
     ...(options.target === undefined
       ? {}
       : { target: { type: "string", minLength: 1, description: options.target.description } }),
-    script: scriptProperty(options.toolPaths),
+    code: codeProperty(options.toolPaths),
     expiresInSeconds: expiresInSecondsProperty(options.defaultExpiresInSeconds),
   },
-  required: options.target?.required === true ? ["id", "target", "script"] : ["id", "script"],
+  required: options.target?.required === true ? ["id", "target", "code"] : ["id", "code"],
   additionalProperties: false,
 });
 

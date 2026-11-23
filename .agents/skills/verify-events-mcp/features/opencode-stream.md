@@ -6,7 +6,7 @@ An OpenCode session lists the watchable events, arms one through the `events` MC
 
 - `opencode-list` answers `events/list` with 22 events, 14 Lark and 8 GitLab.
 - `opencode-arm` opens `events/stream` and reports the watch live with `notifications/events/active`.
-- `opencode-wake` delivers a matching GitLab pipeline change as `notifications/events/event` with the script's text.
+- `opencode-wake` delivers a matching GitLab pipeline change as `notifications/events/event` with the code's text.
 - `opencode-terminate` ends the watch when the stream request ends, with no replay.
 
 ## How to get to it (user POV)

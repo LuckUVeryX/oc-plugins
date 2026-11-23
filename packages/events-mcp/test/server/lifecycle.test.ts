@@ -25,7 +25,7 @@ test(
       const armed = await h.call("watch", {
         event: "blocked.ping",
         id: "expiring",
-        script: "return null",
+        code: "return null",
         expiresInSeconds: 1,
       });
       expect(armed).toEqual({ id: "expiring", ended: "Expired" });
@@ -46,19 +46,19 @@ test("a failed watch wakes the session, and unwatch does not", async () => {
     await h.call("watch", {
       event: "lark.im.message.receive_v1",
       id: "failing",
-      script: "throw new Error('missing secret')",
+      code: "throw new Error('missing secret')",
     });
     h.publish({ eventId: "one", payload: { message: { chat_id: "oc_one" } } });
     await vi.waitFor(() => expect(h.channel).toHaveLength(1));
     expect(h.channel[0]).toEqual({
-      content: "Watch failing ended: script failed on one: ExecutionFailure: Error: missing secret",
+      content: "Watch failing ended: code failed on one: ExecutionFailure: Error: missing secret",
       meta: { watch_id: "failing", event: "lark.im.message.receive_v1" },
     });
 
     await h.call("watch", {
       event: "lark.im.message.receive_v1",
       id: "stopped",
-      script: "return null",
+      code: "return null",
     });
     await h.call("unwatch", { id: "stopped" });
     expect(h.channel).toHaveLength(1);
@@ -70,7 +70,7 @@ test("a failed watch wakes the session, and unwatch does not", async () => {
 test("a watch reusing an open id fails and leaves the first watch open", async () => {
   const h = await connect({ harness: "claude" });
   try {
-    const watch = { event: "lark.im.message.receive_v1", id: "taken", script: "return null" };
+    const watch = { event: "lark.im.message.receive_v1", id: "taken", code: "return null" };
     await h.call("watch", watch);
     const second = await h.callRaw("watch", watch);
     expect(second).toEqual({

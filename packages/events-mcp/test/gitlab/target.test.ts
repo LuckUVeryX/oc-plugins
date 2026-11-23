@@ -88,7 +88,7 @@ const setup = async (getError?: SourceError) => {
   return { source, socket, client };
 };
 
-const scripts = { script: "return null" };
+const dropCode = { code: "return null" };
 
 const rejectionOf = async (
   event: string,
@@ -100,7 +100,7 @@ const rejectionOf = async (
   try {
     const failure = Schema.decodeUnknownSync(
       Schema.Struct({ code: Schema.Number, message: Schema.String }),
-    )(await h.stream({ ...scripts, ...args }, event).done);
+    )(await h.stream({ ...dropCode, ...args }, event).done);
     return { failure, identifiers: socket.identifiers };
   } finally {
     await h.close();
@@ -169,7 +169,7 @@ test("a target resolves to the params its event subscribes with", async () => {
         event,
         id: `target-${index}`,
         target,
-        ...scripts,
+        ...dropCode,
       });
       expect(armed.params).toEqual(params);
     }
@@ -273,7 +273,7 @@ test("the watch tool returns the params a target resolved to", async () => {
       event: "gitlab.noteable.notes_changed",
       id: "mr-comments",
       target: "group/project!32",
-      ...scripts,
+      ...dropCode,
     });
     expect(armed).toMatchObject({ id: "mr-comments", params: mergeRequest });
     expect(armed.expiresAt).toEqual(expect.any(String));
@@ -288,7 +288,7 @@ test("watches shows the params a target resolved to in OpenCode", async () => {
   const h = await connect({ sources: [source] });
   try {
     h.stream(
-      { id: "by-target", target: "group/project!32", ...scripts },
+      { id: "by-target", target: "group/project!32", ...dropCode },
       "gitlab.noteable.notes_changed",
     );
     await vi.waitFor(() => expect(socket.identifiers).toHaveLength(1));

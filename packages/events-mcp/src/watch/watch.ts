@@ -1,7 +1,7 @@
 import { Cause, Clock, DateTime, Deferred, Effect, Schema, type Scope, Stream } from "effect";
 import { bytes, MAX_EVENT_BYTES } from "../limits.ts";
 import { Health, type EventType, type Event, type SourceError } from "../source/contract.ts";
-import { Failed, type RunScript } from "../script/script.ts";
+import { Failed, type RunCode } from "../code/code.ts";
 import { Feeds } from "./feeds.ts";
 
 // OpenCode cancels event feeds after 60 seconds without a notification.
@@ -29,7 +29,7 @@ interface WatchRunOptions {
   readonly expiresInSeconds: number;
   readonly eventTimeoutSeconds: number;
   readonly ended: Deferred.Deferred<string>;
-  readonly script: RunScript;
+  readonly runCode: RunCode;
   readonly notify: (notification: Notification) => Effect.Effect<void>;
   readonly onSubscribed?: Effect.Effect<void> | undefined;
 }
@@ -57,7 +57,7 @@ export const runWatch = Effect.fn("Watch.run")(function* (
         timestamp: DateTime.formatIso(occurredAt),
         data: input.payload,
       };
-      const result = yield* options.script(delivered).pipe(
+      const result = yield* options.runCode(delivered).pipe(
         Effect.timeout(`${options.eventTimeoutSeconds} seconds`),
         Effect.catchCause((cause) => {
           if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
@@ -66,7 +66,7 @@ export const runWatch = Effect.fn("Watch.run")(function* (
             Effect.andThen(
               Effect.fail(
                 new StepFailed({
-                  message: `script failed on ${eventId}: ${messageOf(cause)}`,
+                  message: `code failed on ${eventId}: ${messageOf(cause)}`,
                 }),
               ),
             ),
@@ -80,7 +80,7 @@ export const runWatch = Effect.fn("Watch.run")(function* (
       )
         return yield* Effect.fail(
           new StepFailed({
-            message: `script failed on ${eventId}: the delivered event exceeds ${MAX_EVENT_BYTES} bytes; return less`,
+            message: `code failed on ${eventId}: the delivered event exceeds ${MAX_EVENT_BYTES} bytes; return less`,
           }),
         );
       yield* options.notify({

@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 import { LarkAuth } from "../../src/lark/auth.ts";
 import { LarkSocket } from "../../src/lark/socket.ts";
 import { Lark } from "../../src/lark/source.ts";
-import { makeRunScript, makeWatchState } from "../../src/script/script.ts";
+import { makeRunCode, makeWatchState } from "../../src/code/code.ts";
 import { connect, unusedDecide } from "../support.ts";
 
 const credentialMessage = "No Lark app credentials";
@@ -38,15 +38,15 @@ test("a Lark credential failure reaches the MCP tool result", async () => {
   }
 });
 
-test("a Lark credential failure reaches a script failure", async () => {
-  const script = makeRunScript({
+test("a Lark credential failure reaches a code failure", async () => {
+  const run = makeRunCode({
     code: 'return await tools.lark.get({ path: "/im/v1/messages" })',
     sources: [larkSource],
     state: await Effect.runPromise(makeWatchState),
     decide: unusedDecide,
   });
   const failure = await Effect.runPromise(
-    script({
+    run({
       eventId: "event",
       timestamp: new Date().toISOString(),
       data: {},
