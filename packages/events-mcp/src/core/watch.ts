@@ -50,7 +50,7 @@ interface WatchRunOptions {
   readonly transform: TransformRunner;
   readonly notify: (notification: Notification) => Effect.Effect<void>;
   /** Succeeds with undefined once the feed is subscribed, or with the reason the watch ended before that. */
-  readonly ready?: Deferred.Deferred<string | undefined, IntegrationError>;
+  readonly ready?: Deferred.Deferred<string | undefined, IntegrationError> | undefined;
 }
 
 const messageOf = (cause: Cause.Cause<unknown>): string => {

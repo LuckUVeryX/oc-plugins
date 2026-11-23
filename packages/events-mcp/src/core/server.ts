@@ -56,6 +56,8 @@ interface ServerOptions {
   readonly eventTimeoutSeconds: number;
 }
 
+type DecodedArguments = Effect.Success<ReturnType<typeof decodeArguments>>;
+
 const streamParams = Schema.toStandardSchemaV1(
   Schema.Struct({
     name: Schema.String,
@@ -309,6 +311,43 @@ const buildServer = (options: ServerOptions): McpServer => {
       } satisfies Watch;
     });
 
+  const release = (watchId: string, watch: Watch) =>
+    Effect.gen(function* () {
+      watches.delete(watchId);
+      yield* Deferred.succeed(watch.finished, undefined);
+    });
+
+  const finish = (watchId: string, watch: Watch) => Effect.ensuring(release(watchId, watch));
+
+  const startWatch = (input: {
+    readonly event: RegisteredEventKind;
+    readonly decoded: DecodedArguments;
+    readonly eventParams: Schema.JsonObject;
+    readonly watch: Watch;
+    readonly notify: (notification: Notification) => Effect.Effect<void>;
+    readonly ready?: Deferred.Deferred<string | undefined, IntegrationError> | undefined;
+  }) =>
+    Effect.gen(function* () {
+      const prepare = makePrepare({
+        integrations: options.registry.integrations,
+        state: yield* makeWatchState,
+        decide: options.decide,
+      });
+      return yield* runWatch({
+        watchId: input.decoded.watchId,
+        eventKind: input.event,
+        params: input.eventParams,
+        filter: input.decoded.filter,
+        expiresInSeconds: input.decoded.expiresInSeconds ?? options.defaultExpiresInSeconds,
+        eventTimeoutSeconds: options.eventTimeoutSeconds,
+        ended: input.watch.ended,
+        ready: input.ready,
+        prepare: (delivered) => prepare(input.decoded.prepare, delivered),
+        transform: (transformInput) => transformEvent(input.decoded.transform, transformInput),
+        notify: input.notify,
+      }).pipe(Effect.provideService(Feeds.Service, options.feeds));
+    });
+
   if (options.harness._tag === "Tools") {
     const harness = options.harness;
     const send: Send = (notification) =>
@@ -369,7 +408,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                   : { expiresInSeconds: requestedExpiresInSeconds }),
               });
               const expiresInSeconds = decoded.expiresInSeconds ?? options.defaultExpiresInSeconds;
-              const { view, ended, finished } = yield* newWatch({
+              const watch = yield* newWatch({
                 eventName: event.name,
                 arguments: input,
                 expiresInSeconds,
@@ -377,7 +416,7 @@ const buildServer = (options: ServerOptions): McpServer => {
               const ready = yield* Deferred.make<string | undefined, IntegrationError>();
               const claimed = yield* Effect.sync(() => {
                 if (watches.has(decoded.watchId)) return false;
-                watches.set(decoded.watchId, { view, ended, finished });
+                watches.set(decoded.watchId, watch);
                 return true;
               });
               if (!claimed)
@@ -386,12 +425,6 @@ const buildServer = (options: ServerOptions): McpServer => {
                     message: "watchId is already active; choose another ID or stop the watch",
                   }),
                 );
-              const state = yield* makeWatchState;
-              const prepare = makePrepare({
-                integrations: options.registry.integrations,
-                state,
-                decide: options.decide,
-              });
               const wake = (
                 text: string,
                 onFailure: (error: { readonly message: string }) => Effect.Effect<void>,
@@ -404,17 +437,12 @@ const buildServer = (options: ServerOptions): McpServer => {
                     text,
                   })
                   .pipe(Effect.catchTag("Harness.WakeFailed", onFailure));
-              yield* runWatch({
-                watchId: decoded.watchId,
-                eventKind: event,
-                params: eventParams,
-                filter: decoded.filter,
-                expiresInSeconds,
-                eventTimeoutSeconds: options.eventTimeoutSeconds,
-                ended,
+              yield* startWatch({
+                event,
+                decoded,
+                eventParams,
+                watch,
                 ready,
-                prepare: (delivered) => prepare(decoded.prepare, delivered),
-                transform: (transformInput) => transformEvent(decoded.transform, transformInput),
                 notify: (notification) => {
                   if (notification.type === "event")
                     return wake(
@@ -422,7 +450,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                         ? notification.data
                         : JSON.stringify(notification.data),
                       (error) =>
-                        Deferred.succeed(ended, `Wake failed: ${error.message}`).pipe(
+                        Deferred.succeed(watch.ended, `Wake failed: ${error.message}`).pipe(
                           Effect.as(undefined),
                         ),
                     );
@@ -433,7 +461,6 @@ const buildServer = (options: ServerOptions): McpServer => {
                   );
                 },
               }).pipe(
-                Effect.provideService(Feeds.Service, options.feeds),
                 Effect.onExit((exit) => {
                   const warn =
                     Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)
@@ -446,12 +473,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                       : Effect.void;
                   return warn.pipe(Effect.andThen(Deferred.done(ready, exit)));
                 }),
-                Effect.ensuring(
-                  Effect.gen(function* () {
-                    watches.delete(decoded.watchId);
-                    yield* Deferred.succeed(finished, undefined);
-                  }),
-                ),
+                finish(decoded.watchId, watch),
                 Effect.scoped,
                 Effect.forkIn(options.scope),
               );
@@ -459,7 +481,7 @@ const buildServer = (options: ServerOptions): McpServer => {
                 Effect.mapError((error) => new Invalid({ message: error.message })),
               );
               return outcome === undefined
-                ? { watchId: decoded.watchId, expiresAt: view.expiresAt }
+                ? { watchId: decoded.watchId, expiresAt: watch.view.expiresAt }
                 : { watchId: decoded.watchId, ended: outcome };
             }),
             {
@@ -533,31 +555,9 @@ const buildServer = (options: ServerOptions): McpServer => {
                 );
               watches.set(decoded.watchId, watch);
             }),
-            () =>
-              Effect.gen(function* () {
-                watches.delete(decoded.watchId);
-                yield* Deferred.succeed(watch.finished, undefined);
-              }),
+            () => release(decoded.watchId, watch),
           );
-          const state = yield* makeWatchState;
-          const prepare = makePrepare({
-            integrations: options.registry.integrations,
-            state,
-            decide: options.decide,
-          });
-          yield* runWatch({
-            watchId: decoded.watchId,
-            eventKind: event,
-            params: eventParams,
-            filter: decoded.filter,
-            expiresInSeconds,
-            eventTimeoutSeconds: options.eventTimeoutSeconds,
-            ended: watch.ended,
-            prepare: (event) => prepare(decoded.prepare, event),
-            transform: (input) => transformEvent(decoded.transform, input),
-            notify,
-          }).pipe(
-            Effect.provideService(Feeds.Service, options.feeds),
+          yield* startWatch({ event, decoded, eventParams, watch, notify }).pipe(
             Effect.mapError((error: IntegrationError) => {
               const code = error._tag === "Integration.Rejected" ? -32024 : -32603;
               return new ProtocolError(code, error.message);
