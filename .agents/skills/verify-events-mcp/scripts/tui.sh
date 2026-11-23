@@ -87,10 +87,15 @@ claude() {
   need_run
   start "$VERIFY_WORK" "$VERIFY_RUN_DIR/bin/claude"
 
-  # First launch in a fresh home. The default selection is "No, exit".
+  # First launch in a fresh home. The default selection is "No, exit", and a
+  # Down sent while the dialog is still drawing is dropped, so confirm the
+  # cursor moved before pressing Enter.
   if maybe_for 'Quick safety check' 30; then
-    key Down
-    sleep 0.5
+    for _ in 1 2 3 4 5; do
+      key Down
+      maybe_for '❯ Yes, I trust this folder' 2 && break
+    done
+    wait_for '❯ Yes, I trust this folder' 1
     key Enter
   fi
   # Development channels are confirmed on every launch. Option 1 is selected.
