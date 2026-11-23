@@ -6,7 +6,7 @@ Every harness session for this user connects to one hub, so one Lark WebSocket a
 
 - `hub-single` starts one hub per hub directory and binds one socket.
 - `hub-share` serves several simultaneous sessions from that one process.
-- `hub-forward` gives every session its own watches and its own `list_watches`.
+- `hub-forward` gives every session its own watches, and `watches` lists only that session's.
 - `hub-exit` ends the hub after the last session closes.
 - `hub-log` records the listen line with the hub pid, which is what cleanup and proof read.
 
@@ -28,8 +28,8 @@ Preconditions:
 - **One process.** The output has `"hubPids": ["<pid>"]`, one element. Two pids, or a pid from another run's log, means sessions did not share a hub.
 - **Two live sessions.** The output has `"concurrent": 2` and two connection ids in `openConnections`. `opened` is larger because the client opens a short negotiation connection first; only the open set counts.
 - **Same catalogue.** Both sessions report `"events": 22` and an empty `watches` list.
-- **Evidence.** `shared-hub.json` holds the hub dir, the pids, the open connections, and the log path. Copy `hub.log` through cleanup, which keeps the `listening at ... as pid <pid>` line and each `session opened`.
-- **Exit.** Run `scripts/run.sh cleanup "$VERIFY_RUN_DIR"`. With no sessions left, the hub logs `no sessions, exiting` and stops.
+- **Evidence.** `shared-hub.json` holds the hub dir, the pids, the open connections, and the log path. Copy `hub.log` through cleanup, which keeps the `listening at ... as pid <pid>` line and each `connection opened`.
+- **Exit.** Run `scripts/run.sh cleanup "$VERIFY_RUN_DIR"`. With no connections left, the hub logs `no connections, exiting` and stops.
 
 ## Gotchas
 

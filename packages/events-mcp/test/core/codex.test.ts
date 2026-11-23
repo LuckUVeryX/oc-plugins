@@ -179,9 +179,7 @@ test("a failed wake ends the watch with a terminated notice", async () => {
 
         await vi.waitFor(() => expect(codex.adds).toHaveLength(1), { timeout: 5_000 });
         expect(codex.adds[0]?.text).toContain("pipeline ended: Wake failed");
-        await vi.waitFor(async () =>
-          expect((await h.call("list_watches")).watches).toHaveLength(0),
-        );
+        await vi.waitFor(async () => expect((await h.call("watches")).watches).toHaveLength(0));
       } finally {
         await h.close();
       }

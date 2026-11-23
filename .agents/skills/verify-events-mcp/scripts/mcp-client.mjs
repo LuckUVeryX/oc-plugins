@@ -281,7 +281,7 @@ const hub = async (options) => {
     const sessions = [];
     for (const [index, entry] of clients.entries()) {
       const events = await call(entry.client, "events/list", {});
-      const watches = await tool(entry.client, "list_watches", {});
+      const watches = await tool(entry.client, "watches", {});
       sessions.push({
         session: index + 1,
         events: events.events.length,
@@ -296,9 +296,9 @@ const hub = async (options) => {
     const listening = pidOf(tail);
     const reused = listening.length === 0;
     const pids = [...new Set(reused ? pidOf(log).slice(-1) : listening)];
-    const openedIds = [...tail.matchAll(/\(#(\d+)\): session opened/g)].map((match) => match[1]);
+    const openedIds = [...tail.matchAll(/\(#(\d+)\): connection opened/g)].map((match) => match[1]);
     const closedIds = new Set(
-      [...tail.matchAll(/\(#(\d+)\): session closed/g)].map((match) => match[1]),
+      [...tail.matchAll(/\(#(\d+)\): connection closed/g)].map((match) => match[1]),
     );
     const open = openedIds.filter((id) => !closedIds.has(id));
     const record = {

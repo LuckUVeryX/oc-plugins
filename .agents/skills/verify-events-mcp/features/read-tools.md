@@ -7,14 +7,14 @@ The agent and every prepare script can read GitLab and Lark through `gitlab_get`
 - `tool-gitlab-user` reads `/user` to prove the token and identify the calling account.
 - `tool-gitlab-project` resolves a project path and returns its id, namespace, and default branch.
 - `tool-lark-chat` reads a chat through `/im/v1/chats/<chat id>` when Lark credentials are set.
-- `tool-list-stop` lists and stops watches through `list_watches` and `stop_watch`.
+- `tool-list-stop` lists and stops watches through `watches` and `unwatch`.
 - `tool-reject` refuses a path outside the prefix or with a query string, fragment, or traversal.
 
 ## How to get to it (user POV)
 
 - Ask the agent to read a GitLab resource, or write `tools.gitlab.get({ path, query })` in a prepare script.
 - Ask for a Lark resource the same way with `tools.lark.get({ path, query })`.
-- The tools appear in the session's tool list as `gitlab_get` and `lark_get` next to `list_watches` and `stop_watch`.
+- The tools appear in the session's tool list as `gitlab_get` and `lark_get` next to `watches` and `unwatch`.
 
 ## Driving it with mcp-client.mjs
 
