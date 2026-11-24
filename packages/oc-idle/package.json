@@ -21,8 +21,8 @@
     "check": "bun run typecheck && bun run test"
   },
   "peerDependencies": {
-    "@opencode/plugin": "2.4.0",
-    "@opencode/schema": "2.4.0",
+    "@opencode/plugin": "2.4.1",
+    "@opencode/schema": "2.4.1",
     "effect": "4.1.0"
   },
   "engines": {

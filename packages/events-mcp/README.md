@@ -37,7 +37,7 @@ The server only reads. The agent replies with its own tools, such as `lark-cli` 
 
 ## Setup
 
-You need Git, Bun 1.4.4, and one of OpenCode 2.4.0, Claude Code 2.1.330, or Codex 0.171.0. For each source you use:
+You need Git, Bun 1.4.4, and one of OpenCode 2.4.1, Claude Code 2.1.330, or Codex 0.171.0. For each source you use:
 
 - **Lark.** An app in WebSocket event mode, with `LARK_APP_ID` and `LARK_APP_SECRET`.
 - **GitLab.** `GITLAB_TOKEN` with `read_api` and `read_repository`, or `glab` logged in. Set `GITLAB_HOST` for self-managed GitLab.

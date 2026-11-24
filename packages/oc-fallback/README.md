@@ -26,7 +26,7 @@ Add the plugin to your OpenCode config:
 This GitHub target is available after the monorepo is published.
 For a local checkout, use its `packages/oc-fallback` directory instead.
 OpenCode loads `src/index.ts` directly. The package is not published to npm.
-The tested baseline is OpenCode 2.4.0 and Effect 4.1.0.
+The tested baseline is OpenCode 2.4.1 and Effect 4.1.0.
 
 ## Behavior
 
