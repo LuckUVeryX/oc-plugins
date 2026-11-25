@@ -1,15 +1,25 @@
 {
-  "name": "events-mcp",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@luckuveryx/events-mcp",
+  "version": "0.1.0",
   "description": "Local Lark, GitLab, and Codemagic MCP events server, shared by every agent session on the machine",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LuckUVeryX/oc-plugins.git",
+    "directory": "packages/events-mcp"
+  },
   "bin": {
     "events-mcp": "./src/main.ts"
   },
   "files": [
-    "src"
+    "src",
+    "docs",
+    "LICENSE"
   ],
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "generate": "bun ../../scripts/events-mcp/generate-sdk-events.ts",
     "generate:gitlab": "bun ../../scripts/events-mcp/generate-gitlab-events.ts",

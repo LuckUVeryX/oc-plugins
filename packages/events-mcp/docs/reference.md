@@ -47,7 +47,7 @@ A target the token cannot read, or a link to a resource that does not exist, fai
 GitLab marks the GraphQL subscription fields Experiment, so the selection set and arguments can change without deprecation. Regenerate the committed catalog after a GitLab upgrade:
 
 ```sh
-GITLAB_TOKEN=... bun run --filter events-mcp generate:gitlab
+GITLAB_TOKEN=... bun run --filter @luckuveryx/events-mcp generate:gitlab
 ```
 
 ### Codemagic
