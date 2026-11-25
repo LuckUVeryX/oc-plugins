@@ -3,6 +3,7 @@ import { Effect, Queue, Schema, type Scope } from "effect";
 // Bun resolves "ws" to its built-in module, so no dependency is needed.
 import WebSocket from "ws";
 import { WakeFailed } from "./harness.ts";
+import { version } from "../version.ts";
 
 const TIMEOUT = "10 seconds";
 
@@ -119,7 +120,7 @@ const withSession = <A>(
   Effect.gen(function* () {
     const session = yield* connectSession(socketPath);
     yield* session.call("initialize", {
-      clientInfo: { name: "events-mcp", title: "events-mcp", version: "0.0.0" },
+      clientInfo: { name: "events-mcp", title: "events-mcp", version },
       capabilities: { experimentalApi: true },
     });
     yield* session.notify("initialized");

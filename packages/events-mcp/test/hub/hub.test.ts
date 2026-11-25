@@ -82,44 +82,57 @@ const connectOnArrival = (path: string) =>
     attempt();
   });
 
+const lines = (socket: net.Socket) => {
+  let buffered = "";
+  const waiters: Array<(line: string) => void> = [];
+  socket.setEncoding("utf8");
+  socket.on("data", (chunk: string) => {
+    buffered += chunk;
+    while (true) {
+      const end = buffered.indexOf("\n");
+      if (end < 0) return;
+      const line = buffered.slice(0, end);
+      buffered = buffered.slice(end + 1);
+      waiters.shift()?.(line);
+    }
+  });
+  return () =>
+    new Promise<string>((resolve, reject) => {
+      const end = buffered.indexOf("\n");
+      if (end >= 0) {
+        const line = buffered.slice(0, end);
+        buffered = buffered.slice(end + 1);
+        resolve(line);
+        return;
+      }
+      const timer = setTimeout(() => reject(new Error("no line within 5000 ms")), 5_000);
+      waiters.push((line) => {
+        clearTimeout(timer);
+        resolve(line);
+      });
+    });
+};
+
 const initializeOnArrival = async (path: string) => {
   const socket = await connectOnArrival(path);
-  const hello =
-    '{"harness":"opencode"}\n' +
-    JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: "2025-11-25",
-        capabilities: {},
-        clientInfo: { name: "cold-start", version: "0" },
-      },
-    }) +
-    "\n";
-  const firstResponseMs = 5_000;
+  const next = lines(socket);
   try {
-    return await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error(`no initialize response within ${firstResponseMs} ms`)),
-        firstResponseMs,
-      );
-      const fail = (error: Error) => {
-        clearTimeout(timer);
-        reject(error);
-      };
-      let buffered = "";
-      socket.on("data", (chunk) => {
-        buffered += String(chunk);
-        const end = buffered.indexOf("\n");
-        if (end < 0) return;
-        clearTimeout(timer);
-        resolve(buffered.slice(0, end));
-      });
-      socket.once("error", fail);
-      socket.once("close", () => fail(new Error("the hub closed before initialize")));
-      socket.write(hello);
-    });
+    socket.write('{"harness":"opencode","version":"0.0.0"}\n');
+    const reply: unknown = JSON.parse(await next());
+    socket.write(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-11-25",
+          capabilities: {},
+          clientInfo: { name: "cold-start", version: "0" },
+        },
+      }) + "\n",
+    );
+    const message: unknown = JSON.parse(await next());
+    return { reply, message };
   } finally {
     socket.destroy();
   }
@@ -211,8 +224,8 @@ test("a connection that arrives as the hub starts still initializes", async () =
     stdio: "ignore",
   });
   try {
-    const first = await initializeOnArrival(join(directory(root), "hub.sock"));
-    const message: unknown = JSON.parse(first);
+    const { reply, message } = await initializeOnArrival(join(directory(root), "hub.sock"));
+    expect(reply).toMatchObject({ status: "accepted" });
     expect(message).toMatchObject({ result: { protocolVersion: "2025-11-25" } });
   } finally {
     await new Promise<void>((resolve) => {
