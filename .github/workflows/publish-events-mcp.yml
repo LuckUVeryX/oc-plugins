@@ -35,4 +35,4 @@ jobs:
       - run: bun run test:install
       - name: Stage the package on npm
         working-directory: packages/events-mcp
-        run: npm stage publish --tag next
+        run: npm stage publish

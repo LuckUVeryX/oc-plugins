@@ -151,26 +151,20 @@ The [reference](docs/reference.md) covers client caveats, settings, the hub, the
 
    Commit the change.
 
-2. Tag the commit `v<version>` and push the tag. The publish workflow checks that the tag matches `packages/events-mcp/package.json`, runs `bun run check` and `bun run test:install`, then stages `@luckuveryx/events-mcp@<version>` under the `next` tag. The package's trusted publisher on npm must name this repository, the `publish-events-mcp.yml` workflow, and the `npm` environment, and allow staged publishing. A new trusted publisher expires unless it stages a release within 2 days, so add it just before you tag.
+2. Tag the commit `v<version>` and push the tag. The publish workflow checks that the tag matches `packages/events-mcp/package.json`, runs `bun run check` and `bun run test:install`, then stages `@luckuveryx/events-mcp@<version>` under the `latest` tag. The package's trusted publisher on npm must name this repository, the `publish-events-mcp.yml` workflow, and the `npm` environment, and allow staged publishing. A new trusted publisher expires unless it stages a release within 2 days, so add it just before you tag.
 
-   For the first release the package does not exist yet. Run `npm stage publish --tag next` from `packages/events-mcp` instead of pushing a tag. npm publishes a public `0.0.0-stage` placeholder, and `latest` may point at it until step 5. Add the trusted publisher afterwards.
+   For the first release the package does not exist yet. Run `npm stage publish` from `packages/events-mcp` instead of pushing a tag. npm publishes a public `0.0.0-stage` placeholder, and `latest` may point at it until you approve the release. Add the trusted publisher afterwards.
 
-3. Approve the staged release with 2FA:
+3. Inspect the staged release, then approve it with 2FA:
 
    ```sh
    npm stage list @luckuveryx/events-mcp
-   npm stage view <stage-id>
+   npm stage download <stage-id>
    npm stage approve <stage-id>
    ```
 
    You can also approve it in the Staged Packages tab on npmjs.com.
 
-4. Try it with `bunx @luckuveryx/events-mcp@next <client>`.
-
-5. Move `latest` to the release:
-
-   ```sh
-   npm dist-tag add @luckuveryx/events-mcp@<version> latest
-   ```
+Approving the release makes it `latest`, so clients that use `@latest` get it at their next restart.
 
 Moving `latest` back does not replace a hub that already runs a newer version. Publish a higher version to roll back, rather than moving the tag.
