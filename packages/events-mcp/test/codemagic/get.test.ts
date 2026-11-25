@@ -1,7 +1,8 @@
 import { expect, test } from "vitest";
 import { Effect } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
-import { makeClient, makeGetTool } from "../../src/codemagic/client.ts";
+import { makeClient } from "../../src/codemagic/client.ts";
+import { makeGetTool } from "../../src/codemagic/tools.ts";
 
 test("codemagic_get cannot leave /api/v3 with the token", async () => {
   const urls: Array<string> = [];

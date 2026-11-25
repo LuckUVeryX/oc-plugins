@@ -198,14 +198,16 @@ return input.event.data;
 
 ### Code tools
 
-| Tool                                   | What it does                                                 |
-| -------------------------------------- | ------------------------------------------------------------ |
-| `tools.lark.get({ path, query })`      | Read-only GET under `/open-apis`.                            |
-| `tools.gitlab.get({ path, query })`    | Read-only GET under `/api/v4`.                               |
-| `tools.codemagic.get({ path, query })` | Read-only GET under `/api/v3`.                               |
-| `tools.watch.state.get()`              | This watch's JSON memory, null until set.                    |
-| `tools.watch.state.set(value)`         | Replace it, up to 64 KB.                                     |
-| `tools.events.decide(request)`         | Decision model answers with probabilities, one per question. |
+| Tool                                                   | What it does                                                 |
+| ------------------------------------------------------ | ------------------------------------------------------------ |
+| `tools.lark.get({ path, query })`                      | Read-only GET under `/open-apis`.                            |
+| `tools.gitlab.get({ path, query })`                    | Read-only GET under `/api/v4`.                               |
+| `tools.codemagic.get({ path, query })`                 | Read-only GET under `/api/v3`.                               |
+| `tools.codemagic.start({ appId, workflowId, branch })` | Starts a build. Pass `tag` instead of `branch` for a tag.    |
+| `tools.codemagic.cancel({ buildId })`                  | Cancels a build.                                             |
+| `tools.watch.state.get()`                              | This watch's JSON memory, null until set.                    |
+| `tools.watch.state.set(value)`                         | Replace it, up to 64 KB.                                     |
+| `tools.events.decide(request)`                         | Decision model answers with probabilities, one per question. |
 
 The Lark path rejects `..`, `//`, `%`, `\`, a query string, and a fragment. Pass query parameters in `query`, and page with `page_token` when the endpoint paginates. The Codemagic path follows the same rules, and its reads can return credentials the token can see, such as `/user/api-key`. The GitLab path must stay under `/api/v4` after URL normalisation and rejects a redirect. Percent-encode project paths, for example `/projects/group%2Fproject`.
 

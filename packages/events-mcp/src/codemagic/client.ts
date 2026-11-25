@@ -1,16 +1,15 @@
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import {
-  Rejected,
-  type SourceError,
-  type Tool,
-  ToolError,
-  Unavailable,
-} from "../source/contract.ts";
-import { GetInput, makeTool, validPath } from "../source/tool.ts";
+  FetchHttpClient,
+  HttpClient,
+  HttpClientRequest,
+  type HttpClientResponse,
+} from "effect/http";
+import { Rejected, type SourceError, Unavailable } from "../source/contract.ts";
+import type { GetInput } from "../source/tool.ts";
 
 const missing = new Rejected({
-  message: "No Codemagic API token. Set CODEMAGIC_TOKEN, then arm a new watch.",
+  message: "No Codemagic API token. Set CODEMAGIC_TOKEN.",
 });
 
 export const token: Effect.Effect<string, SourceError> = Config.Redacted("CODEMAGIC_TOKEN").pipe(
@@ -23,6 +22,11 @@ export const token: Effect.Effect<string, SourceError> = Config.Redacted("CODEMA
 );
 
 export interface Interface {
+  /** Sends a request with the token. Fails on an error status, except 404 and 409. */
+  readonly send: (
+    request: HttpClientRequest.HttpClientRequest,
+    label: string,
+  ) => Effect.Effect<HttpClientResponse.HttpClientResponse, SourceError>;
   /** Reads a path under /api/v3. None when it does not exist or the token cannot read it. */
   readonly read: (
     path: string,
@@ -48,7 +52,7 @@ export const makeClient = (options: {
         ),
       );
     const { status } = response;
-    if ((status >= 200 && status < 300) || status === 404) return response;
+    if ((status >= 200 && status < 300) || status === 404 || status === 409) return response;
     const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""));
     const message = `Codemagic HTTP ${status} on ${label}: ${body.slice(0, 300)}`;
     if (status === 401)
@@ -79,7 +83,7 @@ export const makeClient = (options: {
     );
   });
 
-  return { read };
+  return { send, read };
 };
 
 export const layer = Layer.effect(
@@ -91,30 +95,5 @@ export const layer = Layer.effect(
     Effect.map((http) => Service.of(makeClient({ token, http }))),
   ),
 );
-
-export const makeGetTool = (client: Interface): Tool =>
-  makeTool({
-    description:
-      "Read Codemagic REST data with the token's permissions, for example /builds/<buildId>/actions to find a failed step. path starts with /, stays under /api/v3, and carries no query string or percent escapes. Pass parameters in query. Returns the JSON body.",
-    input: GetInput,
-    run: ({ path, query }) =>
-      (validPath(path)
-        ? client.read(path, query)
-        : Effect.fail(new Rejected({ message: "Invalid Codemagic GET path" }))
-      ).pipe(
-        Effect.mapError(({ message }) => new ToolError({ message })),
-        Effect.flatMap(
-          Option.match({
-            onNone: () =>
-              Effect.fail(
-                new ToolError({
-                  message: `${path} does not exist, or CODEMAGIC_TOKEN cannot read it`,
-                }),
-              ),
-            onSome: Effect.succeed,
-          }),
-        ),
-      ),
-  });
 
 export * as CodemagicClient from "./client.ts";
