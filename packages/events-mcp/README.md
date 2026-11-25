@@ -39,21 +39,15 @@ The server reads, and can start and cancel Codemagic builds and create public ar
 
 ## Setup
 
-You need Git, Bun 1.4.4, and one of OpenCode 2.4.1, Claude Code 2.1.330, or Codex 0.171.0. For each source you use:
+You need Bun 1.4.4, and one of OpenCode 2.4.1, Claude Code 2.1.330, or Codex 0.171.0. For each source you use:
 
 - **Lark.** An app in WebSocket event mode, with `LARK_APP_ID` and `LARK_APP_SECRET`.
 - **GitLab.** `GITLAB_TOKEN` with `read_api` and `read_repository`, or `glab` logged in. Set `GITLAB_HOST` for self-managed GitLab.
 - **Codemagic.** `CODEMAGIC_TOKEN`, a Codemagic API token.
 
-Install:
+The server is published on npm. `bunx` downloads it into Bun's cache and runs the `events-mcp` bin, so you do not need to clone this repository. The package pins its direct dependencies. `bunx` does not use the repository's `bun.lock`, so indirect dependencies can change without a release.
 
-```sh
-git clone https://github.com/LuckUVeryX/oc-plugins.git "$HOME/.local/share/events-mcp"
-cd "$HOME/.local/share/events-mcp"
-bun install --frozen-lockfile
-```
-
-Then add the server to your client. Export the credentials in the environment that starts the client, and keep them out of config files.
+Keep the credentials in the environment that starts the client, out of config files.
 
 ### OpenCode
 
@@ -66,12 +60,7 @@ Merge this into `~/.config/opencode/opencode.jsonc`:
     "servers": {
       "events": {
         "type": "local",
-        "command": [
-          "bun",
-          "{env:HOME}/.local/share/events-mcp/packages/events-mcp/src/main.ts",
-          "opencode",
-        ],
-        "cwd": "{env:HOME}/.local/share/events-mcp",
+        "command": ["bunx", "@luckuveryx/events-mcp@latest", "opencode"],
         "protocol": "2026-07-28",
         "environment": {
           "LARK_APP_ID": "{env:LARK_APP_ID}",
@@ -91,7 +80,7 @@ Merge this into `~/.config/opencode/opencode.jsonc`:
 
 ```sh
 claude mcp add --scope user events-mcp -- \
-  bun "$HOME/.local/share/events-mcp/packages/events-mcp/src/main.ts" claude
+  bunx @luckuveryx/events-mcp@latest claude
 
 MCP_PROTOCOL_NEGOTIATION=legacy claude --dangerously-load-development-channels server:events-mcp
 ```
@@ -100,12 +89,12 @@ Wakes arrive through MCP channels, a research preview. They need claude.ai or Co
 
 ### Codex
 
-Add this to `~/.codex/config.toml`, with your absolute path:
+Add this to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.events]
-command = "bun"
-args = ["/home/you/.local/share/events-mcp/packages/events-mcp/src/main.ts", "codex"]
+command = "bunx"
+args = ["@luckuveryx/events-mcp@latest", "codex"]
 startup_timeout_sec = 20
 tool_timeout_sec = 120
 env_vars = ["LARK_APP_ID", "LARK_APP_SECRET", "GITLAB_TOKEN", "GITLAB_HOST", "CODEMAGIC_TOKEN"]
@@ -113,9 +102,28 @@ env_vars = ["LARK_APP_ID", "LARK_APP_SECRET", "GITLAB_TOKEN", "GITLAB_HOST", "CO
 
 Run the Codex TUI without `--no-daemon`, using the default `~/.codex` home.
 
+### Pin a version
+
+Replace `@latest` with an exact version, such as `@0.1.0`, in every client. Clients on one version do not replace each other's hub.
+
 ### Try it
 
 Restart your sessions, then ask the agent something like "wake me when the pipeline on `group/project!123` fails". The agent lists the events, writes the watch, and arms it.
+
+## Update
+
+`bunx @luckuveryx/events-mcp@latest` resolves again when a client starts its server process:
+
+- **OpenCode.** Run `opencode service restart`. Its MCP processes belong to the background service, so closing and reopening a window is not enough.
+- **Claude Code and Codex.** Reopen the session.
+
+### Versions and the hub
+
+Each MCP server process sends its version to the hub before it speaks MCP. A newer client replaces an older hub when no OpenCode session is connected. The hub replies `replaced`, exits, and the client starts a new hub. Claude Code and Codex watches on the old hub end, so arm them again.
+
+An OpenCode connection keeps the old hub. A newer Claude Code or Codex client joins it and prints a warning naming both versions; run `opencode service restart` to update the hub. An older client works with a newer hub. A client from before 0.1.0 cannot join one and its server process exits, so update every client.
+
+A hub from a version before 0.1.0 does not answer the version line. A new client waits 5 seconds, then exits with `events-mcp: the running hub predates version checks; every OpenCode, Claude Code and Codex session must be closed once.` Close every client once: `opencode service restart` for OpenCode, and reopen Claude Code and Codex. The first npm release meets the hub started from the old checkout, so do this once after upgrading.
 
 ## Before you rely on it
 
@@ -127,11 +135,42 @@ Restart your sessions, then ask the agent something like "wake me when the pipel
 - **GitLab subscriptions are marked Experiment** and can change on a GitLab upgrade.
 - **Codemagic push is undocumented.** It is the connection Codemagic's web app uses, and it can change without notice.
 
-After you change credentials or update, end every session so the next one starts a fresh hub:
-
-```sh
-git pull --ff-only
-bun install --frozen-lockfile
-```
+After you change credentials, run `opencode service restart` and reopen Claude Code and Codex. The hub keeps the environment of the process that started it, and a connected Codex keeps the old hub alive.
 
 The [reference](docs/reference.md) covers client caveats, settings, the hub, the watch workflow and recipes for agents, and troubleshooting.
+
+## Release
+
+1. Update `version` in the root `package.json`, then run:
+
+   ```sh
+   bun run sync:metadata
+   bun install
+   bun run format
+   ```
+
+   Commit the change.
+
+2. Tag the commit `v<version>` and push the tag. The publish workflow checks that the tag matches `packages/events-mcp/package.json`, runs `bun run check` and `bun run test:install`, then stages `@luckuveryx/events-mcp@<version>` under the `next` tag. The package's trusted publisher on npm must name this repository, the `publish-events-mcp.yml` workflow, and the `npm` environment, and allow staged publishing. A new trusted publisher expires unless it stages a release within 2 days, so add it just before you tag.
+
+   For the first release the package does not exist yet. Run `npm stage publish --tag next` from `packages/events-mcp` instead of pushing a tag. npm publishes a public `0.0.0-stage` placeholder, and `latest` may point at it until step 5. Add the trusted publisher afterwards.
+
+3. Approve the staged release with 2FA:
+
+   ```sh
+   npm stage list @luckuveryx/events-mcp
+   npm stage view <stage-id>
+   npm stage approve <stage-id>
+   ```
+
+   You can also approve it in the Staged Packages tab on npmjs.com.
+
+4. Try it with `bunx @luckuveryx/events-mcp@next <client>`.
+
+5. Move `latest` to the release:
+
+   ```sh
+   npm dist-tag add @luckuveryx/events-mcp@<version> latest
+   ```
+
+Moving `latest` back does not replace a hub that already runs a newer version. Publish a higher version to roll back, rather than moving the tag.
