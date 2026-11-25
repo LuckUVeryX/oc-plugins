@@ -116,14 +116,15 @@ const list = async () => {
         events: record.events.length,
         lark: record.events.filter((name) => name.startsWith("lark.")).length,
         gitlab: record.events.filter((name) => name.startsWith("gitlab.")).length,
+        codemagic: record.events.filter((name) => name.startsWith("codemagic.")).length,
         tools: record.tools,
       },
       null,
       2,
     ),
   );
-  if (record.events.length !== 22)
-    throw new Error(`expected 22 events, got ${record.events.length}`);
+  if (record.events.length !== 23)
+    throw new Error(`expected 23 events, got ${record.events.length}`);
 };
 
 const readTools = async () => {
@@ -309,8 +310,8 @@ const hub = async (options) => {
     if (pids.length !== 1) throw new Error(`expected one hub pid, saw ${JSON.stringify(pids)}`);
     if (record.concurrent < count)
       throw new Error(`expected ${count} sessions open at once, saw ${record.concurrent}`);
-    if (sessions.some((session) => session.events !== 22))
-      throw new Error("a session did not list 22 events");
+    if (sessions.some((session) => session.events !== 23))
+      throw new Error("a session did not list 23 events");
   } finally {
     await Promise.all(clients.map((entry) => entry.client.close()));
   }

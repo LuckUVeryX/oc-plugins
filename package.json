@@ -36,6 +36,7 @@
     "effect": "4.1.0",
     "oxfmt": "0.78.0",
     "oxlint": "1.93.0",
+    "socket.io-client": "4.8.4",
     "ts-json-schema-generator": "2.9.0",
     "typescript": "7.0.2",
     "typescript-sdk-schema": "npm:typescript@5.9.3",

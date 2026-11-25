@@ -4,7 +4,7 @@ An agent in Claude Code arms a watch on GitLab, a pipeline changes, and the wake
 
 ## Sub-features
 
-- `claude-arm` lists the 22 events and arms one pipeline watch through the `list_events` and `watch` tools.
+- `claude-arm` lists the 23 events and arms one pipeline watch through the `list_events` and `watch` tools.
 - `claude-target` arms the watch from a `target`, a project path or a project or commit link. `watches` then lists the resolved `params`.
 - `claude-wake` delivers a pipeline status change as a `notifications/claude/channel` message and starts a turn while the session is idle.
 - `claude-stop` ends the watch with `unwatch`, and `watches` no longer lists it.

@@ -1,12 +1,13 @@
 # events-mcp
 
-An agent session only acts when you prompt it. events-mcp lets a session in OpenCode, Claude Code, or Codex wait for something in Lark or GitLab and wake up when it happens.
+An agent session only acts when you prompt it. events-mcp lets a session in OpenCode, Claude Code, or Codex wait for something in Lark, GitLab, or Codemagic and wake up when it happens.
 
 You tell the agent what to wait for. The agent arms a watch, and the next turn starts when a matching event arrives. Nothing polls, and no tokens are spent while it waits.
 
 ## What you can do with it
 
 - **Babysit a pipeline.** The session wakes when a pipeline fails, reads the failed jobs, and fixes the code or retries the job.
+- **Babysit a Codemagic build.** The session wakes on the statuses you care about, such as `finished` or `failed`.
 - **Answer review comments.** The session wakes on each new comment on your merge request and replies or pushes a fix.
 - **Reply to Lark messages that need you.** A small decision model reads the thread and wakes the session only when a message asks something of you.
 - **Follow a merge request to the finish.** The session wakes when approvals, reviewers, or merge status change.
@@ -14,7 +15,7 @@ You tell the agent what to wait for. The agent arms a watch, and the next turn s
 ## How it works
 
 ```text
-Lark WebSocket, GitLab Action Cable
+Lark WebSocket, GitLab Action Cable, Codemagic Socket.IO
   hub: one per user, shares connections and drops duplicates
     OpenCode:           an automation filters each event and wakes the session
     Claude Code, Codex: the hub runs the watch's code, which filters and wakes
@@ -30,10 +31,11 @@ The server only reads. The agent replies with its own tools, such as `lark-cli` 
 
 ## Events
 
-22 events, listed in full in the [reference](docs/reference.md#events).
+23 events, listed in full in the [reference](docs/reference.md#events).
 
 - **Lark, 14 events.** Messages to the bot, reactions, read receipts, document comments, task changes, bot menu clicks, and chat settings and membership.
 - **GitLab, 8 events.** Pipeline and job status, merge status, reviewers, approvals, comments on a merge request or issue, and any merge request you author, review, or are assigned. A GitLab watch takes a link or a shorthand such as `group/project!123`.
+- **Codemagic, 1 event.** Build status, for one build or every build in an app.
 
 ## Setup
 
@@ -41,6 +43,7 @@ You need Git, Bun 1.4.4, and one of OpenCode 2.4.1, Claude Code 2.1.330, or Code
 
 - **Lark.** An app in WebSocket event mode, with `LARK_APP_ID` and `LARK_APP_SECRET`.
 - **GitLab.** `GITLAB_TOKEN` with `read_api` and `read_repository`, or `glab` logged in. Set `GITLAB_HOST` for self-managed GitLab.
+- **Codemagic.** `CODEMAGIC_TOKEN`, a Codemagic API token.
 
 Install:
 
@@ -74,6 +77,7 @@ Merge this into `~/.config/opencode/opencode.jsonc`:
           "LARK_APP_ID": "{env:LARK_APP_ID}",
           "LARK_APP_SECRET": "{env:LARK_APP_SECRET}",
           "GITLAB_TOKEN": "{env:GITLAB_TOKEN}",
+          "CODEMAGIC_TOKEN": "{env:CODEMAGIC_TOKEN}",
         },
       },
     },
@@ -104,7 +108,7 @@ command = "bun"
 args = ["/home/you/.local/share/events-mcp/packages/events-mcp/src/main.ts", "codex"]
 startup_timeout_sec = 20
 tool_timeout_sec = 120
-env_vars = ["LARK_APP_ID", "LARK_APP_SECRET", "GITLAB_TOKEN", "GITLAB_HOST"]
+env_vars = ["LARK_APP_ID", "LARK_APP_SECRET", "GITLAB_TOKEN", "GITLAB_HOST", "CODEMAGIC_TOKEN"]
 ```
 
 Run the Codex TUI without `--no-daemon`, using the default `~/.codex` home.
@@ -121,6 +125,7 @@ Restart your sessions, then ask the agent something like "wake me when the pipel
 - **One Lark consumer per app.** A watch fails if `lark-cli event consume` or another copy of this server holds the app's connection.
 - **Watch code reads whatever your credentials allow.** Grant only the scopes you need.
 - **GitLab subscriptions are marked Experiment** and can change on a GitLab upgrade.
+- **Codemagic push is undocumented.** It is the connection Codemagic's web app uses, and it can change without notice.
 
 After you change credentials or update, end every session so the next one starts a fresh hub:
 

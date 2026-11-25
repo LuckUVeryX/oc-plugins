@@ -2,7 +2,7 @@
   "name": "events-mcp",
   "version": "0.0.0",
   "private": true,
-  "description": "Local Lark and GitLab MCP events server, shared by every agent session on the machine",
+  "description": "Local Lark, GitLab, and Codemagic MCP events server, shared by every agent session on the machine",
   "bin": {
     "events-mcp": "./src/main.ts"
   },
@@ -26,7 +26,8 @@
     "@opencode/codemode": "2.4.1",
     "@opencode/schema": "2.4.1",
     "@opencode/util": "2.4.1",
-    "effect": "4.1.0"
+    "effect": "4.1.0",
+    "socket.io-client": "4.8.4"
   },
   "engines": {
     "bun": ">=1.4.2"
