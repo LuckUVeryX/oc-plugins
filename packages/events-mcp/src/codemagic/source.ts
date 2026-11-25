@@ -9,7 +9,13 @@ import {
 } from "../source/contract.ts";
 import { CodemagicClient } from "./client.ts";
 import { CodemagicSocket } from "./socket.ts";
-import { makeCancelTool, makeGetTool, makeStartTool } from "./tools.ts";
+import {
+  makeArtifactsTool,
+  makeCancelTool,
+  makeGetTool,
+  makeLogsTool,
+  makeStartTool,
+} from "./tools.ts";
 
 const buildLink =
   /^https:\/\/codemagic\.io\/(?:app\/[0-9a-f]{24}\/)?build\/([0-9a-f]{24})\/?(?:[?#].*)?$/;
@@ -167,10 +173,12 @@ export const source: Effect.Effect<
       get: makeGetTool(client),
       start: makeStartTool(client),
       cancel: makeCancelTool(client),
+      logs: makeLogsTool(client),
+      artifacts: makeArtifactsTool(client),
     },
     events: [buildStatusUpdated(client, socket)],
     instructions:
-      "Codemagic: codemagic.buildStatusUpdated sends every status change of a build, or of every build in an app. Filter on status, branch, or pull_request in code. Read more with codemagic_get, and start or cancel a build with codemagic_start and codemagic_cancel.",
+      "Codemagic: codemagic.buildStatusUpdated sends every status change of a build, or of every build in an app. Filter on status, branch, or pull_request in code. Read more with codemagic_get and codemagic_logs, and start or cancel a build with codemagic_start and codemagic_cancel. codemagic_artifacts creates public download links.",
   };
 });
 
