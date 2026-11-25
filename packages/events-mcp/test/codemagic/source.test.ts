@@ -49,7 +49,10 @@ const statuses = (
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
-      const { event, updates, health } = yield* makeEvent({ read });
+      const { event, updates, health } = yield* makeEvent({
+        read,
+        send: () => Effect.die(new Error("a watch only reads")),
+      });
       const feed = yield* event.subscribe(params);
       const fiber = yield* feed.events.pipe(
         Stream.take(count),
