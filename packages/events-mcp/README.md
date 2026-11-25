@@ -23,7 +23,7 @@ Lark WebSocket, GitLab Action Cable, Codemagic Socket.IO
 
 The filter is a short piece of JavaScript the agent writes. On each event it can:
 
-- read more from Lark or GitLab, such as the failed jobs or the rest of a thread,
+- read more from Lark, GitLab, or Codemagic, such as the failed jobs or the rest of a thread,
 - keep a little JSON state between events, such as the last comment it saw,
 - ask a decision model a yes-or-no question when plain code cannot tell whether the event matters.
 

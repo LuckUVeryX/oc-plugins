@@ -1,6 +1,6 @@
 import { Effect, Option, Schema } from "effect";
 import { ToolError, type Tool } from "../source/contract.ts";
-import { GetInput, makeTool } from "../source/tool.ts";
+import { GetInput, makeTool, validPath } from "../source/tool.ts";
 import type { LarkAuth } from "./auth.ts";
 
 const Envelope = Schema.Struct({
@@ -14,9 +14,6 @@ const ErrorResponse = Schema.Struct({
 const HttpErrorResponse = Schema.Struct({ response: Schema.Struct({ status: Schema.Number }) });
 
 export type LarkRequester = (input: GetInput, signal: AbortSignal) => Promise<unknown>;
-
-const validPath = (path: string) =>
-  path.startsWith("/") && !path.includes("//") && !path.includes("..") && !/[?#\\%]/.test(path);
 
 export const getLark = Effect.fn("Lark.get")(function* (
   request: LarkRequester,

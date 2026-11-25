@@ -141,7 +141,7 @@ No settings are required to start the server. Each source needs its own credenti
 An automation reacts to each event. Its code action filters, keeps state and wakes the session.
 
 1. Call `tools.opencode.list_mcp_events({ server: "events" })` in `execute` for the events, args and payloads.
-2. Read the endpoints the code will read, with `lark_get` or `gitlab_get`, and confirm the response shape and IDs.
+2. Read the endpoints the code will read, with `lark_get`, `gitlab_get`, or `codemagic_get`, and confirm the response shape and IDs.
 3. Create the automation.
 
 ```js
@@ -176,7 +176,7 @@ These clients have no automations, so events-mcp runs the watch's code. A null r
 ### Arm a watch
 
 1. Call `list_events` for the events, targets and payloads.
-2. Read the endpoints the code will read, with `lark_get` or `gitlab_get`, and confirm the response shape and IDs.
+2. Read the endpoints the code will read, with `lark_get`, `gitlab_get`, or `codemagic_get`, and confirm the response shape and IDs.
 3. Call `watch({ "event": "<name>", "id": "<your name>", "code": "...", ... })`. Pass `target` when `list_events` lists one, and `expiresInSeconds` for more than an hour. Codex also passes `"threadId": "<the value of $CODEX_THREAD_ID>"`.
 
 The wake text is the code's result: a string as is, or JSON as `JSON.stringify` of the value. In Claude Code it arrives as a channel message from the server, and in Codex as a new user turn in the same thread. To stop a watch early, call `unwatch({ "id": "..." })`. `watches` returns each active watch with the arguments it was armed with, which is what you need to arm it again, and the params a target resolved to. If a watch stops with `code failed`, fix the code and arm a new watch.
@@ -198,15 +198,16 @@ return input.event.data;
 
 ### Code tools
 
-| Tool                                | What it does                                                 |
-| ----------------------------------- | ------------------------------------------------------------ |
-| `tools.lark.get({ path, query })`   | Read-only GET under `/open-apis`.                            |
-| `tools.gitlab.get({ path, query })` | Read-only GET under `/api/v4`.                               |
-| `tools.watch.state.get()`           | This watch's JSON memory, null until set.                    |
-| `tools.watch.state.set(value)`      | Replace it, up to 64 KB.                                     |
-| `tools.events.decide(request)`      | Decision model answers with probabilities, one per question. |
+| Tool                                   | What it does                                                 |
+| -------------------------------------- | ------------------------------------------------------------ |
+| `tools.lark.get({ path, query })`      | Read-only GET under `/open-apis`.                            |
+| `tools.gitlab.get({ path, query })`    | Read-only GET under `/api/v4`.                               |
+| `tools.codemagic.get({ path, query })` | Read-only GET under `/api/v3`.                               |
+| `tools.watch.state.get()`              | This watch's JSON memory, null until set.                    |
+| `tools.watch.state.set(value)`         | Replace it, up to 64 KB.                                     |
+| `tools.events.decide(request)`         | Decision model answers with probabilities, one per question. |
 
-The Lark path rejects `..`, `//`, `%`, `\`, a query string, and a fragment. Pass query parameters in `query`, and page with `page_token` when the endpoint paginates. The GitLab path must stay under `/api/v4` after URL normalisation and rejects a redirect. Percent-encode project paths, for example `/projects/group%2Fproject`.
+The Lark path rejects `..`, `//`, `%`, `\`, a query string, and a fragment. Pass query parameters in `query`, and page with `page_token` when the endpoint paginates. The Codemagic path follows the same rules, and its reads can return credentials the token can see, such as `/user/api-key`. The GitLab path must stay under `/api/v4` after URL normalisation and rejects a redirect. Percent-encode project paths, for example `/projects/group%2Fproject`.
 
 Use `decide` when plain code cannot tell whether an event deserves a wake. One call accepts several questions.
 

@@ -15,6 +15,9 @@ export const GetInput = Schema.Struct({
 });
 export type GetInput = typeof GetInput.Type;
 
+export const validPath = (path: string) =>
+  path.startsWith("/") && !path.includes("//") && !path.includes("..") && !/[?#\\%\s]/.test(path);
+
 export const makeTool = <Input>(options: {
   readonly description: string;
   readonly input: Schema.Decoder<Input>;
