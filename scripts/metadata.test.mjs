@@ -103,6 +103,18 @@ test("rejects package names that differ from their directories", async () => {
   expect(result.stderr).toContain("package name must match its directory");
 });
 
+test("accepts a scope only when the package name still matches the directory", async () => {
+  const { filename, pkg, run } = await fixture();
+  pkg.name = "@acme/example";
+  await writeFile(filename, JSON.stringify(pkg));
+  expect(run().status).toBe(0);
+  pkg.name = "@acme/other";
+  await writeFile(filename, JSON.stringify(pkg));
+  const result = run();
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("package name must match its directory");
+});
+
 test("rejects non-exact root versions instead of copying ranges into packages", async () => {
   const { directory, filename, run } = await fixture();
   const original = await readFile(filename, "utf8");

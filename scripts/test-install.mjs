@@ -15,6 +15,7 @@ delete env.BUN_OPTIONS;
 const temporary = await mkdtemp(
   join(existsSync("/tmp/opencode") ? "/tmp/opencode" : tmpdir(), "oc-plugins-install-"),
 );
+const unscoped = /^(?:@[^/]+\/)?([^/]+)$/;
 
 function run(command, args, cwd, stage) {
   const result = spawnSync(command, args, {
@@ -54,7 +55,7 @@ try {
     if (!entry.isDirectory()) continue;
     const directory = join(root, "packages", entry.name);
     const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
-    assert.equal(manifest.name, entry.name);
+    assert.equal(unscoped.exec(manifest.name)?.[1], entry.name);
     assert.equal(manifest.version, policy.version);
     assert.deepEqual(
       manifest.devDependencies ?? {},
@@ -91,12 +92,12 @@ try {
       assert(target.startsWith("./src/"), `${manifest.name}: bin outside src`);
       assert(entries.includes(`package/${target.slice(2)}`), `${manifest.name}: missing ${target}`);
     }
-    packages.push({ manifest, artifact });
+    packages.push({ manifest, artifact, directory: entry.name });
   }
   assert(packages.length > 0, "No packages discovered");
 
   for (const selection of [...packages.map((pkg) => [pkg]), packages]) {
-    const label = selection.length === 1 ? selection[0].manifest.name : "combined";
+    const label = selection.length === 1 ? selection[0].directory : "combined";
     const consumer = join(temporary, label);
     await mkdir(consumer);
     const dependencies = {};

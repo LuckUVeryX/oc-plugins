@@ -47,7 +47,7 @@ A target the token cannot read, or a link to a resource that does not exist, fai
 GitLab marks the GraphQL subscription fields Experiment, so the selection set and arguments can change without deprecation. Regenerate the committed catalog after a GitLab upgrade:
 
 ```sh
-GITLAB_TOKEN=... bun run --filter events-mcp generate:gitlab
+GITLAB_TOKEN=... bun run --filter @luckuveryx/events-mcp generate:gitlab
 ```
 
 ### Codemagic
@@ -78,14 +78,14 @@ The channel confirmation appears on every launch during the preview. Without `--
 
 Claude Code queues channel messages while it is busy and delivers them together on the next turn. It sends no acknowledgement, so use `watches` to check that a watch is still armed.
 
-The same server entry in a project `.mcp.json`, with the absolute path:
+The same server entry in a project `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "events-mcp": {
-      "command": "bun",
-      "args": ["/home/you/.local/share/events-mcp/packages/events-mcp/src/main.ts", "claude"]
+      "command": "bunx",
+      "args": ["@luckuveryx/events-mcp@latest", "claude"]
     }
   }
 }
@@ -101,12 +101,19 @@ Codex does not tell an MCP server which thread it serves. The watch tool takes a
 
 ## The hub
 
-`events-mcp <harness>` connects to one hub per user and starts it when none is running.
+`bunx @luckuveryx/events-mcp@latest <harness>` connects to one hub per user and starts it when none is running.
 
-- The hub keeps the environment of the session that started it, including `LARK_APP_ID`, `LARK_APP_SECRET`, and `GITLAB_TOKEN`. After you change those variables, end every session, Codex threads included, so the next one starts a new hub. A connected Codex keeps the old hub alive.
+- The hub keeps the environment of the process that started it, including `LARK_APP_ID`, `LARK_APP_SECRET`, and `GITLAB_TOKEN`. After you change those variables, run `opencode service restart` and reopen Claude Code and Codex. OpenCode's MCP processes belong to its background service, so closing a window does not end them. A connected Codex keeps the old hub alive.
 - Its socket is `$XDG_RUNTIME_DIR/events-hub/hub.sock`, or `/run/user/<uid>/events-hub/hub.sock` when `XDG_RUNTIME_DIR` is unset. On macOS it is `~/.local/state/events-hub/hub.sock`.
 - Its log is `~/.local/state/events-hub/hub.log`.
 - If the hub dies, its connections end and every open watch ends with them. Arm a new watch. Nothing re-arms on its own.
+
+Each MCP server process sends `{"harness","version"}` to the hub. The hub answers with one JSON line, `accepted` or `replaced`, before any MCP bytes.
+
+- A newer client replaces an older hub when no OpenCode connection is open. The hub closes its listener, replies `replaced`, and exits. The client waits up to 5 seconds for it to exit, then starts a new hub. Claude Code and Codex watches on the old hub end.
+- A newer client joins an older hub when an OpenCode connection is open. The client prints a warning naming both versions. Run `opencode service restart` to update the hub.
+- An older client, from 0.1.0 on, works with a newer hub. The client only pipes bytes. A client from before 0.1.0 is refused and its server process exits.
+- A hub from a version before 0.1.0 never answers. A new client waits 5 seconds, then exits 1 with `events-mcp: the running hub predates version checks; every OpenCode, Claude Code and Codex session must be closed once.`
 
 ## Settings
 
@@ -377,7 +384,7 @@ This code drops the event when the model is not confident.
 
 | Symptom                                                                          | Cause                                                                                                                                                                                                                                                                  |
 | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Server code changes do not take effect after a reload                            | The hub process outlives client reloads. End every session, or kill the hub process. The next session starts a fresh one.                                                                                                                                              |
+| Server code changes do not take effect after a reload                            | The hub process outlives client reloads. Run `opencode service restart` and reopen Claude Code and Codex. A newer client replaces an older hub unless an OpenCode connection is open.                                                                                  |
 | Server fails to start                                                            | The harness argument is missing or unknown, `GITLAB_HOST` is empty, `EVENTS_DECISIONS_MODEL` is not valid JSON in the model shape, or the committed event catalog is invalid. The harness argument is `opencode`, `claude`, or `codex`. Server logs go to the hub log. |
 | Claude Code shows the server but no wake arrives                                 | Start Claude Code with `MCP_PROTOCOL_NEGOTIATION=legacy` and `--dangerously-load-development-channels server:<name>`, using the name from `claude mcp list`. Channels also need claude.ai or Console API key auth.                                                     |
 | A Lark watch fails to start with "No Lark app credentials"                       | Set `LARK_APP_ID` and `LARK_APP_SECRET` for the service and arm a new watch.                                                                                                                                                                                           |
@@ -388,7 +395,7 @@ This code drops the event when the model is not confident.
 | A GitLab watch stops with "No GitLab token"                                      | Set `GITLAB_TOKEN`, or authenticate `glab` for the GitLab host so `glab config get token --host <host>` returns a token.                                                                                                                                               |
 | A GitLab watch fails to arm with "GitLab HTTP 404"                               | The target names a resource the token cannot read, or the link is wrong. `gitlab_get` on the path in the message shows the same result.                                                                                                                                |
 | A GitLab watch stops with "refused this watch"                                   | GitLab refused the subscription after the target read succeeded. Check that the token can still read the resource, then arm a new watch.                                                                                                                               |
-| A Codemagic watch fails with "No Codemagic API token" or "Check CODEMAGIC_TOKEN" | Set a valid `CODEMAGIC_TOKEN`, end every session, and arm a new watch.                                                                                                                                                                                                 |
+| A Codemagic watch fails with "No Codemagic API token" or "Check CODEMAGIC_TOKEN" | Set a valid `CODEMAGIC_TOKEN`, run `opencode service restart`, reopen Claude Code and Codex, and arm a new watch.                                                                                                                                                      |
 | A notes watch stops with "exceeds 16384 bytes"                                   | The code returned more than one event may carry. Return less data.                                                                                                                                                                                                     |
 | A Codex watch fails with "Codex does not know thread"                            | `threadId` is wrong. Run `printf %s "$CODEX_THREAD_ID"` in the thread's shell and pass that exact value.                                                                                                                                                               |
 | A Codex watch fails with "Cannot reach the Codex app-server"                     | The Codex app-server control socket is not at `~/.codex/app-server-control/app-server-control.sock`. Start Codex without `--no-daemon`, using the default `~/.codex` home.                                                                                             |

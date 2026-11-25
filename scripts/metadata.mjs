@@ -9,6 +9,7 @@ const write = process.argv.includes("--write");
 const groups = ["dependencies", "peerDependencies", "devDependencies", "optionalDependencies"];
 const changes = [];
 const updates = [];
+const unscoped = /^(?:@[^/]+\/)?([^/]+)$/;
 
 if (process.argv.slice(2).some((arg) => arg !== "--write")) {
   throw new Error("Usage: bun scripts/metadata.mjs [--write]");
@@ -26,7 +27,7 @@ for (const entry of await readdir(join(root, "packages"), { withFileTypes: true 
   const directory = join(root, "packages", entry.name);
   const filename = join(directory, "package.json");
   const pkg = JSON.parse(await readFile(filename, "utf8"));
-  if (pkg.name !== basename(directory)) {
+  if (unscoped.exec(pkg.name)?.[1] !== basename(directory)) {
     throw new Error(`${filename}: package name must match its directory`);
   }
   let changed = false;

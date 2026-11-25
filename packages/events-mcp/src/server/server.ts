@@ -18,6 +18,7 @@ import { Feeds } from "../watch/feeds.ts";
 import { HEARTBEAT_MS, runWatch, type Notification } from "../watch/watch.ts";
 import type { Harness } from "../harness/harness.ts";
 import { get, type Name as HarnessName } from "../harness/catalog.ts";
+import { version } from "../version.ts";
 
 const DEFAULT_WATCH_SECONDS = 3600;
 const DEFAULT_STEP_TIMEOUT_SECONDS = 120;
@@ -89,7 +90,7 @@ const buildServer = (options: ServerOptions): McpServer => {
     Object.keys(source.tools).map((name) => `tools.${source.name}.${name}`),
   );
   const server = new McpServer(
-    { name: "events-mcp", version: "0.0.0" },
+    { name: "events-mcp", version },
     {
       capabilities: options.harness.capabilities,
       instructions: options.harness.instructions(options.registry.sources),

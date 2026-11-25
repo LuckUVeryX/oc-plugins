@@ -63,7 +63,12 @@ async function verifyExecutable(name) {
       stdout: "pipe",
       stderr: "pipe",
       signal,
-      env: { ...process.env, LARK_APP_ID: "cli_0000000000000001", LARK_APP_SECRET: "offline" },
+      env: {
+        ...process.env,
+        EVENTS_MCP_HUB_DIR: join(process.cwd(), "hub"),
+        LARK_APP_ID: "cli_0000000000000001",
+        LARK_APP_SECRET: "offline",
+      },
     },
   );
   const stderr = new Response(child.stderr).text();
@@ -127,7 +132,12 @@ async function verifyExecutable(name) {
       stdout: "pipe",
       stderr: "pipe",
       signal: closedSignal,
-      env: { ...process.env, LARK_APP_ID: "cli_0000000000000001", LARK_APP_SECRET: "offline" },
+      env: {
+        ...process.env,
+        EVENTS_MCP_HUB_DIR: join(process.cwd(), "hub"),
+        LARK_APP_ID: "cli_0000000000000001",
+        LARK_APP_SECRET: "offline",
+      },
     },
   );
   const closedStderr = new Response(closed.stderr).text();
