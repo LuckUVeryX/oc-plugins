@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import { Effect } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { makeClient } from "../../src/codemagic/client.ts";
-import { makeStartTool } from "../../src/codemagic/tools.ts";
+import { makeCancelTool, makeStartTool } from "../../src/codemagic/tools.ts";
 
 const id = "0000000000000000000000a1";
 
@@ -23,4 +23,17 @@ test("codemagic_start sends the request once when Codemagic fails", async () => 
       .pipe(Effect.flip),
   );
   expect(urls).toHaveLength(1);
+});
+
+test("codemagic_cancel reports only a 204 as canceled", async () => {
+  const cancel = (status: number) =>
+    Effect.runPromise(
+      makeCancelTool(fake(() => new Response(null, { status })).client)
+        .run({ buildId: id })
+        .pipe(Effect.orElseSucceed(() => "failed")),
+    );
+  expect(await cancel(204)).toEqual({ buildId: id, canceled: true });
+  expect(await cancel(409)).toEqual({ buildId: id, canceled: false });
+  // Codemagic answers a missing build with its web app's HTML page and status 200.
+  expect(await cancel(200)).toBe("failed");
 });

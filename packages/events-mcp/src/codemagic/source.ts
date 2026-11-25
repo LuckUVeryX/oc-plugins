@@ -9,7 +9,7 @@ import {
 } from "../source/contract.ts";
 import { CodemagicClient } from "./client.ts";
 import { CodemagicSocket } from "./socket.ts";
-import { makeGetTool, makeStartTool } from "./tools.ts";
+import { makeCancelTool, makeGetTool, makeStartTool } from "./tools.ts";
 
 const buildLink =
   /^https:\/\/codemagic\.io\/(?:app\/[0-9a-f]{24}\/)?build\/([0-9a-f]{24})\/?(?:[?#].*)?$/;
@@ -163,10 +163,14 @@ export const source: Effect.Effect<
   const socket = yield* CodemagicSocket.Service;
   return {
     name: Schema.decodeUnknownSync(SourceName)("codemagic"),
-    tools: { get: makeGetTool(client), start: makeStartTool(client) },
+    tools: {
+      get: makeGetTool(client),
+      start: makeStartTool(client),
+      cancel: makeCancelTool(client),
+    },
     events: [buildStatusUpdated(client, socket)],
     instructions:
-      "Codemagic: codemagic.buildStatusUpdated sends every status change of a build, or of every build in an app. Filter on status, branch, or pull_request in code. Read more with codemagic_get, and start a build with codemagic_start.",
+      "Codemagic: codemagic.buildStatusUpdated sends every status change of a build, or of every build in an app. Filter on status, branch, or pull_request in code. Read more with codemagic_get, and start or cancel a build with codemagic_start and codemagic_cancel.",
   };
 });
 

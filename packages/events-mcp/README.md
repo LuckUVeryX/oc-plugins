@@ -27,7 +27,7 @@ The filter is a short piece of JavaScript the agent writes. On each event it can
 - keep a little JSON state between events, such as the last comment it saw,
 - ask a decision model a yes-or-no question when plain code cannot tell whether the event matters.
 
-The server reads, and can start Codemagic builds. The agent replies with its own tools, such as `lark-cli` or `glab`.
+The server reads, and can start and cancel Codemagic builds. The agent replies with its own tools, such as `lark-cli` or `glab`.
 
 ## Events
 
@@ -123,7 +123,7 @@ Restart your sessions, then ask the agent something like "wake me when the pipel
 - **A watch lasts an hour** in Claude Code and Codex unless the agent asks for longer. In OpenCode it lasts until its automation expires or is deleted.
 - **Every wake costs a turn.** Filter in the watch code so only events that matter wake the session.
 - **One Lark consumer per app.** A watch fails if `lark-cli event consume` or another copy of this server holds the app's connection.
-- **Watch code reads whatever your credentials allow, and can start Codemagic builds.** Grant only the scopes you need.
+- **Watch code reads whatever your credentials allow, and can start and cancel Codemagic builds.** Grant only the scopes you need.
 - **GitLab subscriptions are marked Experiment** and can change on a GitLab upgrade.
 - **Codemagic push is undocumented.** It is the connection Codemagic's web app uses, and it can change without notice.
 

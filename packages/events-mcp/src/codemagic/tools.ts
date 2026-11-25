@@ -54,3 +54,21 @@ export const makeStartTool = (client: CodemagicClient.Interface): Tool =>
         return { buildId: data.id };
       }).pipe(toToolError),
   });
+
+export const makeCancelTool = (client: CodemagicClient.Interface): Tool =>
+  makeTool({
+    description: "Cancel a Codemagic build. canceled is false when the build had already ended.",
+    input: Schema.Struct({ buildId: Id }),
+    run: ({ buildId }) =>
+      Effect.gen(function* () {
+        const { status } = yield* client.send(
+          HttpClientRequest.post(`https://codemagic.io/api/v3/builds/${buildId}/cancel`),
+          `the cancel of build ${buildId}`,
+        );
+        if (status !== 204 && status !== 409)
+          return yield* fail(
+            `Build ${buildId} does not exist, or CODEMAGIC_TOKEN cannot cancel it`,
+          );
+        return { buildId, canceled: status === 204 };
+      }).pipe(toToolError),
+  });

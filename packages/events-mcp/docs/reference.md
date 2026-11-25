@@ -204,6 +204,7 @@ return input.event.data;
 | `tools.gitlab.get({ path, query })`                    | Read-only GET under `/api/v4`.                               |
 | `tools.codemagic.get({ path, query })`                 | Read-only GET under `/api/v3`.                               |
 | `tools.codemagic.start({ appId, workflowId, branch })` | Starts a build. Pass `tag` instead of `branch` for a tag.    |
+| `tools.codemagic.cancel({ buildId })`                  | Cancels a build.                                             |
 | `tools.watch.state.get()`                              | This watch's JSON memory, null until set.                    |
 | `tools.watch.state.set(value)`                         | Replace it, up to 64 KB.                                     |
 | `tools.events.decide(request)`                         | Decision model answers with probabilities, one per question. |

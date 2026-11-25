@@ -23,7 +23,7 @@ Preconditions:
 - The run's hub directory exists; `run.sh init` created it.
 - No OpenCode TUI is launched. The client speaks the same MCP connection with the `opencode` harness.
 
-- **List the catalogue.** Run `bun scripts/mcp-client.mjs list`. It prints `protocol: 2026-07-28`, `events: 23`, `lark: 14`, `gitlab: 8`, `codemagic: 1`, and the tools `lark_get`, `gitlab_get`, `codemagic_get`, `codemagic_start`, `decide`. It writes `opencode-list.json`.
+- **List the catalogue.** Run `bun scripts/mcp-client.mjs list`. It prints `protocol: 2026-07-28`, `events: 23`, `lark: 14`, `gitlab: 8`, `codemagic: 1`, and the tools `lark_get`, `gitlab_get`, `codemagic_get`, `codemagic_start`, `codemagic_cancel`, `decide`. It writes `opencode-list.json`.
 - **Arm, trigger, and wait.** Run `bun scripts/mcp-client.mjs watch --timeout 600 --trigger`. It arms the watch on `gitlab.ciPipelineStatusesUpdated` for `$VERIFY_GITLAB_PROJECT`, waits for `active`, creates one pipeline, and waits for the first event. For a pipeline triggered separately, omit `--trigger` and run `bun scripts/target.ts trigger` after the armed record appears.
 - **Armed output.** The command prints `{"armed": {"subscriptionId": <n>, ...}}` and writes `opencode-armed.json`. The subscription id is the `events/stream` request id.
 - **Wake output.** It prints `receivedAt` and an `event.data` whose `id` is `gid://gitlab/Ci::Pipeline/<id>` and writes `opencode-wake.json`. The exit code is 0 only when the event names the pipeline it triggered.
