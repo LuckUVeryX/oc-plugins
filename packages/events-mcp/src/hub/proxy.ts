@@ -166,9 +166,7 @@ export const main = async (name: Name) => {
     const result = await readReply(socket);
     if (result.kind === "timeout") {
       socket.destroy();
-      exit(
-        "events-mcp: the running hub predates version checks; every OpenCode, Claude Code and Codex session must be closed once.",
-      );
+      exit(`events-mcp: the hub did not answer within ${REPLY_TIMEOUT_MS} ms`);
     }
     if (result.kind === "invalid") {
       socket.destroy();

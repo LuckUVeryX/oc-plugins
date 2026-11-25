@@ -215,7 +215,7 @@ test("two newer proxies started together end up on one hub", async () => {
   }
 }, 30_000);
 
-test("a hub that never replies reports the version check it predates", async () => {
+test("a proxy exits when the hub never replies", async () => {
   const root = mkdtempSync(join(tmpdir(), "events-hub-version-"));
   mkdirSync(join(root, "run"), { recursive: true });
   const sockets: net.Socket[] = [];
@@ -240,8 +240,7 @@ test("a hub that never replies reports the version check it predates", async () 
     ]);
     if (code === "timeout") await stop(child);
     expect(code).toBe(1);
-    expect(diagnostics).toContain("predates version checks");
-    expect(diagnostics).toContain("OpenCode, Claude Code and Codex");
+    expect(diagnostics).toContain("the hub did not answer");
   } finally {
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve) => server.close(() => resolve()));
