@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect";
+import { Clock, Effect, Option, Schema } from "effect";
 import { HttpClientRequest, HttpClientResponse } from "effect/http";
 import { type Tool, ToolError } from "../source/contract.ts";
 import { GetInput, makeTool, validPath } from "../source/tool.ts";
@@ -80,6 +80,7 @@ const LogUrl = Schema.optionalKey(Schema.NullOr(Schema.String));
 const LegacyBuild = Schema.Struct({
   build: Schema.Struct({
     finishedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    artefacts: Schema.Array(Schema.Struct({ name: Schema.String, url: Schema.String })),
     buildActions: Schema.Array(
       Schema.Struct({
         _id: Schema.String,
@@ -139,5 +140,37 @@ export const makeLogsTool = (client: CodemagicClient.Interface): Tool =>
           log: log.slice(-MAX_LOG_CHARACTERS),
           truncated: log.length > MAX_LOG_CHARACTERS,
         };
+      }).pipe(toToolError),
+  });
+
+const PublicUrl = Schema.Struct({ url: Schema.String });
+
+const PUBLIC_URL_SECONDS = 3 * 24 * 60 * 60;
+
+export const makeArtifactsTool = (client: CodemagicClient.Interface): Tool =>
+  makeTool({
+    description:
+      "Create a public download link for each artifact of a Codemagic build. Anyone with a link can download the artifact for three days.",
+    input: Schema.Struct({ buildId: Id }),
+    run: ({ buildId }) =>
+      Effect.gen(function* () {
+        const build = yield* readLegacyBuild(client, buildId);
+        const expiresAt = Math.floor((yield* Clock.currentTimeMillis) / 1000) + PUBLIC_URL_SECONDS;
+        return yield* Effect.forEach(
+          build.artefacts,
+          Effect.fnUntraced(function* (artifact) {
+            // The token must not follow a URL to another host.
+            if (!artifact.url.startsWith(`${LEGACY}/artifacts/`))
+              return yield* fail(`Unexpected artifact URL for ${artifact.name}`);
+            const response = yield* client.send(
+              HttpClientRequest.post(`${artifact.url}/public-url`).pipe(
+                HttpClientRequest.bodyJsonUnsafe({ expiresAt }),
+              ),
+              `the public link for ${artifact.name}`,
+            );
+            const { url } = yield* HttpClientResponse.schemaBodyJson(PublicUrl)(response);
+            return { name: artifact.name, url };
+          }),
+        );
       }).pipe(toToolError),
   });

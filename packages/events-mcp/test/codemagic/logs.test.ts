@@ -18,6 +18,7 @@ const readLog = (logs: Readonly<Record<string, string>>, ran = true) => {
     const response = request.url.endsWith(`/builds/${buildId}`)
       ? Response.json({
           build: {
+            artefacts: [],
             finishedAt: "2026-01-01T00:00:00Z",
             buildActions: [{ ...step, logUrl: null, subactions }],
           },

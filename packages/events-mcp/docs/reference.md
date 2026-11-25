@@ -204,6 +204,7 @@ return input.event.data;
 | `tools.gitlab.get({ path, query })`                    | Read-only GET under `/api/v4`.                               |
 | `tools.codemagic.get({ path, query })`                 | Read-only GET under `/api/v3`.                               |
 | `tools.codemagic.logs({ buildId, stepId })`            | The end of a build step's output.                            |
+| `tools.codemagic.artifacts({ buildId })`               | Creates three-day public links for a build's artifacts.      |
 | `tools.codemagic.start({ appId, workflowId, branch })` | Starts a build. Pass `tag` instead of `branch` for a tag.    |
 | `tools.codemagic.cancel({ buildId })`                  | Cancels a build.                                             |
 | `tools.watch.state.get()`                              | This watch's JSON memory, null until set.                    |
