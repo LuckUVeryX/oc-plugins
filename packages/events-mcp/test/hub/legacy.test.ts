@@ -22,7 +22,7 @@ test("a legacy client connects", async () => {
   try {
     await client.connect(transport);
     expect(client.getNegotiatedProtocolVersion()).toBe("2025-11-25");
-    expect((await client.listTools()).tools).toHaveLength(3);
+    expect((await client.listTools()).tools).toHaveLength(4);
   } finally {
     await client.close();
     rmSync(dir, { recursive: true, force: true });

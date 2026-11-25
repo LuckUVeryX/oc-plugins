@@ -7,7 +7,7 @@ import {
   SourceName,
   Unavailable,
 } from "../source/contract.ts";
-import { CodemagicClient } from "./client.ts";
+import { CodemagicClient, makeGetTool } from "./client.ts";
 import { CodemagicSocket } from "./socket.ts";
 
 const buildLink =
@@ -162,10 +162,10 @@ export const source: Effect.Effect<
   const socket = yield* CodemagicSocket.Service;
   return {
     name: Schema.decodeUnknownSync(SourceName)("codemagic"),
-    tools: {},
+    tools: { get: makeGetTool(client) },
     events: [buildStatusUpdated(client, socket)],
     instructions:
-      "Codemagic: codemagic.buildStatusUpdated sends every status change of a build, or of every build in an app. Filter on status, branch, or pull_request in code.",
+      "Codemagic: codemagic.buildStatusUpdated sends every status change of a build, or of every build in an app. Filter on status, branch, or pull_request in code. Read more with codemagic_get.",
   };
 });
 

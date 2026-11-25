@@ -1,6 +1,6 @@
 # Read tools
 
-The agent and every watch's code can read GitLab and Lark through `gitlab_get` and `lark_get`. Both are read-only GETs under a fixed API prefix, so a watch can fetch the context a raw event omits.
+The agent and every watch's code can read GitLab, Lark, and Codemagic through `gitlab_get`, `lark_get`, and `codemagic_get`. All are read-only GETs under a fixed API prefix, so a watch can fetch the context a raw event omits.
 
 ## Sub-features
 
@@ -36,7 +36,7 @@ Preconditions:
 
 - `gitlab_get` paths stay under `/api/v4` after normalisation and reject a redirect. Percent-encode a project path, for example `/projects/group%2Fproject`.
 - `lark_get` paths stay under `/open-apis` and reject `..`, `//`, `%`, a backslash, a query string, and a fragment. Pass query parameters in `query`.
-- Both tools return JSON only. A job log or a binary body is not readable; use `glab ci trace` outside the server.
+- All three tools return JSON only. A job log or a binary body is not readable; use `glab ci trace` outside the server.
 - Lark endpoints paginate. Pass `page_token` in `query`; the tool does not follow pages for you.
 - A resource the token cannot read fails with a message that names it, and GitLab sometimes answers 404 for a resource that exists. Check with the same call before blaming the watch.
 - A watch's code sees the same tools, so a read tool failure fails the code, not the event feed.
