@@ -96,10 +96,11 @@ async function verifyExecutable(name) {
     .split("\n")
     .map((line) => JSON.parse(line));
   const events = responses.find((response) => response.id === 2)?.result?.events ?? [];
-  assert.equal(events.length, 22);
+  assert.equal(events.length, 23);
   assert(events.some((event) => event.name === "lark.im.message.receive_v1"));
   assert(events.some((event) => event.name === "gitlab.ciPipelineStatusesUpdated"));
   assert(events.some((event) => event.name === "gitlab.noteable.notes_changed"));
+  assert(events.some((event) => event.name === "codemagic.buildStatusUpdated"));
   child.stdin.end();
   const exited = await child.exited;
   assert(!signal.aborted, `${name}: executable did not stop after stdin EOF`);

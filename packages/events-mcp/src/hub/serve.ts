@@ -20,6 +20,9 @@ import { FetchHttpClient } from "effect/http";
 import { rmSync } from "node:fs";
 import net from "node:net";
 import { PassThrough } from "node:stream";
+import { CodemagicClient } from "../codemagic/client.ts";
+import { Codemagic } from "../codemagic/source.ts";
+import { CodemagicSocket } from "../codemagic/socket.ts";
 import { DecisionModel } from "../decision/decision-model.ts";
 import { Feeds } from "../watch/feeds.ts";
 import { Registry } from "../source/registry.ts";
@@ -295,12 +298,13 @@ const LarkLayers = LarkSocket.layer.pipe(Layer.provideMerge(LarkAuth.layer));
 const GitlabLayers = Layer.merge(GitlabSocket.layer, GitlabClient.layer).pipe(
   Layer.provideMerge(GitlabAuth.layer),
 );
-const SourceLayers = Layer.merge(LarkLayers, GitlabLayers).pipe(
+const CodemagicLayers = Layer.merge(CodemagicSocket.layer, CodemagicClient.layer);
+const SourceLayers = Layer.mergeAll(LarkLayers, GitlabLayers, CodemagicLayers).pipe(
   Layer.provide(FetchHttpClient.layer),
 );
-const RegistryLayer = Registry.layer(Effect.all([Lark.source, Gitlab.source])).pipe(
-  Layer.provide(SourceLayers),
-);
+const RegistryLayer = Registry.layer(
+  Effect.all([Lark.source, Gitlab.source, Codemagic.source]),
+).pipe(Layer.provide(SourceLayers));
 const CoreLayer = Layer.mergeAll(Feeds.layer, DecisionModel.layer, RegistryLayer);
 
 export const main = () => {

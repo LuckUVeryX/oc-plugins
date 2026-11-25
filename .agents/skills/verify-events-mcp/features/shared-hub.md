@@ -27,7 +27,7 @@ Preconditions:
 - **Open two sessions.** Run `bun scripts/mcp-client.mjs hub --sessions 2`. It opens two stdio connections with the `opencode` harness against the run's hub, lists events in each, and writes `shared-hub.json`.
 - **One process.** The output has `"hubPids": ["<pid>"]`, one element. Two pids, or a pid from another run's log, means sessions did not share a hub.
 - **Two live sessions.** The output has `"concurrent": 2` and two connection ids in `openConnections`. `opened` is larger because the client opens a short negotiation connection first; only the open set counts.
-- **Same catalogue.** Each entry in `sessions` reads `{"session": <n>, "events": 22}`.
+- **Same catalogue.** Each entry in `sessions` reads `{"session": <n>, "events": 23}`.
 - **Evidence.** `shared-hub.json` holds the hub dir, `sessions`, the pids, `reusedHub`, `opened`, `concurrent`, the open connections, and the log path. Copy `hub.log` through cleanup, which keeps the `listening at ... as pid <pid>` line and each `connection opened`.
 - **Exit.** Run `scripts/run.sh cleanup "$VERIFY_RUN_DIR"`. With no connections left, the hub logs `no connections, exiting` and stops.
 

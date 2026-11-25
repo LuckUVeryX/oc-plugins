@@ -5,7 +5,7 @@ description: Prove events-mcp wakes a real agent session. Use when changing a ha
 
 # Verify events-mcp
 
-events-mcp is an MCP server that wakes an agent session in OpenCode, Claude Code, or Codex when Lark or GitLab sends an event. The user-facing behavior is a wake: an armed watch, a real event, and a turn in the session that names it. This skill drives that path in the real harnesses, captures evidence, and leaves the machine as it found it.
+events-mcp is an MCP server that wakes an agent session in OpenCode, Claude Code, or Codex when Lark, GitLab, or Codemagic sends an event. The user-facing behavior is a wake: an armed watch, a real event, and a turn in the session that names it. This skill drives that path in the real harnesses, captures evidence, and leaves the machine as it found it.
 
 Read `features/README.md` before driving anything. It owns the feature map; this file owns launch, isolation, evidence, and cleanup.
 

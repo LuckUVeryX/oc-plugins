@@ -1,12 +1,12 @@
 # oc-plugins
 
-Two OpenCode plugins and a standalone events MCP server for Lark and GitLab in one Bun workspace.
+Two OpenCode plugins and a standalone events MCP server for Lark, GitLab, and Codemagic in one Bun workspace.
 
-| Package                                       | Purpose                                                  |
-| --------------------------------------------- | -------------------------------------------------------- |
-| [oc-fallback](packages/oc-fallback/README.md) | Switch models when a primary request hits the free limit |
-| [oc-idle](packages/oc-idle/README.md)         | Compact large sessions after an idle period              |
-| [events-mcp](packages/events-mcp/README.md)   | Wake sessions on Lark and GitLab events over MCP stdio   |
+| Package                                       | Purpose                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| [oc-fallback](packages/oc-fallback/README.md) | Switch models when a primary request hits the free limit           |
+| [oc-idle](packages/oc-idle/README.md)         | Compact large sessions after an idle period                        |
+| [events-mcp](packages/events-mcp/README.md)   | Wake sessions on Lark, GitLab, and Codemagic events over MCP stdio |
 
 Tested with OpenCode 2.4.1 and Effect 4.1.0. No build step is required.
 

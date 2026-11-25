@@ -50,6 +50,16 @@ GitLab marks the GraphQL subscription fields Experiment, so the selection set an
 GITLAB_TOKEN=... bun run --filter events-mcp generate:gitlab
 ```
 
+### Codemagic
+
+| Event                          | Target                 | Payload                         |
+| ------------------------------ | ---------------------- | ------------------------------- |
+| `codemagic.buildStatusUpdated` | build link or app link | A build, on each status change. |
+
+A build link is `https://codemagic.io/app/<appId>/build/<buildId>`, and its first watch also gets the current status. An app link is `https://codemagic.io/app/<appId>` and follows every build in the app. The payload is the build as `GET /api/v3/builds/{id}` returns it, including artifact links that anyone can download from.
+
+A build is in progress while its status is `initializing`, `queued`, `waiting`, `preparing`, `fetching`, `testing`, `building`, `publishing`, or `finishing`. It has ended at `finished`, `failed`, `canceled`, `timeout`, or `skipped`.
+
 ## Client notes
 
 ### OpenCode
@@ -104,10 +114,11 @@ No settings are required to start the server. Each source needs its own credenti
 
 | Variable                 | Default                                          | Effect                                                                                                                                                                                                                 |
 | ------------------------ | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LARK_APP_ID`            | for Lark watches                                 | Lark app ID, `cli_` followed by 16 hex characters. Without it, Lark watches fail and GitLab watches work.                                                                                                              |
+| `LARK_APP_ID`            | for Lark watches                                 | Lark app ID, `cli_` followed by 16 hex characters. Without it, Lark watches fail and other watches work.                                                                                                               |
 | `LARK_APP_SECRET`        | for Lark watches                                 | Lark app secret. Never write it into the config file.                                                                                                                                                                  |
 | `GITLAB_TOKEN`           | unset                                            | GitLab token for the configured host. When unset or empty, the server reads `glab config get token --host <host>`. The token is validated with `GET /api/v4/user`, and a network failure is retried on the next watch. |
 | `GITLAB_HOST`            | `gitlab.com`                                     | GitLab host for the Action Cable connection and the REST tool. Set it for self-managed GitLab. An empty value is an error.                                                                                             |
+| `CODEMAGIC_TOKEN`        | for Codemagic watches                            | Codemagic API token. Without it, Codemagic watches fail and other watches work.                                                                                                                                        |
 | `EVENTS_DECISIONS_MODEL` | `{"providerID":"opencode","id":"jev-1.13-free"}` | Model behind `tools.events.decide`, as JSON: `{"providerID":"your-provider","id":"your-model","variant":"optional"}`. Omit `variant` when unused. Each call sends one model request.                                   |
 
 ## Limits
@@ -120,6 +131,7 @@ No settings are required to start the server. Each source needs its own credenti
 - OpenCode pauses the automation when its watch fails. The reason is in `lastOutput`, the session is not woken, and `automation.resume` arms it again. After a reconnect OpenCode arms the same watch again, and the automation keeps its state. Claude Code ends its watches when the session exits. Codex runs one server per thread, so a watch ends when that thread's server exits.
 - Lark delivers each app's events to one WebSocket client. Before connecting, the server reads `/open-apis/event/v1/connection`. If another consumer is online, such as `lark-cli event consume` or this server on another machine, the watch fails with a clear error instead of splitting events.
 - The GitLab notes channel is not part of the GraphQL schema and can change.
+- Codemagic documents no push, so its connection can change without notice. A build watch recovers the latest status after a reconnect. An app watch does not. A second watch on a build link that is already watched gets no current status.
 - In Claude Code and Codex, a wake is capped at 16,384 bytes, counted as `{ id, timestamp, data }`. Code that returns more stops the watch.
 - Every wake starts a session turn and costs tokens.
 - Every watch's code and every read tool can read whatever the credentials allow. Grant only the scopes your watches need. HR, payroll, and mail scopes expose personal data to the decision model.
@@ -228,6 +240,24 @@ The payload's `id` is the pipeline global ID, and its numeric suffix is the pipe
 
 Pass a pipeline link as `target` to follow one pipeline. Pass a commit link as `target` to follow that commit's pipelines. `gitlab.userMergeRequestUpdated` is the broad merge request event, and it takes no target.
 
+#### Babysit a Codemagic build
+
+The code keeps builds that ended on one branch. Drop the status check to follow progress too.
+
+```js
+const { branch, status } = input.event.data;
+if (branch !== "my-branch") return null;
+if (!["finished", "failed", "canceled", "timeout", "skipped"].includes(status)) return null;
+return input.event.data;
+```
+
+```json
+{
+  "target": "https://codemagic.io/app/<appId>",
+  "code": "…"
+}
+```
+
 #### Watch comments on a merge request
 
 `gitlab.noteable.notes_changed` sends only `{"event":"updated"}`. The payload repeats the subscription ids and adds `noteableIid`. The code reads the newest 20 notes, including system notes, and compares their comment ids with `tools.watch.state`.
@@ -333,30 +363,31 @@ This code drops the event when the model is not confident.
 ### Verify
 
 1. Run `opencode mcp list` or `claude mcp list`. For Codex, ask the agent in the TUI to call `list_events` instead. `codex mcp list` reports an entry as enabled even when its command does not exist, so it does not prove the server connected.
-2. OpenCode calls `tools.opencode.list_mcp_events({ server: "events" })`. Claude Code and Codex call `list_events`. Each lists 22 events, including `lark.im.message.receive_v1` and `gitlab.noteable.notes_changed`.
+2. OpenCode calls `tools.opencode.list_mcp_events({ server: "events" })`. Claude Code and Codex call `list_events`. Each lists 23 events, including `lark.im.message.receive_v1`, `gitlab.noteable.notes_changed`, and `codemagic.buildStatusUpdated`.
 3. For Lark, ask the user to trigger a subscribed event, such as a message to the bot. The wake confirms delivery.
 4. For GitLab, call `gitlab_get` with `{ "path": "/user" }` to check the token. Then arm a watch on a project the user can read and wait for the next pipeline status change.
 5. In Claude Code the wake appears as a channel message from the configured server, and in Codex as a new user turn in the watched thread. If it never arrives, check the client notes above.
 
 ## Troubleshoot
 
-| Symptom                                                           | Cause                                                                                                                                                                                                                                                                  |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Server code changes do not take effect after a reload             | The hub process outlives client reloads. End every session, or kill the hub process. The next session starts a fresh one.                                                                                                                                              |
-| Server fails to start                                             | The harness argument is missing or unknown, `GITLAB_HOST` is empty, `EVENTS_DECISIONS_MODEL` is not valid JSON in the model shape, or the committed event catalog is invalid. The harness argument is `opencode`, `claude`, or `codex`. Server logs go to the hub log. |
-| Claude Code shows the server but no wake arrives                  | Start Claude Code with `MCP_PROTOCOL_NEGOTIATION=legacy` and `--dangerously-load-development-channels server:<name>`, using the name from `claude mcp list`. Channels also need claude.ai or Console API key auth.                                                     |
-| A Lark watch fails to start with "No Lark app credentials"        | Set `LARK_APP_ID` and `LARK_APP_SECRET` for the service and arm a new watch.                                                                                                                                                                                           |
-| Watch fails with "Another connection for this Lark app is online" | Another consumer of the same app holds a connection, such as `lark-cli event consume` or this server elsewhere. Stop it and arm a new watch.                                                                                                                           |
-| Some events arrive, others do not                                 | The app lacks the subscription, or the event arrived while the connection was reconnecting.                                                                                                                                                                            |
-| An event never arrives                                            | The app lacks the permission or subscription, or Lark does not deliver that event over WebSocket.                                                                                                                                                                      |
-| A watch stops with `code failed` and `Lark API 99991672`          | The app lacks a read scope for the request.                                                                                                                                                                                                                            |
-| A GitLab watch stops with "No GitLab token"                       | Set `GITLAB_TOKEN`, or authenticate `glab` for the GitLab host so `glab config get token --host <host>` returns a token.                                                                                                                                               |
-| A GitLab watch fails to arm with "GitLab HTTP 404"                | The target names a resource the token cannot read, or the link is wrong. `gitlab_get` on the path in the message shows the same result.                                                                                                                                |
-| A GitLab watch stops with "refused this watch"                    | GitLab refused the subscription after the target read succeeded. Check that the token can still read the resource, then arm a new watch.                                                                                                                               |
-| A notes watch stops with "exceeds 16384 bytes"                    | The code returned more than one event may carry. Return less data.                                                                                                                                                                                                     |
-| A Codex watch fails with "Codex does not know thread"             | `threadId` is wrong. Run `printf %s "$CODEX_THREAD_ID"` in the thread's shell and pass that exact value.                                                                                                                                                               |
-| A Codex watch fails with "Cannot reach the Codex app-server"      | The Codex app-server control socket is not at `~/.codex/app-server-control/app-server-control.sock`. Start Codex without `--no-daemon`, using the default `~/.codex` home.                                                                                             |
-| A watch disappears without a stop message                         | OpenCode reloaded, restarted, or unloaded the idle location, or the Claude Code or Codex session exited. For OpenCode, set `location_idle_timeout` to `false` and arm a new watch.                                                                                     |
-| A watch stops with a timeout                                      | The event exceeded the code's 120-second limit. Shorten the work, such as fewer or smaller reads.                                                                                                                                                                      |
-| A watch stops with "Watch state exceeds 65536 bytes"              | The code stores too much in `tools.watch.state`. Keep less, or derive it again on each event.                                                                                                                                                                          |
-| Memory grows over time                                            | Watches and their buffers live in one long-running hub process, and buffers are unbounded. End the ones you no longer need with `unwatch`, or `automation.delete` in OpenCode.                                                                                         |
+| Symptom                                                                          | Cause                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server code changes do not take effect after a reload                            | The hub process outlives client reloads. End every session, or kill the hub process. The next session starts a fresh one.                                                                                                                                              |
+| Server fails to start                                                            | The harness argument is missing or unknown, `GITLAB_HOST` is empty, `EVENTS_DECISIONS_MODEL` is not valid JSON in the model shape, or the committed event catalog is invalid. The harness argument is `opencode`, `claude`, or `codex`. Server logs go to the hub log. |
+| Claude Code shows the server but no wake arrives                                 | Start Claude Code with `MCP_PROTOCOL_NEGOTIATION=legacy` and `--dangerously-load-development-channels server:<name>`, using the name from `claude mcp list`. Channels also need claude.ai or Console API key auth.                                                     |
+| A Lark watch fails to start with "No Lark app credentials"                       | Set `LARK_APP_ID` and `LARK_APP_SECRET` for the service and arm a new watch.                                                                                                                                                                                           |
+| Watch fails with "Another connection for this Lark app is online"                | Another consumer of the same app holds a connection, such as `lark-cli event consume` or this server elsewhere. Stop it and arm a new watch.                                                                                                                           |
+| Some events arrive, others do not                                                | The app lacks the subscription, or the event arrived while the connection was reconnecting.                                                                                                                                                                            |
+| An event never arrives                                                           | The app lacks the permission or subscription, or Lark does not deliver that event over WebSocket.                                                                                                                                                                      |
+| A watch stops with `code failed` and `Lark API 99991672`                         | The app lacks a read scope for the request.                                                                                                                                                                                                                            |
+| A GitLab watch stops with "No GitLab token"                                      | Set `GITLAB_TOKEN`, or authenticate `glab` for the GitLab host so `glab config get token --host <host>` returns a token.                                                                                                                                               |
+| A GitLab watch fails to arm with "GitLab HTTP 404"                               | The target names a resource the token cannot read, or the link is wrong. `gitlab_get` on the path in the message shows the same result.                                                                                                                                |
+| A GitLab watch stops with "refused this watch"                                   | GitLab refused the subscription after the target read succeeded. Check that the token can still read the resource, then arm a new watch.                                                                                                                               |
+| A Codemagic watch fails with "No Codemagic API token" or "Check CODEMAGIC_TOKEN" | Set a valid `CODEMAGIC_TOKEN`, end every session, and arm a new watch.                                                                                                                                                                                                 |
+| A notes watch stops with "exceeds 16384 bytes"                                   | The code returned more than one event may carry. Return less data.                                                                                                                                                                                                     |
+| A Codex watch fails with "Codex does not know thread"                            | `threadId` is wrong. Run `printf %s "$CODEX_THREAD_ID"` in the thread's shell and pass that exact value.                                                                                                                                                               |
+| A Codex watch fails with "Cannot reach the Codex app-server"                     | The Codex app-server control socket is not at `~/.codex/app-server-control/app-server-control.sock`. Start Codex without `--no-daemon`, using the default `~/.codex` home.                                                                                             |
+| A watch disappears without a stop message                                        | OpenCode reloaded, restarted, or unloaded the idle location, or the Claude Code or Codex session exited. For OpenCode, set `location_idle_timeout` to `false` and arm a new watch.                                                                                     |
+| A watch stops with a timeout                                                     | The event exceeded the code's 120-second limit. Shorten the work, such as fewer or smaller reads.                                                                                                                                                                      |
+| A watch stops with "Watch state exceeds 65536 bytes"                             | The code stores too much in `tools.watch.state`. Keep less, or derive it again on each event.                                                                                                                                                                          |
+| Memory grows over time                                                           | Watches and their buffers live in one long-running hub process, and buffers are unbounded. End the ones you no longer need with `unwatch`, or `automation.delete` in OpenCode.                                                                                         |
