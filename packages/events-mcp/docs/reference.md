@@ -112,8 +112,7 @@ Each MCP server process sends `{"harness","version"}` to the hub. The hub answer
 
 - A newer client replaces an older hub when no OpenCode connection is open. The hub closes its listener, replies `replaced`, and exits. The client waits up to 5 seconds for it to exit, then starts a new hub. Claude Code and Codex watches on the old hub end.
 - A newer client joins an older hub when an OpenCode connection is open. The client prints a warning naming both versions. Run `opencode service restart` to update the hub.
-- An older client, from 0.1.0 on, works with a newer hub. The client only pipes bytes. A client from before 0.1.0 is refused and its server process exits.
-- A hub from a version before 0.1.0 never answers. A new client waits 5 seconds, then exits 1 with `events-mcp: the running hub predates version checks; every OpenCode, Claude Code and Codex session must be closed once.`
+- An older client works with a newer hub. The client only pipes bytes.
 
 ## Settings
 
