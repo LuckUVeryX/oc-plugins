@@ -16,7 +16,7 @@ const HttpErrorResponse = Schema.Struct({ response: Schema.Struct({ status: Sche
 export type LarkRequester = (input: GetInput, signal: AbortSignal) => Promise<unknown>;
 
 const validPath = (path: string) =>
-  path.startsWith("/") && !path.includes("//") && !path.includes("..") && !/[?#\\%]/.test(path);
+  path.startsWith("/") && !path.includes("//") && !path.includes("..") && !/[?#\\%\s]/.test(path);
 
 export const getLark = Effect.fn("Lark.get")(function* (
   request: LarkRequester,
