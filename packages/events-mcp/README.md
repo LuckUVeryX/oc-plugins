@@ -32,7 +32,7 @@ The [reference](docs/reference.md#events) lists all 23 events.
 
 ## Setup
 
-You need Bun 1.4.4, and one of OpenCode 2.4.1, Claude Code 2.1.330, or Codex 0.171.0. For each source you use:
+You need Node.js 24 or later, and one of OpenCode 2.4.1, Claude Code 2.1.330, or Codex 0.171.0. For each source you use:
 
 - **Lark.** An app in WebSocket event mode, with `LARK_APP_ID` and `LARK_APP_SECRET`.
 - **GitLab.** `GITLAB_TOKEN` with `read_api` and `read_repository`, or `glab` logged in. Set `GITLAB_HOST` for self-managed GitLab.
@@ -51,7 +51,7 @@ Merge this into `~/.config/opencode/opencode.jsonc`:
     "servers": {
       "events": {
         "type": "local",
-        "command": ["bunx", "@luckuveryx/events-mcp@latest", "opencode"],
+        "command": ["npx", "-y", "@luckuveryx/events-mcp@latest", "opencode"],
         "protocol": "2026-07-28",
         "environment": {
           "LARK_APP_ID": "{env:LARK_APP_ID}",
@@ -71,7 +71,7 @@ Merge this into `~/.config/opencode/opencode.jsonc`:
 
 ```sh
 claude mcp add --scope user events-mcp -- \
-  bunx @luckuveryx/events-mcp@latest claude
+  npx -y @luckuveryx/events-mcp@latest claude
 
 MCP_PROTOCOL_NEGOTIATION=legacy claude --dangerously-load-development-channels server:events-mcp
 ```
@@ -84,8 +84,8 @@ Add this to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.events]
-command = "bunx"
-args = ["@luckuveryx/events-mcp@latest", "codex"]
+command = "npx"
+args = ["-y", "@luckuveryx/events-mcp@latest", "codex"]
 startup_timeout_sec = 20
 tool_timeout_sec = 120
 env_vars = ["LARK_APP_ID", "LARK_APP_SECRET", "GITLAB_TOKEN", "GITLAB_HOST", "CODEMAGIC_TOKEN"]
@@ -99,7 +99,7 @@ Clients on `@latest` update when their server process restarts. Run `opencode se
 
 A newer client replaces an older hub unless an OpenCode session is connected. Claude Code and Codex watches on the old hub end, so arm them again. When OpenCode is connected, the newer client joins the old hub and prints a warning. See [the hub](docs/reference.md#the-hub) for version rules.
 
-The package pins its direct dependencies. Indirect dependencies can change without a release, because `bunx` does not use this repository's `bun.lock`.
+The package pins its direct dependencies. Indirect dependencies can change without a release, because `npx` does not use this repository's `bun.lock`.
 
 ## Before you rely on it
 

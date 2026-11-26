@@ -5,7 +5,7 @@
     "": {
       "name": "oc-plugins",
       "devDependencies": {
-        "@effect/platform-bun": "4.1.0",
+        "@effect/platform-node-shared": "4.1.0",
         "@effect/vitest": "4.1.0",
         "@larksuiteoapi/node-sdk": "1.76.0",
         "@modelcontextprotocol/client": "2.4.0",
@@ -27,16 +27,17 @@
         "typescript-sdk-schema": "npm:typescript@5.9.3",
         "vitest": "5.1.0",
         "vitest-mock-extended": "5.1.1",
+        "ws": "8.23.0",
       },
     },
     "packages/events-mcp": {
       "name": "@luckuveryx/events-mcp",
       "version": "0.1.0",
       "bin": {
-        "events-mcp": "./src/main.ts",
+        "events-mcp": "./dist/main.js",
       },
       "dependencies": {
-        "@effect/platform-bun": "4.1.0",
+        "@effect/platform-node-shared": "4.1.0",
         "@larksuiteoapi/node-sdk": "1.76.0",
         "@modelcontextprotocol/server": "2.4.0",
         "@opencode/client": "2.4.1",
@@ -45,6 +46,7 @@
         "@opencode/util": "2.4.1",
         "effect": "4.1.0",
         "socket.io-client": "4.8.4",
+        "ws": "8.23.0",
       },
     },
     "packages/oc-fallback": {
@@ -117,8 +119,6 @@
     "@aws/lambda-invoke-store": ["@aws/lambda-invoke-store@0.3.0", "", {}, "sha512-sl4Bm6yiMNYrZKkqqDFWN0UfnWhlS8ivKxrYl+6t0gCLrqr8y3B2IqZZbFRkfaVVp7C/baApyh71P+LeE1A2sQ=="],
 
     "@effect/opentelemetry": ["@effect/opentelemetry@4.1.0", "", { "peerDependencies": { "@opentelemetry/api": ">=1.9.0 <2.0.0", "@opentelemetry/api-logs": ">=0.203.0 <0.300.0", "@opentelemetry/resources": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-logs": ">=0.203.0 <0.300.0", "@opentelemetry/sdk-metrics": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-base": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-node": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-web": ">=2.0.0 <3.0.0", "@opentelemetry/semantic-conventions": ">=1.33.0 <2.0.0", "effect": "^4.1.0" }, "optionalPeers": ["@opentelemetry/api", "@opentelemetry/api-logs", "@opentelemetry/resources", "@opentelemetry/sdk-logs", "@opentelemetry/sdk-metrics", "@opentelemetry/sdk-trace-base", "@opentelemetry/sdk-trace-node", "@opentelemetry/sdk-trace-web"] }, "sha512-j9bNzQaoQvcnimBFMG0i3piEW20E8HjkXAQHTJN/XqG2e4uJ9zCv53/HCNzD7+ooFn5S4nwQy/BOXeNReMIe+A=="],
-
-    "@effect/platform-bun": ["@effect/platform-bun@4.1.0", "", { "dependencies": { "@effect/platform-node-shared": "^4.1.0" }, "peerDependencies": { "effect": "^4.1.0" } }, "sha512-ZgIV+tV2utcbiopbWSoJuGn3FZuyqhLWIYITFCR8vlwnKicO1q0WgP4BBjDUYUTMRPEU/N1+BcZourAgpiDI/w=="],
 
     "@effect/platform-node": ["@effect/platform-node@4.1.0", "", { "dependencies": { "@effect/platform-node-shared": "^4.1.0", "undici": "^8.12.2" }, "peerDependencies": { "effect": "^4.1.0", "redis": ">=5.0.0 <7.0.0" } }, "sha512-v+X7moGVF9k5oMVvz0slA+NgtEod+W+oygeI285MDJgSlUCW3JcqElj+cD3rlijFZtpKhC7RLkU1GuCxjGHTpA=="],
 

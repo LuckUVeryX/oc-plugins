@@ -71,7 +71,7 @@ try {
     const artifact = join(temporary, `${entry.name}.tgz`);
     run(
       process.execPath,
-      ["pm", "pack", "--ignore-scripts", "--filename", artifact],
+      ["pm", "pack", "--filename", artifact],
       directory,
       `${manifest.name}: pack`,
     );
@@ -89,7 +89,7 @@ try {
       assert(entries.includes(`package/${target.slice(2)}`), `${manifest.name}: missing ${target}`);
     }
     for (const target of manifest.bin ? binTargets(manifest.bin) : []) {
-      assert(target.startsWith("./src/"), `${manifest.name}: bin outside src`);
+      assert(target.startsWith("./dist/"), `${manifest.name}: bin outside dist`);
       assert(entries.includes(`package/${target.slice(2)}`), `${manifest.name}: missing ${target}`);
     }
     packages.push({ manifest, artifact, directory: entry.name });

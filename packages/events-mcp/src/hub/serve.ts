@@ -1,4 +1,4 @@
-import { BunRuntime } from "@effect/platform-bun";
+import * as NodeRuntime from "@effect/platform-node-shared/NodeRuntime";
 import { StdioServerTransport, serveStdio } from "@modelcontextprotocol/server/stdio";
 import { Flock } from "@opencode/util/flock";
 import {
@@ -36,7 +36,7 @@ import { isName, type Name } from "../harness/catalog.ts";
 import { LarkAuth } from "../lark/auth.ts";
 import { Lark } from "../lark/source.ts";
 import { LarkSocket } from "../lark/socket.ts";
-import { version } from "../version.ts";
+import { isNewer, version } from "../version.ts";
 import { directories, ensureDirectory, lockPath, socketPath } from "./paths.ts";
 import { encodeReply, Hello, type Reply } from "./protocol.ts";
 
@@ -205,7 +205,7 @@ const evaluate = (hub: Hub) =>
 // its watches for good. The close and the decision run in one synchronous step.
 const decide = (hub: Hub, hello: { readonly name: Name; readonly version: string }): Reply => {
   if (hub.state.retiring) return { status: "replaced" };
-  if (Bun.semver.order(hello.version, version) > 0 && hub.state.opencode === 0) {
+  if (isNewer(hello.version, version) && hub.state.opencode === 0) {
     hub.state.retiring = true;
     hub.entry.close();
     return { status: "replaced" };
@@ -378,7 +378,7 @@ export const main = () => {
     Effect.scoped,
   );
 
-  BunRuntime.runMain(program, {
+  NodeRuntime.runMain(program, {
     teardown: (exit, onExit) =>
       Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
         ? onExit(0)

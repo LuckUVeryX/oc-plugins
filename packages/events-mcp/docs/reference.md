@@ -84,8 +84,8 @@ The same server entry in a project `.mcp.json`:
 {
   "mcpServers": {
     "events-mcp": {
-      "command": "bunx",
-      "args": ["@luckuveryx/events-mcp@latest", "claude"]
+      "command": "npx",
+      "args": ["-y", "@luckuveryx/events-mcp@latest", "claude"]
     }
   }
 }
@@ -101,7 +101,7 @@ Codex does not tell an MCP server which thread it serves. The watch tool takes a
 
 ## The hub
 
-`bunx @luckuveryx/events-mcp@latest <harness>` connects to one hub per user and starts it when none is running.
+`npx -y @luckuveryx/events-mcp@latest <harness>` connects to one hub per user and starts it when none is running.
 
 - The hub keeps the environment of the process that started it, including `LARK_APP_ID`, `LARK_APP_SECRET`, and `GITLAB_TOKEN`. After you change those variables, run `opencode service restart` and reopen Claude Code and Codex. OpenCode's MCP processes belong to its background service, so closing a window does not end them. A connected Codex keeps the old hub alive.
 - Its socket is `$XDG_RUNTIME_DIR/events-hub/hub.sock`, or `/run/user/<uid>/events-hub/hub.sock` when `XDG_RUNTIME_DIR` is unset. On macOS it is `~/.local/state/events-hub/hub.sock`.

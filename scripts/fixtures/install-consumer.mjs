@@ -49,28 +49,20 @@ async function located(from, name) {
 
 async function verifyExecutable(name) {
   const signal = AbortSignal.timeout(10_000);
-  const child = Bun.spawn(
-    [
-      process.execPath,
-      "--preload",
-      "./lark-sdk-preload.mjs",
-      join("node_modules", ".bin", name),
-      "opencode",
-    ],
-    {
-      cwd: process.cwd(),
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-      signal,
-      env: {
-        ...process.env,
-        EVENTS_MCP_HUB_DIR: join(process.cwd(), "hub"),
-        LARK_APP_ID: "cli_0000000000000001",
-        LARK_APP_SECRET: "offline",
-      },
+  const child = Bun.spawn(["node", join("node_modules", ".bin", name), "opencode"], {
+    cwd: process.cwd(),
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+    signal,
+    env: {
+      ...process.env,
+      NODE_OPTIONS: `--import=${join(process.cwd(), "lark-sdk-preload.mjs")}`,
+      EVENTS_MCP_HUB_DIR: join(process.cwd(), "hub"),
+      LARK_APP_ID: "cli_0000000000000001",
+      LARK_APP_SECRET: "offline",
     },
-  );
+  });
   const stderr = new Response(child.stderr).text();
   child.stdin.write(
     JSON.stringify({
@@ -118,28 +110,20 @@ async function verifyExecutable(name) {
   );
 
   const closedSignal = AbortSignal.timeout(10_000);
-  const closed = Bun.spawn(
-    [
-      process.execPath,
-      "--preload",
-      "./lark-sdk-preload.mjs",
-      join("node_modules", ".bin", name),
-      "opencode",
-    ],
-    {
-      cwd: process.cwd(),
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-      signal: closedSignal,
-      env: {
-        ...process.env,
-        EVENTS_MCP_HUB_DIR: join(process.cwd(), "hub"),
-        LARK_APP_ID: "cli_0000000000000001",
-        LARK_APP_SECRET: "offline",
-      },
+  const closed = Bun.spawn(["node", join("node_modules", ".bin", name), "opencode"], {
+    cwd: process.cwd(),
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+    signal: closedSignal,
+    env: {
+      ...process.env,
+      NODE_OPTIONS: `--import=${join(process.cwd(), "lark-sdk-preload.mjs")}`,
+      EVENTS_MCP_HUB_DIR: join(process.cwd(), "hub"),
+      LARK_APP_ID: "cli_0000000000000001",
+      LARK_APP_SECRET: "offline",
     },
-  );
+  });
   const closedStderr = new Response(closed.stderr).text();
   closed.stdin.end();
   const closedExit = await closed.exited;

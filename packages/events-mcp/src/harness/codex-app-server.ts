@@ -1,6 +1,5 @@
 import { connect } from "node:net";
 import { Effect, Queue, Schema, type Scope } from "effect";
-// Bun resolves "ws" to its built-in module, so no dependency is needed.
 import WebSocket from "ws";
 import { WakeFailed } from "./harness.ts";
 import { version } from "../version.ts";
@@ -47,7 +46,7 @@ const open = (socketPath: string): Effect.Effect<WebSocket, WakeFailed, Scope.Sc
       return Effect.sync(() => {
         socket.off("open", ready);
         socket.off("error", failed);
-        // Bun's ws throws on an unhandled error when close interrupts an upgrade.
+        // ws throws on an unhandled error when close interrupts an upgrade.
         socket.on("error", () => {});
         socket.close();
       });

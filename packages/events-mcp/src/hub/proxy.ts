@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
 import net from "node:net";
 import type { Name } from "../harness/catalog.ts";
-import { version } from "../version.ts";
+import { isNewer, version } from "../version.ts";
 import { directories, ensureDirectory, logPath, socketPath } from "./paths.ts";
 import { Reply } from "./protocol.ts";
 
@@ -185,7 +185,7 @@ export const main = async (name: Name) => {
       continue;
     }
 
-    if (Bun.semver.order(version, result.reply.version) > 0)
+    if (isNewer(version, result.reply.version))
       console.error(
         `events-mcp: proxy ${version} joined an older hub ${result.reply.version}; restart OpenCode to update the hub.`,
       );

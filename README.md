@@ -35,14 +35,14 @@ Then add a package directory to your OpenCode config:
 For the standalone events MCP server, run:
 
 ```sh
-bunx @luckuveryx/events-mcp@latest <client>
+npx -y @luckuveryx/events-mcp@latest <client>
 ```
 
-Use `opencode`, `claude`, or `codex` as the client. See the [events MCP installation and reference](packages/events-mcp/README.md) for client configuration, updating, versions, and release steps. `bunx` does not use this repository's `bun.lock`.
+Use `opencode`, `claude`, or `codex` as the client. See the [events MCP installation and reference](packages/events-mcp/README.md) for client configuration, updating, versions, and release steps. `npx` does not use this repository's `bun.lock`.
 
 ## Develop
 
-Use Bun 1.4.4. Run `bun install --frozen-lockfile`, `bun run check`, and `bun run test:install` from the root. Use `bun run test`, not `bun test`, to run all tests.
+Use Bun 1.4.4 and Node.js 24. Run `bun install --frozen-lockfile`, `bun run check`, and `bun run test:install` from the root. Use `bun run test`, not `bun test`, to run all tests.
 
 For dependency updates, edit the root `package.json`, run `bun run sync:metadata`, `bun install`, and `bun run format`, then run both checks above. Package manifests need explicit versions for standalone installs. All packages share one version. For a release, update the root version, run the same commands, and push a `v<version>` tag. The publish workflow stages `@luckuveryx/events-mcp` on npm for approval.
 

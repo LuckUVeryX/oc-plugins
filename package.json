@@ -20,7 +20,7 @@
     "check": "bun run check:metadata && bun run format:check && bun run lint && bun run typecheck && bun run test"
   },
   "devDependencies": {
-    "@effect/platform-bun": "4.1.0",
+    "@effect/platform-node-shared": "4.1.0",
     "@effect/vitest": "4.1.0",
     "@larksuiteoapi/node-sdk": "1.76.0",
     "@modelcontextprotocol/client": "2.4.0",
@@ -41,7 +41,8 @@
     "typescript": "7.0.2",
     "typescript-sdk-schema": "npm:typescript@5.9.3",
     "vitest": "5.1.0",
-    "vitest-mock-extended": "5.1.1"
+    "vitest-mock-extended": "5.1.1",
+    "ws": "8.23.0"
   },
   "engines": {
     "bun": ">=1.4.2"

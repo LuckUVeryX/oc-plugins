@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import { isName, names } from "./harness/catalog.ts";
 
 const name = process.argv[2];
